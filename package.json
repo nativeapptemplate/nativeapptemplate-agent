@@ -1,0 +1,30 @@
+{
+  "name": "nativeapptemplate-agent",
+  "version": "1.0.0",
+  "description": "A Claude Code agent that turns a natural-language SaaS spec into a working three-platform implementation (Rails API + SwiftUI iOS + Jetpack Compose Android).",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "nativeapptemplate-agent": "dist/index.js"
+  },
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.114"
+  }
+}
