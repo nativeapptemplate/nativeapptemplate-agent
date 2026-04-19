@@ -41,10 +41,14 @@ Combined ~42.5k LOC of application code. Shared JSON:API contract between all th
 - **ItemTag has TWO states: `Idled` ↔ `Completed`.** It's a toggle, not a three-state machine. If a user's spec wants three states (e.g. "in-service"), extend the machine rather than assume it.
 - Free edition is single-organization (personal account is transparent). Paid-edition features (multi-tenancy, invitations, roles, org switching) are out of scope for the hackathon.
 
+## Repository state
+
+Pre-implementation as of this writing: `src/` and `scripts/ruby/` are empty, and there is no `package.json`. The npm commands below are the target interface — don't try to run them until the scaffolding lands. Check `src/` before assuming.
+
 ## Commands
 
 ```bash
-# Build & test the agent (run from this repo root)
+# Build & test the agent (run from this repo root — once package.json exists)
 npm run build
 npm run test
 npm run dev -- "your spec here"
@@ -113,8 +117,9 @@ Ships as:
 ## Sibling docs
 
 - `docs/SPEC.md` — full technical specification (read first for any non-trivial change)
-- `docs/GTM.md` — business strategy (relevant when discussing product surface, pricing, or Phase A/B transitions)
-- `docs/PREP-CHECKLIST.md` — pre-hackathon setup (should already be all-green by the time development starts)
+- `ROADMAP.md` — post-hackathon direction, OSS vs hosted tracks, durable scope boundaries
+- `docs-private/GTM.md` — business strategy (relevant when discussing product surface, pricing, or Phase A/B transitions). Gitignored, not for publication.
+- `docs-private/PREP-CHECKLIST.md` — pre-hackathon setup (should already be all-green by the time development starts). Gitignored.
 
 ## Anti-patterns to avoid
 
