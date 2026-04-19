@@ -1,0 +1,54 @@
+# Node / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+.npm/
+
+# Generated output — each run writes ./out/<spec-slug>/{rails,ios,android}
+out/
+tmp/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Claude Code local state
+.claude/settings.local.json
+
+# Private docs — not for publication
+docs-private/
+
+# Symlinks to substrate clones (optional convenience)
+substrate/
+
+# Test artifacts
+coverage/
+.nyc_output/
+*.pid
+*.seed
+
+# macOS
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Screenshots captured during self-repair (too large / too many)
+*.screenshot.png
+screenshots/
