@@ -37,6 +37,27 @@ It will:
 5. **Drive the build green** — `bin/rails test`, `xcodebuild test`, `./gradlew test` must all pass before the agent exits.
 6. **Validate the output** across three layers (structural, runtime, semantic). Details in [`docs/SPEC.md`](./docs/SPEC.md) section 6.
 
+## Demo
+
+*90-second end-to-end run — coming after the hackathon wrap on 2026-04-27.*
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Spec["Natural-language spec<br/>(e.g. walk-in clinic queue)"] --> Agent
+    subgraph Agent["Claude Code Agent · Opus 4.7"]
+      Planner --> Workers
+      Workers --> Reviewer
+      Reviewer --> Judge
+    end
+    Substrate[("Free-edition substrate<br/>Rails · iOS · Android<br/>READ-ONLY")] -. copy .-> Out
+    Agent --> Out["./out/[slug]/<br/>rails / ios / android"]
+    Out --> L1["Layer 1 — Structural"]
+    L1 --> L2["Layer 2 — Runtime + mobile-mcp"]
+    L2 --> L3["Layer 3 — Vision judge"]
+```
+
 ## Substrate
 
 The agent operates on the free, MIT-licensed edition of NativeAppTemplate — three public repos:
@@ -54,8 +75,12 @@ Combined ~42.5k LOC. Extracted from [MyTurnTag Creator](https://myturntag.com), 
 > **Not yet functional — hackathon build in progress.** The interface below is the target; `npx` won't work until v0.1 ships at the end of hackathon week.
 
 ```bash
-# Standalone CLI
+# Standalone CLI — must-have for the hackathon demo
 npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices"
+
+# Stretch specs the agent is also designed to handle
+npx nativeapptemplate-agent "a restaurant waitlist for casual dining"
+npx nativeapptemplate-agent "a personal task tracker with due dates"
 
 # Generated output appears under ./out/<slug>/
 tree ./out/clinic-queue/
