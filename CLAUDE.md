@@ -21,6 +21,13 @@ Project-wide Claude Code instructions. Keep this file short — it's loaded into
 - **External MCP:** [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp) for iOS Simulator + Android Emulator UI automation (`npx -y @mobilenext/mobile-mcp@latest`)
 - **Node 22+ required.**
 
+## Coding conventions
+
+- TypeScript `strict: true`; no implicit `any`.
+- Prefer functions over classes — introduce a class only when state + lifecycle justify it (e.g. a long-lived MCP client wrapper). Stateless transforms are functions.
+- Ruby subprocesses: shell out via `execFile("ruby", ["scripts/ruby/<script>.rb", ...])` from a thin wrapper in `src/ruby.ts`. Pass structured data as JSON on stdin/stdout, not positional CLI args. Each script must be self-contained and re-entrant.
+- No comments explaining *what* the code does — name things well instead. Reserve comments for non-obvious *why*.
+
 ## Substrate (what the agent operates on)
 
 MIT-licensed free edition only — never reach into the paid repos. The three substrate repos can live anywhere on the developer's machine; point the agent at them via environment variables:
