@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runLayer1, runLayer2, runLayer3 } from "../src/validation/index.js";
+import { dispatch } from "../src/dispatch.js";
 
 test("validation layers are exported as functions", () => {
   assert.equal(typeof runLayer1, "function");
@@ -31,4 +32,10 @@ test("runLayer3 rejects until implemented", async () => {
     }),
     /not implemented/i,
   );
+});
+
+test("dispatch runs planner + workers + reviewer + judge end-to-end (stub pipeline)", async () => {
+  const result = await dispatch("a walk-in clinic queue for small veterinary practices");
+  assert.equal(result.overallPass, true);
+  assert.match(result.summary, /PASS/);
 });
