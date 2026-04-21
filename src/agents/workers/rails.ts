@@ -31,12 +31,14 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
   await prepareFresh(outDir);
   await copyFiltered(substrate, outDir);
 
-  const plan = domain.renamePlan.map((p) => `${p.from}->${p.to}`).join(", ");
+  const productPairs = buildProductRenamePairs(domain.slug);
+  const renamePlan: readonly RenamePair[] = [...productPairs, ...domain.renamePlan];
+  const plan = renamePlan.map((p) => `${p.from}->${p.to}`).join(", ");
   trace("rails", `running scripts/ruby/rename.rb: ${plan}`);
 
   const renameStats = await runRuby<{ renamePlan: readonly RenamePair[]; root: string }, RenameStats>(
     "rename.rb",
-    { renamePlan: domain.renamePlan, root: outDir },
+    { renamePlan, root: outDir },
   );
 
   trace(
@@ -52,6 +54,22 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
     outDir: `./out/${domain.slug}/rails`,
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
   };
+}
+
+function slugToPascal(slug: string): string {
+  return slug
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join("");
+}
+
+function buildProductRenamePairs(slug: string): readonly RenamePair[] {
+  const pascal = slugToPascal(slug);
+  return [
+    { from: "Nativeapptemplateapi", to: `${pascal}Api` },
+    { from: "NativeAppTemplate", to: pascal },
+  ];
 }
 
 async function prepareFresh(dir: string): Promise<void> {
