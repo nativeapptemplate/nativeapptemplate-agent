@@ -17,18 +17,20 @@ root  = input.fetch("root")
 
 stats = { files_scanned: 0, files_changed: 0, substitutions: 0, files_renamed: 0 }
 
-SKIP_DIR_SEGMENTS = %w[.git node_modules tmp log DerivedData Pods Carthage xcuserdata .build].freeze
+SKIP_DIR_SEGMENTS = %w[.git node_modules tmp log DerivedData Pods Carthage xcuserdata .build build .gradle .idea .kotlin captures].freeze
 SKIP_SUBPATHS     = %w[vendor/bundle].freeze
 TEXT_EXTS         = %w[
   .rb .erb .yml .yaml .json .md .gemspec .rake .ru .txt .sample .example .conf
   .html .css .scss .js .mjs .tt .lock
   .swift .plist .strings .xcconfig .entitlements .pbxproj .xcworkspacedata .modulemap
+  .kt .kts .xml .gradle .pro .toml .properties .cfg
 ].freeze
 TEXT_BASENAMES    = %w[
   Gemfile Gemfile.lock Rakefile Procfile Procfile.dev
   .gitignore .env.sample .ruby-version .node-version
   config.ru Dockerfile
   Podfile Podfile.lock Package.swift Cartfile Makefile
+  gradlew gradlew.bat gradle.properties local.properties
 ].freeze
 
 def pluralize(word)
