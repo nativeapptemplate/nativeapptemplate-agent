@@ -1,4 +1,4 @@
-import { cp, lstat, mkdir, rm, stat } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { trace } from "../../trace.js";
@@ -47,6 +47,7 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
     `scanned ${renameStats.files_scanned} files, changed ${renameStats.files_changed}, ${renameStats.substitutions} substitutions, ${renameStats.files_renamed} file/dir renames`,
   );
 
+  await pinToLocalRuby(outDir);
   await initGit(outDir);
   trace("rails", `done (out/${domain.slug}/rails)`);
 
@@ -90,6 +91,45 @@ async function copyFiltered(src: string, dest: string): Promise<void> {
       }
       return true;
     },
+  });
+}
+
+async function pinToLocalRuby(outDir: string): Promise<void> {
+  const localVersion = await detectLocalRubyVersion();
+  if (!localVersion) {
+    trace("rails", "ruby not found on PATH — skipping version pin rewrite");
+    return;
+  }
+
+  const rubyVersionPath = resolve(outDir, ".ruby-version");
+  const gemfilePath = resolve(outDir, "Gemfile");
+
+  const pinned = (await readFile(rubyVersionPath, "utf8")).trim();
+  if (pinned === localVersion) {
+    trace("rails", `ruby ${localVersion} already matches pin`);
+    return;
+  }
+
+  await writeFile(rubyVersionPath, `${localVersion}\n`);
+  const gemfile = await readFile(gemfilePath, "utf8");
+  const updated = gemfile.replace(/ruby\s+"[\d.]+"/g, `ruby "${localVersion}"`);
+  if (updated !== gemfile) {
+    await writeFile(gemfilePath, updated);
+  }
+
+  trace("rails", `pinned ruby ${pinned} -> ${localVersion} (local)`);
+}
+
+async function detectLocalRubyVersion(): Promise<string | null> {
+  return new Promise((resolvePromise) => {
+    const child = spawn("ruby", ["-e", "print RUBY_VERSION"]);
+    const chunks: Buffer[] = [];
+    child.stdout.on("data", (c: Buffer) => chunks.push(c));
+    child.on("close", (code) => {
+      if (code === 0) resolvePromise(Buffer.concat(chunks).toString("utf8").trim());
+      else resolvePromise(null);
+    });
+    child.on("error", () => resolvePromise(null));
   });
 }
 
