@@ -14,7 +14,7 @@ type RenameStats = {
   files_renamed: number;
 };
 
-const SKIP_RELATIVE_PATHS = ["/.git", "/node_modules", "/tmp", "/log", "/vendor/bundle"];
+const SKIP_RELATIVE_PATHS = ["/.git", "/.claude", "/node_modules", "/tmp", "/log", "/vendor/bundle"];
 
 export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> {
   if (isStub("rails")) {

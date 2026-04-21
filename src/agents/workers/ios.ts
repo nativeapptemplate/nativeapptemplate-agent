@@ -14,7 +14,7 @@ type RenameStats = {
   files_renamed: number;
 };
 
-const SKIP_RELATIVE_PATHS = ["/.git", "/DerivedData", "/.build", "/Pods", "/Carthage"];
+const SKIP_RELATIVE_PATHS = ["/.git", "/.claude", "/DerivedData", "/.build", "/Pods", "/Carthage"];
 
 export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
   if (isStub("ios")) {
