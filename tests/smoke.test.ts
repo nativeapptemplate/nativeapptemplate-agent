@@ -17,10 +17,20 @@ test("runLayer1 rejects until implemented", async () => {
 });
 
 test("runLayer2 returns a failed result for a non-Rails directory", async () => {
-  const result = await runLayer2({ railsDir: "/tmp", timeoutMs: 10_000 });
+  const result = await runLayer2({ platform: "rails", outDir: "/tmp", timeoutMs: 10_000 });
   assert.equal(result.pass, false);
   assert.equal(typeof result.command, "string");
   assert.equal(typeof result.durationMs, "number");
+});
+
+test("runLayer2 iOS reports missing xcodeproj", async () => {
+  const result = await runLayer2({ platform: "ios", outDir: "/tmp", timeoutMs: 10_000 });
+  assert.equal(result.pass, false);
+});
+
+test("runLayer2 Android reports missing gradle wrapper", async () => {
+  const result = await runLayer2({ platform: "android", outDir: "/tmp", timeoutMs: 10_000 });
+  assert.equal(result.pass, false);
 });
 
 test("runLayer3 rejects until implemented", async () => {
