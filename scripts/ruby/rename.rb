@@ -17,10 +17,19 @@ root  = input.fetch("root")
 
 stats = { files_scanned: 0, files_changed: 0, substitutions: 0, files_renamed: 0 }
 
-SKIP_DIR_SEGMENTS = %w[.git node_modules tmp log].freeze
+SKIP_DIR_SEGMENTS = %w[.git node_modules tmp log DerivedData Pods Carthage xcuserdata .build].freeze
 SKIP_SUBPATHS     = %w[vendor/bundle].freeze
-TEXT_EXTS         = %w[.rb .erb .yml .yaml .json .md .gemspec .rake .ru .txt .sample .example .conf .html .css .scss .js .mjs .tt .lock].freeze
-TEXT_BASENAMES    = %w[Gemfile Gemfile.lock Rakefile Procfile Procfile.dev .gitignore .env.sample .ruby-version .node-version config.ru Dockerfile].freeze
+TEXT_EXTS         = %w[
+  .rb .erb .yml .yaml .json .md .gemspec .rake .ru .txt .sample .example .conf
+  .html .css .scss .js .mjs .tt .lock
+  .swift .plist .strings .xcconfig .entitlements .pbxproj .xcworkspacedata .modulemap
+].freeze
+TEXT_BASENAMES    = %w[
+  Gemfile Gemfile.lock Rakefile Procfile Procfile.dev
+  .gitignore .env.sample .ruby-version .node-version
+  config.ru Dockerfile
+  Podfile Podfile.lock Package.swift Cartfile Makefile
+].freeze
 
 def pluralize(word)
   if word.end_with?("y") && word.length > 1 && !%w[a e i o u].include?(word[-2])
@@ -39,20 +48,36 @@ def snake_case(pascal)
 end
 
 def build_patterns(from, to)
-  from_snake = snake_case(from)
-  to_snake   = snake_case(to)
+  from_snake    = snake_case(from)
+  to_snake      = snake_case(to)
+  from_snake_pl = pluralize(from_snake)
+  to_snake_pl   = pluralize(to_snake)
+  from_pl       = pluralize(from)
+  to_pl         = pluralize(to)
 
   # Ruby's \b treats `_` as a word char, so \bshop\b doesn't fire
-  # inside `shop_id` or `accounts_shopkeeper`. Use a letter-aware
-  # boundary instead: "no letter on either side of the match."
-  # Order matters: plural forms first so e.g. "Shops" isn't
-  # partially-matched as "Shop" + residual "s".
+  # inside `shop_id` or `accounts_shopkeeper`. Hand-rolled boundaries:
+  #   - PascalCase token: preceded by non-letter OR lowercase letter
+  #     (PascalCase compound like `LoggedInShopkeeper`); followed by
+  #     non-letter OR uppercase (next PascalCase word).
+  #   - snake_case / lowercase token: preceded by non-letter;
+  #     followed by non-letter OR uppercase (camelCase compound
+  #     like `shopId`).
+  #
+  # Order matters: plural forms first so "Shops" isn't partially-
+  # matched as "Shop" + residual "s".
+  pascal_l = "(?:(?<![A-Za-z])|(?<=[a-z]))"
+  pascal_r = "(?:(?![A-Za-z])|(?=[A-Z]))"
+  snake_l  = "(?<![A-Za-z])"
+  snake_r  = "(?:(?![A-Za-z])|(?=[A-Z]))"
+
   [
-    [/(?<![A-Za-z])#{Regexp.escape(pluralize(from))}(?![A-Za-z])/,       pluralize(to)],
-    [/(?<![A-Za-z])#{Regexp.escape(from)}(?![A-Za-z])/,                  to],
-    [/(?<![A-Za-z])#{Regexp.escape(pluralize(from_snake))}(?![A-Za-z])/, pluralize(to_snake)],
-    [/(?<![A-Za-z])#{Regexp.escape(from_snake)}(?![A-Za-z])/,            to_snake],
-    [/(?<![A-Za-z])#{Regexp.escape(from.upcase)}(?![A-Za-z])/,           to.upcase],
+    [/#{pascal_l}#{Regexp.escape(from_pl)}#{pascal_r}/,     to_pl],
+    [/#{pascal_l}#{Regexp.escape(from)}#{pascal_r}/,        to],
+    [/#{snake_l}#{Regexp.escape(from_snake_pl)}#{snake_r}/, to_snake_pl],
+    [/#{snake_l}#{Regexp.escape(from_snake)}#{snake_r}/,    to_snake],
+    [/#{snake_l}#{Regexp.escape(from_pl.upcase)}(?![A-Za-z])/, to_pl.upcase],
+    [/#{snake_l}#{Regexp.escape(from.upcase)}(?![A-Za-z])/,    to.upcase],
   ]
 end
 
