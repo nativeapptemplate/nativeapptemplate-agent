@@ -56,6 +56,10 @@ def build_patterns(from, to)
   to_snake_pl   = pluralize(to_snake)
   from_pl       = pluralize(from)
   to_pl         = pluralize(to)
+  from_flat     = from.downcase
+  to_flat       = to.downcase
+  from_flat_pl  = from_flat + "s"
+  to_flat_pl    = to_flat + "s"
 
   # Ruby's \b treats `_` as a word char, so \bshop\b doesn't fire
   # inside `shop_id` or `accounts_shopkeeper`. Hand-rolled boundaries:
@@ -78,6 +82,12 @@ def build_patterns(from, to)
     [/#{pascal_l}#{Regexp.escape(from)}#{pascal_r}/,        to],
     [/#{snake_l}#{Regexp.escape(from_snake_pl)}#{snake_r}/, to_snake_pl],
     [/#{snake_l}#{Regexp.escape(from_snake)}#{snake_r}/,    to_snake],
+    # flat-lowercase (runs AFTER snake so single-word rename pairs
+    # where flat == snake can't win over snake's replacement; catches
+    # multi-word compounds collapsed in URLs / package names /
+    # email addresses, e.g. `nativeapptemplate.com`).
+    [/#{snake_l}#{Regexp.escape(from_flat_pl)}#{snake_r}/,  to_flat_pl],
+    [/#{snake_l}#{Regexp.escape(from_flat)}#{snake_r}/,     to_flat],
     [/#{snake_l}#{Regexp.escape(from_pl.upcase)}(?![A-Za-z])/, to_pl.upcase],
     [/#{snake_l}#{Regexp.escape(from.upcase)}(?![A-Za-z])/,    to.upcase],
   ]
