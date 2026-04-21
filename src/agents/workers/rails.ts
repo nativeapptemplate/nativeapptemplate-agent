@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
+import { slugToPascal } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
 type RenameStats = {
@@ -54,14 +55,6 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
     outDir: `./out/${domain.slug}/rails`,
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
   };
-}
-
-function slugToPascal(slug: string): string {
-  return slug
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-    .join("");
 }
 
 function buildProductRenamePairs(slug: string): readonly RenamePair[] {

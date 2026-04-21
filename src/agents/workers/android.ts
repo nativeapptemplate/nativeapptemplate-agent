@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
+import { slugToPascal } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
 type RenameStats = {
@@ -39,12 +40,14 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
   await prepareFresh(outDir);
   await copyFiltered(substrate, outDir);
 
-  const plan = domain.renamePlan.map((p) => `${p.from}->${p.to}`).join(", ");
+  const productPairs = buildProductRenamePairs(domain.slug);
+  const renamePlan: readonly RenamePair[] = [...productPairs, ...domain.renamePlan];
+  const plan = renamePlan.map((p) => `${p.from}->${p.to}`).join(", ");
   trace("android", `running scripts/ruby/rename.rb: ${plan}`);
 
   const renameStats = await runRuby<{ renamePlan: readonly RenamePair[]; root: string }, RenameStats>(
     "rename.rb",
-    { renamePlan: domain.renamePlan, root: outDir },
+    { renamePlan, root: outDir },
   );
 
   trace(
@@ -60,6 +63,14 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
     outDir: `./out/${domain.slug}/android`,
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
   };
+}
+
+function buildProductRenamePairs(slug: string): readonly RenamePair[] {
+  const pascal = slugToPascal(slug);
+  return [
+    { from: "NativeAppTemplateFree", to: `${pascal}App` },
+    { from: "NativeAppTemplate", to: pascal },
+  ];
 }
 
 async function prepareFresh(dir: string): Promise<void> {
