@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
-import { access } from "node:fs/promises";
-import { resolve } from "node:path";
+import { access, readdir } from "node:fs/promises";
+
+export type Layer2Platform = "rails" | "ios" | "android";
 
 export type Layer2Input = {
-  railsDir: string;
+  platform: Layer2Platform;
+  outDir: string;
   timeoutMs?: number;
 };
 
@@ -21,34 +23,79 @@ export async function runLayer2(input: Layer2Input): Promise<Layer2Result> {
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const start = Date.now();
 
-  if (!(await exists(input.railsDir))) {
+  if (!(await exists(input.outDir))) {
     return {
       pass: false,
       command: "stat",
       exitCode: null,
       durationMs: Date.now() - start,
-      stderrTail: `railsDir does not exist: ${input.railsDir}`,
+      stderrTail: `outDir does not exist: ${input.outDir}`,
     };
   }
 
+  switch (input.platform) {
+    case "rails":   return runRailsLayer2(input.outDir, timeoutMs, start);
+    case "ios":     return runIosLayer2(input.outDir, timeoutMs, start);
+    case "android": return runAndroidLayer2(input.outDir, timeoutMs, start);
+  }
+}
+
+async function runRailsLayer2(outDir: string, timeoutMs: number, start: number): Promise<Layer2Result> {
   const useMise = await commandAvailable("mise");
 
-  const bundleCheck = await runRails(input.railsDir, ["bundle", "check"], timeoutMs, useMise);
+  const bundleCheck = await runIn(outDir, ["bundle", "check"], timeoutMs, useMise);
   if (bundleCheck.exitCode !== 0) {
-    const bundleInstall = await runRails(input.railsDir, ["bundle", "install"], timeoutMs, useMise);
-    if (bundleInstall.exitCode !== 0) {
-      return failed("bundle install", bundleInstall, start, useMise);
-    }
+    const bundleInstall = await runIn(outDir, ["bundle", "install"], timeoutMs, useMise);
+    if (bundleInstall.exitCode !== 0) return failed("bundle install", bundleInstall, start, useMise);
   }
 
-  const routes = await runRails(input.railsDir, ["bin/rails", "routes"], timeoutMs, useMise);
-  if (routes.exitCode !== 0) {
-    return failed("bin/rails routes", routes, start, useMise);
+  const routes = await runIn(outDir, ["bin/rails", "routes"], timeoutMs, useMise);
+  if (routes.exitCode !== 0) return failed("bin/rails routes", routes, start, useMise);
+
+  return { pass: true, command: withPrefix("bin/rails routes", useMise), exitCode: 0, durationMs: Date.now() - start };
+}
+
+async function runIosLayer2(outDir: string, timeoutMs: number, start: number): Promise<Layer2Result> {
+  const xcodeproj = (await readdir(outDir)).find((e) => e.endsWith(".xcodeproj"));
+  if (!xcodeproj) {
+    return {
+      pass: false,
+      command: "find .xcodeproj",
+      exitCode: null,
+      durationMs: Date.now() - start,
+      stderrTail: `no .xcodeproj in ${outDir}`,
+    };
   }
+
+  const list = await runIn(outDir, ["xcodebuild", "-list", "-project", xcodeproj], timeoutMs, false);
+  if (list.exitCode !== 0) return failed(`xcodebuild -list -project ${xcodeproj}`, list, start, false);
 
   return {
     pass: true,
-    command: withPrefix("bin/rails routes", useMise),
+    command: `xcodebuild -list -project ${xcodeproj}`,
+    exitCode: 0,
+    durationMs: Date.now() - start,
+  };
+}
+
+async function runAndroidLayer2(outDir: string, timeoutMs: number, start: number): Promise<Layer2Result> {
+  const wrapper = await exists(`${outDir}/gradlew`);
+  if (!wrapper) {
+    return {
+      pass: false,
+      command: "stat ./gradlew",
+      exitCode: null,
+      durationMs: Date.now() - start,
+      stderrTail: `no ./gradlew wrapper in ${outDir}`,
+    };
+  }
+
+  const version = await runIn(outDir, ["./gradlew", "--version"], timeoutMs, false);
+  if (version.exitCode !== 0) return failed("./gradlew --version", version, start, false);
+
+  return {
+    pass: true,
+    command: "./gradlew --version",
     exitCode: 0,
     durationMs: Date.now() - start,
   };
@@ -70,7 +117,7 @@ function withPrefix(action: string, useMise: boolean): string {
 
 type RunResult = { exitCode: number | null; stderr: string };
 
-function runRails(cwd: string, argv: readonly string[], timeoutMs: number, useMise: boolean): Promise<RunResult> {
+function runIn(cwd: string, argv: readonly string[], timeoutMs: number, useMise: boolean): Promise<RunResult> {
   const [command, ...rest] = useMise ? ["mise", "exec", "--", ...argv] : argv;
   return new Promise((resolvePromise) => {
     const child = spawn(command!, rest, { cwd });
