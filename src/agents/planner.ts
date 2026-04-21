@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { trace } from "../trace.js";
+import { isStub } from "../stub.js";
 import type { DomainSpec } from "./types.js";
 
 const MODEL = "claude-opus-4-7";
@@ -83,7 +84,7 @@ const DOMAIN_TOOL: Anthropic.Messages.Tool = {
 export async function runPlanner(spec: string): Promise<DomainSpec> {
   trace("planner", `received spec: "${spec}"`);
 
-  if (process.env['NATEMPLATE_STUB_PLANNER'] === "1") {
+  if (isStub("planner")) {
     return runStubPlanner(spec);
   }
 
@@ -117,7 +118,7 @@ export async function runPlanner(spec: string): Promise<DomainSpec> {
 const delay = (ms: number): Promise<void> => new Promise((r) => { setTimeout(r, ms); });
 
 async function runStubPlanner(spec: string): Promise<DomainSpec> {
-  trace("planner", "(stub mode — NATEMPLATE_STUB_PLANNER=1)");
+  trace("planner", "(stub mode — NATEMPLATE_STUB_ALL or NATEMPLATE_STUB_PLANNER set)");
   await delay(200);
   trace("planner", "extracting entities and fields");
   await delay(250);
