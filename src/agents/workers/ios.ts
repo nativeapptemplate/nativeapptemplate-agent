@@ -60,7 +60,7 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
 function buildProductRenamePairs(slug: string): readonly RenamePair[] {
   const pascal = slugToPascal(slug);
   return [
-    { from: "NativeAppTemplateFree", to: `${pascal}Free` },
+    { from: "NativeAppTemplateFree", to: `${pascal}App` },
     { from: "NativeAppTemplate", to: pascal },
   ];
 }
