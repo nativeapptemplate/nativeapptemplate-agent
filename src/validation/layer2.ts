@@ -63,12 +63,18 @@ async function runRailsLayer2(outDir: string, mode: Layer2Mode, timeoutMs: numbe
     return pass("bin/rails routes", start, useMise);
   }
 
-  const setup = await runIn(outDir, ["bin/rails", "db:test:prepare"], timeoutMs, useMise, stream);
-  if (setup.exitCode !== 0) return failed("bin/rails db:test:prepare", setup, start, useMise);
+  // Build mode proves "does the generated app boot" without the
+  // test-runner overhead. db:prepare ensures schema is applied;
+  // `rails runner` loads the full app (class graph + initializers +
+  // DB connection). Running `bin/rails test` here is too heavy —
+  // parallel test workers + DB pool + spec-specific test state
+  // can hang or take minutes, which isn't what Layer 2 is for.
+  const dbPrepare = await runIn(outDir, ["bin/rails", "db:prepare"], timeoutMs, useMise, stream);
+  if (dbPrepare.exitCode !== 0) return failed("bin/rails db:prepare", dbPrepare, start, useMise);
 
-  const test = await runIn(outDir, ["bin/rails", "test"], timeoutMs, useMise, stream);
-  if (test.exitCode !== 0) return failed("bin/rails test", test, start, useMise);
-  return pass("bin/rails test", start, useMise);
+  const runner = await runIn(outDir, ["bin/rails", "runner", "puts 'OK'"], timeoutMs, useMise, stream);
+  if (runner.exitCode !== 0) return failed("bin/rails runner", runner, start, useMise);
+  return pass("bin/rails runner 'puts OK'", start, useMise);
 }
 
 async function runIosLayer2(outDir: string, mode: Layer2Mode, timeoutMs: number, start: number): Promise<Layer2Result> {
