@@ -149,19 +149,20 @@ type RunResult = { exitCode: number | null; stderr: string };
 function runIn(cwd: string, argv: readonly string[], timeoutMs: number, useMise: boolean, stream: boolean): Promise<RunResult> {
   const [command, ...rest] = useMise ? ["mise", "exec", "--", ...argv] : argv;
   return new Promise((resolvePromise) => {
-    const child = spawn(command!, rest, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    // Build mode: inherit parent's TTY so Ruby / xcodebuild / gradle
+    // detect a terminal and line-buffer stdout normally. We give up
+    // programmatic stderr capture in exchange — user sees it live.
+    // Fast mode: pipe + drain, silent + fast.
+    const child = stream
+      ? spawn(command!, rest, { cwd, stdio: "inherit" })
+      : spawn(command!, rest, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => { child.kill("SIGTERM"); }, timeoutMs);
 
-    if (stream) {
-      child.stdout.pipe(process.stdout);
-      child.stderr.on("data", (c: Buffer) => {
-        stderrChunks.push(c);
-        process.stderr.write(c);
-      });
-    } else {
-      child.stdout.on("data", () => { /* drain */ });
-      child.stderr.on("data", (c: Buffer) => stderrChunks.push(c));
+    if (!stream) {
+      child.stdout?.on("data", () => { /* drain */ });
+      child.stderr?.on("data", (c: Buffer) => stderrChunks.push(c));
     }
 
     child.on("close", (code) => {
