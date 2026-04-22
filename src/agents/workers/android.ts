@@ -42,7 +42,7 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
   await copyFiltered(substrate, outDir);
 
   const productPairs = buildProductRenamePairs(domain.slug);
-  const renamePlan: readonly RenamePair[] = [...productPairs, ...domain.renamePlan];
+  const renamePlan: readonly RenamePair[] = [...productPairs, ...domain.renamePlan].filter((p) => p.from !== p.to);
   const plan = renamePlan.map((p) => `${p.from}->${p.to}`).join(", ");
   trace("android", `running scripts/ruby/rename.rb: ${plan}`);
 
@@ -63,6 +63,7 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
     platform: "android",
     outDir: `./out/${domain.slug}/android`,
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
+    renamedFrom: renamePlan.map((p) => p.from),
   };
 }
 
@@ -133,5 +134,6 @@ async function runStubAndroidWorker(domain: DomainSpec): Promise<WorkerResult> {
     platform: "android",
     outDir: `./out/${domain.slug}/android`,
     filesTouched: 81,
+    renamedFrom: domain.renamePlan.map((p) => p.from),
   };
 }

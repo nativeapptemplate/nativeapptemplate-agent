@@ -32,6 +32,7 @@ export type WorkerResult = {
   platform: Platform;
   outDir: string;
   filesTouched: number;
+  renamedFrom: readonly string[];
 };
 
 export type ReviewerResult = {

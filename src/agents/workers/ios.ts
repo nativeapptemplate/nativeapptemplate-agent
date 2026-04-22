@@ -33,7 +33,7 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
   await copyFiltered(substrate, outDir);
 
   const productPairs = buildProductRenamePairs(domain.slug);
-  const renamePlan: readonly RenamePair[] = [...productPairs, ...domain.renamePlan];
+  const renamePlan: readonly RenamePair[] = [...productPairs, ...domain.renamePlan].filter((p) => p.from !== p.to);
   const plan = renamePlan.map((p) => `${p.from}->${p.to}`).join(", ");
   trace("ios", `running scripts/ruby/rename.rb: ${plan}`);
 
@@ -54,6 +54,7 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
     platform: "ios",
     outDir: `./out/${domain.slug}/ios`,
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
+    renamedFrom: renamePlan.map((p) => p.from),
   };
 }
 
@@ -123,5 +124,6 @@ async function runStubIosWorker(domain: DomainSpec): Promise<WorkerResult> {
     platform: "ios",
     outDir: `./out/${domain.slug}/ios`,
     filesTouched: 63,
+    renamedFrom: domain.renamePlan.map((p) => p.from),
   };
 }
