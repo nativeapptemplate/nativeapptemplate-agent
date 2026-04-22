@@ -50,6 +50,11 @@ def snake_case(pascal)
         .downcase
 end
 
+def camel_case(pascal)
+  return pascal if pascal.empty?
+  pascal[0].downcase + pascal[1..]
+end
+
 def build_patterns(from, to)
   from_snake    = snake_case(from)
   to_snake      = snake_case(to)
@@ -61,6 +66,10 @@ def build_patterns(from, to)
   to_flat       = to.downcase
   from_flat_pl  = from_flat + "s"
   to_flat_pl    = to_flat + "s"
+  from_camel    = camel_case(from)
+  to_camel      = camel_case(to)
+  from_camel_pl = pluralize(from_camel)
+  to_camel_pl   = pluralize(to_camel)
 
   # Ruby's \b treats `_` as a word char, so \bshop\b doesn't fire
   # inside `shop_id` or `accounts_shopkeeper`. Hand-rolled boundaries:
@@ -89,6 +98,11 @@ def build_patterns(from, to)
     # email addresses, e.g. `nativeapptemplate.com`).
     [/#{snake_l}#{Regexp.escape(from_flat_pl)}#{snake_r}/,  to_flat_pl],
     [/#{snake_l}#{Regexp.escape(from_flat)}#{snake_r}/,     to_flat],
+    # camelCase — first char lowercased, rest PascalCase. Catches
+    # the common Kotlin/Swift field-accessor form like `itemTag`
+    # (from `ItemTag`) or `itemTagInfoFromNdefMessage`.
+    [/#{snake_l}#{Regexp.escape(from_camel_pl)}#{snake_r}/, to_camel_pl],
+    [/#{snake_l}#{Regexp.escape(from_camel)}#{snake_r}/,    to_camel],
     [/#{snake_l}#{Regexp.escape(from_pl.upcase)}(?![A-Za-z])/, to_pl.upcase],
     [/#{snake_l}#{Regexp.escape(from.upcase)}(?![A-Za-z])/,    to.upcase],
   ]
