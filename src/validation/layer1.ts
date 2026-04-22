@@ -23,7 +23,7 @@ const TEXT_EXTS = new Set([
   ".txt", ".sample", ".example", ".conf", ".html", ".css", ".scss", ".js", ".mjs",
   ".tt", ".lock",
   ".swift", ".plist", ".strings", ".xcconfig", ".entitlements", ".pbxproj",
-  ".xcworkspacedata", ".modulemap",
+  ".xcworkspacedata", ".modulemap", ".xcscheme",
   ".kt", ".kts", ".xml", ".gradle", ".pro", ".toml", ".properties", ".cfg",
   ".proto",
 ]);

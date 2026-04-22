@@ -15,6 +15,7 @@ type RenameStats = {
 };
 
 const SKIP_RELATIVE_PATHS = ["/.git", "/.claude", "/DerivedData", "/.build", "/Pods", "/Carthage"];
+const SKIP_DIR_NAMES = new Set(["xcuserdata"]);
 
 export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
   if (isStub("ios")) {
@@ -83,6 +84,8 @@ async function copyFiltered(src: string, dest: string): Promise<void> {
     filter: async (source: string) => {
       const rel = source.slice(src.length);
       if (SKIP_RELATIVE_PATHS.some((p) => rel === p || rel.startsWith(`${p}/`))) return false;
+      const segments = rel.split("/").filter(Boolean);
+      if (segments.some((seg) => SKIP_DIR_NAMES.has(seg))) return false;
       try {
         const s = await lstat(source);
         if (s.isSocket() || s.isFIFO() || s.isBlockDevice() || s.isCharacterDevice()) return false;
