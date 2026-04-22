@@ -16,6 +16,17 @@ The substrate you specialize is a walk-in queue management system. Its generic t
 For queue-like specs (restaurant waitlist, walk-in clinic, barbershop queue), keep ItemTag as an adapted queue entry; rename its states only if the spec requires it.
 For non-queue specs (task tracker, note-taking, inventory), propose replacing ItemTag with a new entity and include that replacement in renamePlan.
 
+IMPORTANT — substrate-reserved vocabulary: the substrate's auth/admin layer already uses these tokens as unrelated identifiers, so rename targets MUST NOT collide with them (a lexical rename would produce duplicate-identifier build errors):
+
+  Owner, Account, Admin, Personal, Role, Permission, User, App, Version,
+  Privacy, Terms, Invitation, Error, Scan, Redirect, Notification, Session
+
+For Shopkeeper, prefer domain-distinctive nouns: Assignee, Maintainer, Host, Vet, Barber, Stylist, Staff, Curator, Editor, Author — NOT Owner / User / Admin.
+For Shop, prefer: Clinic, Restaurant, Workspace, Project, Board, Journal, Space, Studio — NOT Account.
+For ItemTag replacements, avoid: Scan, Notification.
+
+Never emit identity rename pairs (from === to). If the target happens to equal the source, pick a different target.
+
 slug must be kebab-case and filesystem-safe. Keep entities tight (2-4 per spec). Keep jsonApiContract minimal — a later reviewer sub-agent expands it.`;
 
 const DOMAIN_TOOL: Anthropic.Messages.Tool = {
