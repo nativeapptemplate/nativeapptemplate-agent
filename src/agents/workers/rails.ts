@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
-import { slugToPascal } from "../../slug.js";
+import { slugToPascal, slugToSnake } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
 type RenameStats = {
@@ -47,6 +47,7 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
     `scanned ${renameStats.files_scanned} files, changed ${renameStats.files_changed}, ${renameStats.substitutions} substitutions, ${renameStats.files_renamed} file/dir renames`,
   );
 
+  await dropSlugDatabases(domain.slug);
   await initGit(outDir);
   trace("rails", `done (out/${domain.slug}/rails)`);
 
@@ -91,6 +92,44 @@ async function copyFiltered(src: string, dest: string): Promise<void> {
       }
       return true;
     },
+  });
+}
+
+async function dropSlugDatabases(slug: string): Promise<void> {
+  const prefix = `${slugToSnake(slug)}_api`;
+  const names = await listDatabasesStartingWith(prefix);
+  if (names.length === 0) {
+    trace("rails", `no stale ${prefix}* databases to drop`);
+    return;
+  }
+  for (const name of names) {
+    await execPsql(["-c", `DROP DATABASE IF EXISTS "${name}";`]);
+  }
+  trace("rails", `dropped ${names.length} stale slug-scoped database(s): ${names.join(", ")}`);
+}
+
+async function listDatabasesStartingWith(prefix: string): Promise<string[]> {
+  try {
+    const stdout = await execPsql(["-tAc", `SELECT datname FROM pg_database WHERE datname LIKE '${prefix}%' ORDER BY datname;`]);
+    return stdout.split("\n").map((s) => s.trim()).filter(Boolean);
+  } catch {
+    trace("rails", "psql unavailable or refused connection — skipping stale-DB cleanup");
+    return [];
+  }
+}
+
+async function execPsql(args: readonly string[]): Promise<string> {
+  return new Promise<string>((resolvePromise, rejectPromise) => {
+    const child = spawn("psql", ["-h", "localhost", "-d", "postgres", ...args]);
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    child.stdout.on("data", (c: Buffer) => stdoutChunks.push(c));
+    child.stderr.on("data", (c: Buffer) => stderrChunks.push(c));
+    child.on("close", (code) => {
+      if (code === 0) resolvePromise(Buffer.concat(stdoutChunks).toString("utf8"));
+      else rejectPromise(new Error(`psql exited ${code}: ${Buffer.concat(stderrChunks).toString("utf8")}`));
+    });
+    child.on("error", rejectPromise);
   });
 }
 
