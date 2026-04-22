@@ -3,9 +3,12 @@ import { access, readdir } from "node:fs/promises";
 
 export type Layer2Platform = "rails" | "ios" | "android";
 
+export type Layer2Mode = "fast" | "build";
+
 export type Layer2Input = {
   platform: Layer2Platform;
   outDir: string;
+  mode?: Layer2Mode;
   timeoutMs?: number;
 };
 
@@ -17,10 +20,14 @@ export type Layer2Result = {
   stderrTail?: string;
 };
 
-const DEFAULT_TIMEOUT_MS = 300_000;
+const DEFAULT_TIMEOUT_FAST_MS = 300_000;
+const DEFAULT_TIMEOUT_BUILD_MS = 900_000;
+
+const IOS_DESTINATION = "platform=iOS Simulator,name=iPhone 17,OS=26.2";
 
 export async function runLayer2(input: Layer2Input): Promise<Layer2Result> {
-  const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const mode: Layer2Mode = input.mode ?? "fast";
+  const timeoutMs = input.timeoutMs ?? (mode === "build" ? DEFAULT_TIMEOUT_BUILD_MS : DEFAULT_TIMEOUT_FAST_MS);
   const start = Date.now();
 
   if (!(await exists(input.outDir))) {
@@ -34,13 +41,13 @@ export async function runLayer2(input: Layer2Input): Promise<Layer2Result> {
   }
 
   switch (input.platform) {
-    case "rails":   return runRailsLayer2(input.outDir, timeoutMs, start);
-    case "ios":     return runIosLayer2(input.outDir, timeoutMs, start);
-    case "android": return runAndroidLayer2(input.outDir, timeoutMs, start);
+    case "rails":   return runRailsLayer2(input.outDir, mode, timeoutMs, start);
+    case "ios":     return runIosLayer2(input.outDir, mode, timeoutMs, start);
+    case "android": return runAndroidLayer2(input.outDir, mode, timeoutMs, start);
   }
 }
 
-async function runRailsLayer2(outDir: string, timeoutMs: number, start: number): Promise<Layer2Result> {
+async function runRailsLayer2(outDir: string, mode: Layer2Mode, timeoutMs: number, start: number): Promise<Layer2Result> {
   const useMise = await commandAvailable("mise");
 
   const bundleCheck = await runIn(outDir, ["bundle", "check"], timeoutMs, useMise);
@@ -49,13 +56,21 @@ async function runRailsLayer2(outDir: string, timeoutMs: number, start: number):
     if (bundleInstall.exitCode !== 0) return failed("bundle install", bundleInstall, start, useMise);
   }
 
-  const routes = await runIn(outDir, ["bin/rails", "routes"], timeoutMs, useMise);
-  if (routes.exitCode !== 0) return failed("bin/rails routes", routes, start, useMise);
+  if (mode === "fast") {
+    const routes = await runIn(outDir, ["bin/rails", "routes"], timeoutMs, useMise);
+    if (routes.exitCode !== 0) return failed("bin/rails routes", routes, start, useMise);
+    return pass("bin/rails routes", start, useMise);
+  }
 
-  return { pass: true, command: withPrefix("bin/rails routes", useMise), exitCode: 0, durationMs: Date.now() - start };
+  const setup = await runIn(outDir, ["bin/rails", "db:test:prepare"], timeoutMs, useMise);
+  if (setup.exitCode !== 0) return failed("bin/rails db:test:prepare", setup, start, useMise);
+
+  const test = await runIn(outDir, ["bin/rails", "test"], timeoutMs, useMise);
+  if (test.exitCode !== 0) return failed("bin/rails test", test, start, useMise);
+  return pass("bin/rails test", start, useMise);
 }
 
-async function runIosLayer2(outDir: string, timeoutMs: number, start: number): Promise<Layer2Result> {
+async function runIosLayer2(outDir: string, mode: Layer2Mode, timeoutMs: number, start: number): Promise<Layer2Result> {
   const xcodeproj = (await readdir(outDir)).find((e) => e.endsWith(".xcodeproj"));
   if (!xcodeproj) {
     return {
@@ -67,18 +82,27 @@ async function runIosLayer2(outDir: string, timeoutMs: number, start: number): P
     };
   }
 
-  const list = await runIn(outDir, ["xcodebuild", "-list", "-project", xcodeproj], timeoutMs, false);
-  if (list.exitCode !== 0) return failed(`xcodebuild -list -project ${xcodeproj}`, list, start, false);
+  if (mode === "fast") {
+    const list = await runIn(outDir, ["xcodebuild", "-list", "-project", xcodeproj], timeoutMs, false);
+    if (list.exitCode !== 0) return failed(`xcodebuild -list -project ${xcodeproj}`, list, start, false);
+    return { pass: true, command: `xcodebuild -list -project ${xcodeproj}`, exitCode: 0, durationMs: Date.now() - start };
+  }
 
-  return {
-    pass: true,
-    command: `xcodebuild -list -project ${xcodeproj}`,
-    exitCode: 0,
-    durationMs: Date.now() - start,
-  };
+  const scheme = xcodeproj.replace(/\.xcodeproj$/, "");
+  const args = [
+    "xcodebuild",
+    "-project", xcodeproj,
+    "-scheme", scheme,
+    "-destination", IOS_DESTINATION,
+    "-configuration", "Debug",
+    "build",
+  ];
+  const build = await runIn(outDir, args, timeoutMs, false);
+  if (build.exitCode !== 0) return failed(`xcodebuild build -scheme ${scheme}`, build, start, false);
+  return { pass: true, command: `xcodebuild build -scheme ${scheme}`, exitCode: 0, durationMs: Date.now() - start };
 }
 
-async function runAndroidLayer2(outDir: string, timeoutMs: number, start: number): Promise<Layer2Result> {
+async function runAndroidLayer2(outDir: string, mode: Layer2Mode, timeoutMs: number, start: number): Promise<Layer2Result> {
   const wrapper = await exists(`${outDir}/gradlew`);
   if (!wrapper) {
     return {
@@ -90,15 +114,19 @@ async function runAndroidLayer2(outDir: string, timeoutMs: number, start: number
     };
   }
 
-  const version = await runIn(outDir, ["./gradlew", "--version"], timeoutMs, false);
-  if (version.exitCode !== 0) return failed("./gradlew --version", version, start, false);
+  if (mode === "fast") {
+    const version = await runIn(outDir, ["./gradlew", "--version"], timeoutMs, false);
+    if (version.exitCode !== 0) return failed("./gradlew --version", version, start, false);
+    return { pass: true, command: "./gradlew --version", exitCode: 0, durationMs: Date.now() - start };
+  }
 
-  return {
-    pass: true,
-    command: "./gradlew --version",
-    exitCode: 0,
-    durationMs: Date.now() - start,
-  };
+  const assemble = await runIn(outDir, ["./gradlew", "assembleDebug", "--no-daemon"], timeoutMs, false);
+  if (assemble.exitCode !== 0) return failed("./gradlew assembleDebug", assemble, start, false);
+  return { pass: true, command: "./gradlew assembleDebug", exitCode: 0, durationMs: Date.now() - start };
+}
+
+function pass(command: string, start: number, useMise: boolean): Layer2Result {
+  return { pass: true, command: withPrefix(command, useMise), exitCode: 0, durationMs: Date.now() - start };
 }
 
 function failed(action: string, result: RunResult, start: number, useMise: boolean): Layer2Result {
