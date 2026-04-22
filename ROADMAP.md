@@ -4,6 +4,15 @@ This document describes the shape of the project beyond the hackathon week. It i
 
 ---
 
+## Status (April 2026)
+
+The project was submitted to Cerebral Valley's *Built with Opus 4.7: a Claude Code Hackathon* (Apr 21–27, 2026). It was not selected — roughly 13,000 applications, ~500 seats. The April 21–27 calendar block remains in place as a self-imposed sprint with the same 6-day rhythm and the same demo-video deliverable. The hackathon was an accelerant, not a prerequisite.
+
+- **v0.1 target:** April 27, 2026. Public tag, working `npx nativeapptemplate-agent "<spec>"` CLI, demo video published.
+- **Public launch:** May 2026. Wider announcement (HN / Twitter / Reddit). Phase A's hosted-chat layer on nativeapptemplate.com begins taking paying users shortly after.
+
+The pipeline generates three coherent platforms from a one-sentence natural-language spec, with real structural and runtime validation. Demo-grade as of April 22, ahead of the self-imposed storyboard; the remaining work before v0.1 is the Opus 4.7 vision judge (Layer 3), full mobile builds in validation, and the reviewer sub-agent's OpenAPI contract diff.
+
 ## Where this project sits
 
 `nativeapptemplate-agent` is the open-source (MIT) generator component of a wider ecosystem. It operates on top of the **MIT-licensed free edition** of NativeAppTemplate — three repositories covering a Rails 8.1 API, a SwiftUI iOS client, and a Jetpack Compose Android client. Anything this agent produces is fully reproducible from public code.
@@ -37,11 +46,12 @@ The hosted version is a natural follow-on, not the primary product. It's the opt
 
 ## Rollout
 
-Beyond the hackathon week, the project will evolve in phases driven by evidence, not calendar.
+Beyond v0.1, the project will evolve in phases driven by evidence, not calendar.
 
 ### Phase A — Ship the CLI, keep the existing sales flow
 
-- `nativeapptemplate-agent` v0.1 public release
+- `nativeapptemplate-agent` **v0.1 public release on April 27, 2026** (self-imposed-sprint deliverable)
+- **Public launch on May 2026** — wider announcement, developer-audience posts
 - Minimal chat interface added to nativeapptemplate.com; generation authorized by one-time codes so no login infrastructure is needed yet
 - Existing Team customers gain access to the chat on top of what they already purchased — no disruption to the current Team SKU flow (25 GitHub usernames at checkout, GitHub ACL for substrate access)
 
@@ -60,4 +70,4 @@ For the hackathon week specifically, see `docs/SPEC.md` section 9 for the full n
 
 ## How to contribute
 
-During the hackathon week (Apr 21–27, 2026) the repository may move quickly and breaking changes are expected. After that, contributions are welcome — the project will adopt standard OSS norms (issues, PRs, code review). Detailed guidelines will land in `CONTRIBUTING.md` once the dust settles.
+During the self-imposed April 21–27, 2026 sprint the repository moves quickly and breaking changes are expected. After v0.1 ships, contributions are welcome — the project will adopt standard OSS norms (issues, PRs, code review). Detailed guidelines will land in `CONTRIBUTING.md` once the dust settles.
