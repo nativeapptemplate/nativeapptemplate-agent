@@ -24,6 +24,7 @@ TEXT_EXTS         = %w[
   .html .css .scss .js .mjs .tt .lock
   .swift .plist .strings .xcconfig .entitlements .pbxproj .xcworkspacedata .modulemap
   .kt .kts .xml .gradle .pro .toml .properties .cfg
+  .proto
 ].freeze
 TEXT_BASENAMES    = %w[
   Gemfile Gemfile.lock Rakefile Procfile Procfile.dev
