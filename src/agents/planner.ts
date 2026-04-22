@@ -21,9 +21,18 @@ IMPORTANT — substrate-reserved vocabulary: the substrate's auth/admin layer al
   Owner, Account, Admin, Personal, Role, Permission, User, App, Version,
   Privacy, Terms, Invitation, Error, Scan, Redirect, Notification, Session
 
+IMPORTANT — language-stdlib-reserved vocabulary: the generated code must compile in Swift, Kotlin, and Ruby. A rename target that collides with any of these standard-library types silently shadows the stdlib and breaks compilation (e.g. Task.isCancelled no longer resolves if Task is shadowed):
+
+  Swift   — Task, Actor, Result, Error, View, Text, Image, State, Binding,
+            Data, Date, URL, UUID, Set, Array, Dictionary, Optional
+  Kotlin  — Unit, Nothing, Any, List, Map, Set, Flow, Sequence, Result,
+            Continuation, Deferred, Context
+  Ruby/Rails — Object, Module, Class, Array, Hash, String, Integer, Proc,
+               Thread, Request, Response, Session
+
 For Shopkeeper, prefer domain-distinctive nouns: Assignee, Maintainer, Host, Vet, Barber, Stylist, Staff, Curator, Editor, Author — NOT Owner / User / Admin.
 For Shop, prefer: Clinic, Restaurant, Workspace, Project, Board, Journal, Space, Studio — NOT Account.
-For ItemTag replacements, avoid: Scan, Notification.
+For ItemTag replacements, prefer: Todo, Ticket, Entry, Card, Issue, Note, Memo, Patient, Reservation — NOT Task (Swift Concurrency) / Actor (Swift Concurrency) / Scan / Notification.
 
 Never emit identity rename pairs (from === to). If the target happens to equal the source, pick a different target.
 
