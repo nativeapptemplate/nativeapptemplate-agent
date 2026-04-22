@@ -49,23 +49,24 @@ export async function runLayer2(input: Layer2Input): Promise<Layer2Result> {
 
 async function runRailsLayer2(outDir: string, mode: Layer2Mode, timeoutMs: number, start: number): Promise<Layer2Result> {
   const useMise = await commandAvailable("mise");
+  const stream = mode === "build";
 
-  const bundleCheck = await runIn(outDir, ["bundle", "check"], timeoutMs, useMise);
+  const bundleCheck = await runIn(outDir, ["bundle", "check"], timeoutMs, useMise, false);
   if (bundleCheck.exitCode !== 0) {
-    const bundleInstall = await runIn(outDir, ["bundle", "install"], timeoutMs, useMise);
+    const bundleInstall = await runIn(outDir, ["bundle", "install"], timeoutMs, useMise, stream);
     if (bundleInstall.exitCode !== 0) return failed("bundle install", bundleInstall, start, useMise);
   }
 
   if (mode === "fast") {
-    const routes = await runIn(outDir, ["bin/rails", "routes"], timeoutMs, useMise);
+    const routes = await runIn(outDir, ["bin/rails", "routes"], timeoutMs, useMise, false);
     if (routes.exitCode !== 0) return failed("bin/rails routes", routes, start, useMise);
     return pass("bin/rails routes", start, useMise);
   }
 
-  const setup = await runIn(outDir, ["bin/rails", "db:test:prepare"], timeoutMs, useMise);
+  const setup = await runIn(outDir, ["bin/rails", "db:test:prepare"], timeoutMs, useMise, stream);
   if (setup.exitCode !== 0) return failed("bin/rails db:test:prepare", setup, start, useMise);
 
-  const test = await runIn(outDir, ["bin/rails", "test"], timeoutMs, useMise);
+  const test = await runIn(outDir, ["bin/rails", "test"], timeoutMs, useMise, stream);
   if (test.exitCode !== 0) return failed("bin/rails test", test, start, useMise);
   return pass("bin/rails test", start, useMise);
 }
@@ -83,7 +84,7 @@ async function runIosLayer2(outDir: string, mode: Layer2Mode, timeoutMs: number,
   }
 
   if (mode === "fast") {
-    const list = await runIn(outDir, ["xcodebuild", "-list", "-project", xcodeproj], timeoutMs, false);
+    const list = await runIn(outDir, ["xcodebuild", "-list", "-project", xcodeproj], timeoutMs, false, false);
     if (list.exitCode !== 0) return failed(`xcodebuild -list -project ${xcodeproj}`, list, start, false);
     return { pass: true, command: `xcodebuild -list -project ${xcodeproj}`, exitCode: 0, durationMs: Date.now() - start };
   }
@@ -97,7 +98,7 @@ async function runIosLayer2(outDir: string, mode: Layer2Mode, timeoutMs: number,
     "-configuration", "Debug",
     "build",
   ];
-  const build = await runIn(outDir, args, timeoutMs, false);
+  const build = await runIn(outDir, args, timeoutMs, false, true);
   if (build.exitCode !== 0) return failed(`xcodebuild build -scheme ${scheme}`, build, start, false);
   return { pass: true, command: `xcodebuild build -scheme ${scheme}`, exitCode: 0, durationMs: Date.now() - start };
 }
@@ -115,12 +116,12 @@ async function runAndroidLayer2(outDir: string, mode: Layer2Mode, timeoutMs: num
   }
 
   if (mode === "fast") {
-    const version = await runIn(outDir, ["./gradlew", "--version"], timeoutMs, false);
+    const version = await runIn(outDir, ["./gradlew", "--version"], timeoutMs, false, false);
     if (version.exitCode !== 0) return failed("./gradlew --version", version, start, false);
     return { pass: true, command: "./gradlew --version", exitCode: 0, durationMs: Date.now() - start };
   }
 
-  const assemble = await runIn(outDir, ["./gradlew", "assembleDebug", "--no-daemon"], timeoutMs, false);
+  const assemble = await runIn(outDir, ["./gradlew", "assembleDebug", "--no-daemon"], timeoutMs, false, true);
   if (assemble.exitCode !== 0) return failed("./gradlew assembleDebug", assemble, start, false);
   return { pass: true, command: "./gradlew assembleDebug", exitCode: 0, durationMs: Date.now() - start };
 }
@@ -145,14 +146,24 @@ function withPrefix(action: string, useMise: boolean): string {
 
 type RunResult = { exitCode: number | null; stderr: string };
 
-function runIn(cwd: string, argv: readonly string[], timeoutMs: number, useMise: boolean): Promise<RunResult> {
+function runIn(cwd: string, argv: readonly string[], timeoutMs: number, useMise: boolean, stream: boolean): Promise<RunResult> {
   const [command, ...rest] = useMise ? ["mise", "exec", "--", ...argv] : argv;
   return new Promise((resolvePromise) => {
-    const child = spawn(command!, rest, { cwd });
+    const child = spawn(command!, rest, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => { child.kill("SIGTERM"); }, timeoutMs);
 
-    child.stderr.on("data", (c: Buffer) => stderrChunks.push(c));
+    if (stream) {
+      child.stdout.pipe(process.stdout);
+      child.stderr.on("data", (c: Buffer) => {
+        stderrChunks.push(c);
+        process.stderr.write(c);
+      });
+    } else {
+      child.stdout.on("data", () => { /* drain */ });
+      child.stderr.on("data", (c: Buffer) => stderrChunks.push(c));
+    }
+
     child.on("close", (code) => {
       clearTimeout(timer);
       resolvePromise({ exitCode: code, stderr: Buffer.concat(stderrChunks).toString("utf8") });
