@@ -16,6 +16,7 @@ type RenameStats = {
 
 const SKIP_SEGMENTS = new Set([
   ".git",
+  ".claude",
   "build",
   ".gradle",
   ".idea",

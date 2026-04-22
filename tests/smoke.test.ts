@@ -9,11 +9,10 @@ test("validation layers are exported as functions", () => {
   assert.equal(typeof runLayer3, "function");
 });
 
-test("runLayer1 rejects until implemented", async () => {
-  await assert.rejects(
-    runLayer1({ projectDir: "/tmp", forbiddenTokens: [] }),
-    /not implemented/i,
-  );
+test("runLayer1 returns pass when forbiddenTokens is empty", async () => {
+  const result = await runLayer1({ projectDir: "/tmp", forbiddenTokens: [] });
+  assert.equal(result.pass, true);
+  assert.deepEqual(result.findings, []);
 });
 
 test("runLayer2 returns a failed result for a non-Rails directory", async () => {
