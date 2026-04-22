@@ -25,6 +25,7 @@ const TEXT_EXTS = new Set([
   ".swift", ".plist", ".strings", ".xcconfig", ".entitlements", ".pbxproj",
   ".xcworkspacedata", ".modulemap",
   ".kt", ".kts", ".xml", ".gradle", ".pro", ".toml", ".properties", ".cfg",
+  ".proto",
 ]);
 
 const TEXT_BASENAMES = new Set([
