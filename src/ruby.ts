@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { scrubbedEnv } from "./env.js";
 
 export async function runRuby<TInput, TOutput>(
   scriptName: string,
   input: TInput,
 ): Promise<TOutput> {
   const scriptPath = resolve(process.cwd(), "scripts/ruby", scriptName);
-  const child = spawn("ruby", [scriptPath]);
+  const child = spawn("ruby", [scriptPath], { env: scrubbedEnv() });
 
   const stdoutChunks: Buffer[] = [];
   const stderrChunks: Buffer[] = [];

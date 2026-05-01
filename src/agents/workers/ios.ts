@@ -1,5 +1,6 @@
 import { cp, lstat, mkdir, rm, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { scrubbedEnv } from "../../env.js";
 import { resolve } from "node:path";
 import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
@@ -99,7 +100,7 @@ async function copyFiltered(src: string, dest: string): Promise<void> {
 
 async function initGit(dir: string): Promise<void> {
   await new Promise<void>((resolvePromise, rejectPromise) => {
-    const child = spawn("git", ["init", "-q", "-b", "main"], { cwd: dir });
+    const child = spawn("git", ["init", "-q", "-b", "main"], { cwd: dir, env: scrubbedEnv() });
     child.on("close", (code) => {
       if (code === 0) resolvePromise();
       else rejectPromise(new Error(`git init exited ${code}`));
