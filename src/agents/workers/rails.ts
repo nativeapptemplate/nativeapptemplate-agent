@@ -22,9 +22,9 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
     return runStubRailsWorker(domain);
   }
 
-  const substrate = process.env['NATEMPLATE_API'];
+  const substrate = process.env['NATIVEAPPTEMPLATE_API'];
   if (!substrate) {
-    throw new Error("rails worker: NATEMPLATE_API env var is not set; see CLAUDE.md Substrate section");
+    throw new Error("rails worker: NATIVEAPPTEMPLATE_API env var is not set; see CLAUDE.md Substrate section");
   }
 
   const outDir = resolve(process.cwd(), "out", domain.slug, "rails");
