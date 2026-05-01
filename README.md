@@ -99,13 +99,14 @@ The agent will also be available as a Claude Code plugin.
   ```bash
   export ANTHROPIC_API_KEY="sk-ant-..."
   ```
-  The Anthropic SDK reads this env var automatically; no other config is required.
+  The Anthropic SDK reads this env var automatically; no other config is required. See [Security](#security) below for storage recommendations.
 - Local checkouts of the three substrate repos, referenced via environment variables:
   ```bash
   export NATEMPLATE_API="/path/to/nativeapptemplateapi"
   export NATEMPLATE_IOS="/path/to/NativeAppTemplate-Free-iOS"
   export NATEMPLATE_ANDROID="/path/to/NativeAppTemplate-Free-Android"
   ```
+  A starter [`/.env.example`](./.env.example) lists all the variables in one place.
 - For runtime validation (Layer 2 onwards): Xcode 26.3+ with iOS 26.2+ simulator, Android SDK with API 26+ emulator
 - For UI automation: [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp) (installed automatically as a Claude Code MCP server)
 
@@ -118,6 +119,21 @@ The agent doesn't just generate code and exit — it validates the output.
 3. **Semantic.** Opus 4.7 as judge — scores whether the generated code and rendered UI actually express the intended domain. Vision judges read simulator/emulator screenshots directly.
 
 See [`docs/SPEC.md`](./docs/SPEC.md) for the full design.
+
+## Security
+
+`ANTHROPIC_API_KEY` is the only sensitive secret the agent needs.
+
+**Recommended storage** (best to most convenient):
+
+- **macOS Keychain via 1Password CLI** — `op read "op://Personal/Anthropic/key"` resolved at session start; no key on disk in plaintext.
+- **[`direnv`](https://direnv.net/)** — per-project `.envrc`, loaded only when you `cd` in. Keep `.envrc` outside any git-tracked dotfiles repo, or `.gitignore` it.
+- **A gitignored secrets file sourced from your shell rc** — e.g. `[ -r ~/.config/zsh/secrets.zsh ] && source ~/.config/zsh/secrets.zsh`. Set `chmod 600` on the file.
+- **`.env` next to the project** — supported by [`.env.example`](./.env.example). `.env*.local` and `.env` are already gitignored. Lowest friction; easiest to leak. Avoid in shared repos.
+
+**Don't** paste a real key into shell history (`HISTFILE` captures it), commit a `.env`, or echo the key into a non-private channel.
+
+The agent strips `ANTHROPIC_API_KEY` (and `ANTHROPIC_AUTH_TOKEN`) from the environment of every subprocess it spawns — Ruby scripts, `git`, `psql`, `xcodebuild`, `gradlew`, the future mobile-mcp client. The key is only seen by the Anthropic SDK in the Node process. Set spend limits on your API workspace as a backstop, and rotate the key if you suspect leak.
 
 ## Project docs
 

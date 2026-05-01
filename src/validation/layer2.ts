@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { access, readdir } from "node:fs/promises";
+import { scrubbedEnv } from "../env.js";
 
 export type Layer2Platform = "rails" | "ios" | "android";
 
@@ -160,8 +161,8 @@ function runIn(cwd: string, argv: readonly string[], timeoutMs: number, useMise:
     // programmatic stderr capture in exchange — user sees it live.
     // Fast mode: pipe + drain, silent + fast.
     const child = stream
-      ? spawn(command!, rest, { cwd, stdio: "inherit" })
-      : spawn(command!, rest, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+      ? spawn(command!, rest, { cwd, stdio: "inherit", env: scrubbedEnv() })
+      : spawn(command!, rest, { cwd, stdio: ["ignore", "pipe", "pipe"], env: scrubbedEnv() });
 
     const stderrChunks: Buffer[] = [];
     const timer = setTimeout(() => { child.kill("SIGTERM"); }, timeoutMs);
@@ -184,7 +185,7 @@ function runIn(cwd: string, argv: readonly string[], timeoutMs: number, useMise:
 
 async function commandAvailable(bin: string): Promise<boolean> {
   return new Promise((resolvePromise) => {
-    const c = spawn("which", [bin]);
+    const c = spawn("which", [bin], { env: scrubbedEnv() });
     c.on("close", (code) => resolvePromise(code === 0));
     c.on("error", () => resolvePromise(false));
   });

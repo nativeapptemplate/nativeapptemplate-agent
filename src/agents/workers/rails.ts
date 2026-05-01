@@ -1,5 +1,6 @@
 import { cp, lstat, mkdir, rm, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { scrubbedEnv } from "../../env.js";
 import { resolve } from "node:path";
 import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
@@ -120,7 +121,7 @@ async function listDatabasesStartingWith(prefix: string): Promise<string[]> {
 
 async function execPsql(args: readonly string[]): Promise<string> {
   return new Promise<string>((resolvePromise, rejectPromise) => {
-    const child = spawn("psql", ["-h", "localhost", "-d", "postgres", ...args]);
+    const child = spawn("psql", ["-h", "localhost", "-d", "postgres", ...args], { env: scrubbedEnv() });
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     child.stdout.on("data", (c: Buffer) => stdoutChunks.push(c));
@@ -135,7 +136,7 @@ async function execPsql(args: readonly string[]): Promise<string> {
 
 async function initGit(dir: string): Promise<void> {
   await new Promise<void>((resolvePromise, rejectPromise) => {
-    const child = spawn("git", ["init", "-q", "-b", "main"], { cwd: dir });
+    const child = spawn("git", ["init", "-q", "-b", "main"], { cwd: dir, env: scrubbedEnv() });
     child.on("close", (code) => {
       if (code === 0) resolvePromise();
       else rejectPromise(new Error(`git init exited ${code}`));
