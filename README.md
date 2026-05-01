@@ -95,7 +95,11 @@ The agent will also be available as a Claude Code plugin.
 
 - [Node.js](https://nodejs.org) 22+
 - [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) v0.2.111 or later (needed for Opus 4.7)
-- An Anthropic API key with access to `claude-opus-4-7`
+- An [Anthropic API key](https://console.anthropic.com/settings/keys) with access to `claude-opus-4-7`, exported as `ANTHROPIC_API_KEY`:
+  ```bash
+  export ANTHROPIC_API_KEY="sk-ant-..."
+  ```
+  The Anthropic SDK reads this env var automatically; no other config is required.
 - Local checkouts of the three substrate repos, referenced via environment variables:
   ```bash
   export NATEMPLATE_API="/path/to/nativeapptemplateapi"
