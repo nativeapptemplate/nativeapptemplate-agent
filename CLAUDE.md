@@ -32,9 +32,9 @@ Project-wide Claude Code instructions. Keep this file short — it's loaded into
 
 MIT-licensed free edition only — never reach into the paid repos. The three substrate repos can live anywhere on the developer's machine; point the agent at them via environment variables:
 
-- `$NATEMPLATE_API` — Rails 8.1 API repo (`nativeapptemplateapi`, Ruby 7,687 LOC)
-- `$NATEMPLATE_IOS` — SwiftUI iOS repo (`NativeAppTemplate-Free-iOS`, Swift 15,311 LOC, iOS 26.2+)
-- `$NATEMPLATE_ANDROID` — Jetpack Compose Android repo (`NativeAppTemplate-Free-Android`, Kotlin 19,521 LOC, API 26+)
+- `$NATIVEAPPTEMPLATE_API` — Rails 8.1 API repo (`nativeapptemplateapi`, Ruby 7,687 LOC)
+- `$NATIVEAPPTEMPLATE_IOS` — SwiftUI iOS repo (`NativeAppTemplate-Free-iOS`, Swift 15,311 LOC, iOS 26.2+)
+- `$NATIVEAPPTEMPLATE_ANDROID` — Jetpack Compose Android repo (`NativeAppTemplate-Free-Android`, Kotlin 19,521 LOC, API 26+)
 
 Combined ~42.5k LOC of application code. Shared JSON:API contract between all three.
 
@@ -67,7 +67,7 @@ xcodebuild -scheme NativeAppTemplate -destination 'platform=iOS Simulator,name=i
 
 # Validation (run from this repo root)
 rg -n "Shop|Shopkeeper|ItemTag" ./out/<slug>/    # Layer 1 rename completeness check
-cloc --vcs=git "$NATEMPLATE_API"                  # LOC measurement for a specific substrate repo
+cloc --vcs=git "$NATIVEAPPTEMPLATE_API"                  # LOC measurement for a specific substrate repo
 
 # mobile-mcp — invoked via natural language through Claude Code
 # "Take a screenshot", "Tap on Sign Up", "List elements on screen", etc.
@@ -134,4 +134,4 @@ Ships as:
 - **Don't extend scope beyond the queue / simple-CRUD-SaaS family** during the hackathon week. See `docs/SPEC.md` section 9 for the full non-goals list.
 - **Don't target the paid edition.** The deliverable operates only on the MIT-licensed free edition so judges can reproduce it end-to-end.
 - **Don't skip the validation layers to save time.** They are the demo story. A run that green-builds without passing Layer 3 is a failed run.
-- **Don't edit, commit, push, or run `git clean` / `rm` inside `$NATEMPLATE_API`, `$NATEMPLATE_IOS`, or `$NATEMPLATE_ANDROID`.** Those are the developer's working copies of the free-edition substrate, possibly shared with other projects on the same machine. Copy them into `./out/<slug>/` first; change nothing in place. If unsure whether a command is safe, ask.
+- **Don't edit, commit, push, or run `git clean` / `rm` inside `$NATIVEAPPTEMPLATE_API`, `$NATIVEAPPTEMPLATE_IOS`, or `$NATIVEAPPTEMPLATE_ANDROID`.** Those are the developer's working copies of the free-edition substrate, possibly shared with other projects on the same machine. Copy them into `./out/<slug>/` first; change nothing in place. If unsure whether a command is safe, ask.

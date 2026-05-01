@@ -102,9 +102,9 @@ The agent will also be available as a Claude Code plugin.
   The Anthropic SDK reads this env var automatically; no other config is required. See [Security](#security) below for storage recommendations.
 - Local checkouts of the three substrate repos, referenced via environment variables:
   ```bash
-  export NATEMPLATE_API="/path/to/nativeapptemplateapi"
-  export NATEMPLATE_IOS="/path/to/NativeAppTemplate-Free-iOS"
-  export NATEMPLATE_ANDROID="/path/to/NativeAppTemplate-Free-Android"
+  export NATIVEAPPTEMPLATE_API="/path/to/nativeapptemplateapi"
+  export NATIVEAPPTEMPLATE_IOS="/path/to/NativeAppTemplate-Free-iOS"
+  export NATIVEAPPTEMPLATE_ANDROID="/path/to/NativeAppTemplate-Free-Android"
   ```
   A starter [`/.env.example`](./.env.example) lists all the variables in one place.
 - For runtime validation (Layer 2 onwards): Xcode 26.3+ with iOS 26.2+ simulator, Android SDK with API 26+ emulator
