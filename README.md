@@ -131,7 +131,7 @@ See [`docs/SPEC.md`](./docs/SPEC.md) for the full design.
 - **macOS Keychain via 1Password CLI** — `op read "op://Personal/Anthropic/key"` resolved at session start; no key on disk in plaintext.
 - **[`direnv`](https://direnv.net/)** — per-project `.envrc`, loaded only when you `cd` in. Keep `.envrc` outside any git-tracked dotfiles repo, or `.gitignore` it.
 - **A gitignored secrets file sourced from your shell rc** — e.g. `[ -r ~/.config/zsh/secrets.zsh ] && source ~/.config/zsh/secrets.zsh`. Set `chmod 600` on the file.
-- **`.env` next to the project** — supported by [`.env.example`](./.env.example). `.env*.local` and `.env` are already gitignored. Lowest friction; easiest to leak. Avoid in shared repos.
+- **`.env` next to the project** — copy [`.env.example`](./.env.example) to `.env` (already gitignored along with `.env*.local`) and the agent loads it on startup. Shell exports take precedence over `.env`, so you can override per-run with `FOO=x npm run dev`. Lowest friction; easiest to leak — avoid in shared repos. `chmod 600 .env` on shared machines.
 
 **Don't** paste a real key into shell history (`HISTFILE` captures it), commit a `.env`, or echo the key into a non-private channel.
 

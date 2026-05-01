@@ -1,4 +1,7 @@
 import { dispatch } from "./dispatch.js";
+import { loadDotenvIfPresent } from "./env.js";
+
+loadDotenvIfPresent();
 
 export async function main(spec?: string): Promise<void> {
   const input = spec ?? process.argv.slice(2).join(" ").trim();
