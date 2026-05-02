@@ -32,15 +32,29 @@ test("runLayer2 Android reports missing gradle wrapper", async () => {
   assert.equal(result.pass, false);
 });
 
-test("runLayer3 rejects until implemented", async () => {
-  await assert.rejects(
-    runLayer3({
-      screenshotPath: "/tmp/x.png",
-      rubric: [],
-      spec: "",
-    }),
-    /not implemented/i,
-  );
+test("runLayer3 returns synthetic pass for empty rubric in stub mode", async () => {
+  const result = await runLayer3({
+    screenshotPath: "/tmp/x.png",
+    rubric: [],
+    spec: "",
+  });
+  assert.equal(result.pass, true);
+  assert.deepEqual(result.scores, []);
+});
+
+test("runLayer3 returns one score per rubric criterion in stub mode", async () => {
+  const result = await runLayer3({
+    screenshotPath: "/tmp/x.png",
+    rubric: [
+      { id: "domain", question: "Does this look like a clinic queue?" },
+      { id: "no-leak", question: "Is any 'Shop' / 'Shopkeeper' token visible?" },
+    ],
+    spec: "a walk-in clinic queue for small veterinary practices",
+  });
+  assert.equal(result.scores.length, 2);
+  assert.equal(result.scores[0]?.criterionId, "domain");
+  assert.equal(result.scores[1]?.criterionId, "no-leak");
+  assert.equal(typeof result.pass, "boolean");
 });
 
 test("dispatch runs planner + workers + reviewer + judge end-to-end (stub pipeline)", async () => {
