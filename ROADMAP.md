@@ -59,6 +59,29 @@ Beyond v0.1, the project will evolve in phases driven by evidence, not calendar.
 
 Migration to a login + organization + membership model will happen when support ticket patterns, team-sharing requests, or operational load make Phase A untenable — not on a fixed schedule. If Phase A continues to serve customers well, Phase A is a valid steady state.
 
+## Post-v0.1 backlog
+
+Features considered but deliberately deferred until after Layer 3 (vision judge) and the reviewer sub-agent (OpenAPI contract diff) ship. These add convenience or determinism on top of an already-working pipeline; they don't move the validation story forward, so they wait.
+
+### Optional explicit naming overrides
+
+Today the planner is the sole source of slug, displayName, and rename plan (`Shop → Clinic`, `Shopkeeper → Vet`, `ItemTag → Patient`, etc.) — derived from a one-sentence natural-language spec. Output is good but not deterministic across runs (model evolution, prompt sensitivity), and there's no escape hatch when the planner picks a less-natural noun (e.g. forced into a non-substrate-reserved alternate).
+
+Proposed shape — flag-based optional overrides on top of natural language. The planner still parses the spec and proposes a full DomainSpec; CLI flags merge in afterward, taking precedence on conflicts. Anything not specified falls through to the planner's pick.
+
+```bash
+npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices" \
+  --slug=clinic-queue \
+  --rename Shopkeeper=Vet \
+  --rename ItemTag=Patient
+```
+
+Why optional and not required: the project's pitch is "natural-language → working app." Forcing the user to think *"what's my Shop equivalent? My Shopkeeper equivalent? My ItemTag equivalent?"* defeats the value the planner exists to add. Most users won't have that domain-modelling vocabulary; the planner does.
+
+Use cases the override solves: reproducible runs (demo videos, automated tests, docs examples), manual veto when the planner's noun choice doesn't match the user's mental model, escape hatch when the substrate-reserved-token list pushes the planner into less-natural alternates.
+
+No interactive prompts — keeps the CLI scriptable and CI-friendly, no TTY assumptions.
+
 ## What stays out of scope
 
 Indefinitely:
