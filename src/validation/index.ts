@@ -9,3 +9,6 @@ export type { Layer3Criterion, Layer3Input, Layer3Score, Layer3Result } from "./
 
 export { captureScreenshot } from "./capture.js";
 export type { CapturePlatform, CaptureInput, CaptureResult } from "./capture.js";
+
+export { installAndLaunch } from "./launch.js";
+export type { LaunchInput, IosLaunchInput, AndroidLaunchInput, LaunchResult } from "./launch.js";
