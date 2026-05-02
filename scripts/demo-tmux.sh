@@ -9,26 +9,23 @@
 #   [rails worker]  | [iOS worker]
 #   [reviewer]      | [Android worker]
 #
-# Usage: scripts/demo-tmux.sh [spec-slug]
-# Default slug: clinic-queue
+# Slug-agnostic: tail the stable trace paths directly so the script
+# works for any spec, any time, regardless of which slug the planner
+# picks. The trace logs are the actual content; cd'ing panes into
+# out/<slug>/<platform>/ was only cosmetic and forced an ordering
+# constraint (init dirs first, predict slug, then run agent).
+#
+# Usage: scripts/demo-tmux.sh
 
 set -euo pipefail
 
-slug="${1:-clinic-queue}"
 session="demo"
-
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-out_root="$repo_root/out/$slug"
 trace_dir="$repo_root/tmp/trace"
 
 if ! command -v tmux >/dev/null 2>&1; then
   echo "error: tmux not installed (brew install tmux)" >&2
   exit 69
-fi
-
-if [[ ! -d "$out_root/rails" || ! -d "$out_root/ios" || ! -d "$out_root/android" ]]; then
-  echo "error: $out_root/{rails,ios,android} incomplete. Run scripts/init-generated-project.sh $slug first." >&2
-  exit 66
 fi
 
 mkdir -p "$trace_dir"
@@ -40,14 +37,14 @@ if tmux has-session -t "$session" 2>/dev/null; then
   tmux kill-session -t "$session"
 fi
 
-tmux new-session -d -s "$session" -c "$out_root/rails"
-tmux send-keys -t "$session" "tail -F $trace_dir/rails.log" C-m
+tmux new-session -d -s "$session" -c "$repo_root"
+tmux send-keys -t "$session" "tail -F tmp/trace/rails.log" C-m
 
-tmux split-window -h -t "$session" -c "$out_root/ios"
-tmux send-keys -t "$session" "tail -F $trace_dir/ios.log" C-m
+tmux split-window -h -t "$session" -c "$repo_root"
+tmux send-keys -t "$session" "tail -F tmp/trace/ios.log" C-m
 
-tmux split-window -v -t "$session" -c "$out_root/android"
-tmux send-keys -t "$session" "tail -F $trace_dir/android.log" C-m
+tmux split-window -v -t "$session" -c "$repo_root"
+tmux send-keys -t "$session" "tail -F tmp/trace/android.log" C-m
 
 tmux select-pane -t "$session" -L
 tmux split-window -v -t "$session" -c "$repo_root"
