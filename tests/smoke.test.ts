@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC } from "../src/validation/index.js";
+import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC, discoverIosArtifact, discoverAndroidArtifact } from "../src/validation/index.js";
 import { dispatch } from "../src/dispatch.js";
 
 test("validation layers are exported as functions", () => {
@@ -10,6 +10,18 @@ test("validation layers are exported as functions", () => {
   assert.equal(typeof captureScreenshot, "function");
   assert.equal(typeof installAndLaunch, "function");
   assert.equal(typeof runVisualJudge, "function");
+  assert.equal(typeof discoverIosArtifact, "function");
+  assert.equal(typeof discoverAndroidArtifact, "function");
+});
+
+test("discoverAndroidArtifact returns null for missing dir", async () => {
+  const result = await discoverAndroidArtifact("/nonexistent/path/to/android");
+  assert.equal(result, null);
+});
+
+test("discoverIosArtifact returns null for missing dir", async () => {
+  const result = await discoverIosArtifact("/nonexistent/path/to/ios");
+  assert.equal(result, null);
 });
 
 test("DEFAULT_STAGE1_RUBRIC has the expected criteria ids", () => {

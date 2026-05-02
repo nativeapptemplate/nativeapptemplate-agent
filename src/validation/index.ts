@@ -15,3 +15,6 @@ export type { LaunchInput, IosLaunchInput, AndroidLaunchInput, LaunchResult } fr
 
 export { runVisualJudge, DEFAULT_STAGE1_RUBRIC } from "./visual-judge.js";
 export type { VisualJudgeInput, VisualJudgeResult } from "./visual-judge.js";
+
+export { discoverIosArtifact, discoverAndroidArtifact } from "./discover.js";
+export type { IosArtifact, AndroidArtifact } from "./discover.js";
