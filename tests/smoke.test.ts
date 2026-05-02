@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch } from "../src/validation/index.js";
+import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC } from "../src/validation/index.js";
 import { dispatch } from "../src/dispatch.js";
 
 test("validation layers are exported as functions", () => {
@@ -9,6 +9,32 @@ test("validation layers are exported as functions", () => {
   assert.equal(typeof runLayer3, "function");
   assert.equal(typeof captureScreenshot, "function");
   assert.equal(typeof installAndLaunch, "function");
+  assert.equal(typeof runVisualJudge, "function");
+});
+
+test("DEFAULT_STAGE1_RUBRIC has the expected criteria ids", () => {
+  const ids = DEFAULT_STAGE1_RUBRIC.map((c) => c.id);
+  assert.deepEqual(ids, ["domain-match", "no-substrate-leak", "renders-cleanly"]);
+});
+
+test("runVisualJudge short-circuits on launch failure (no sim booted)", async () => {
+  const result = await runVisualJudge({
+    platform: "ios",
+    artifactPath: "/nonexistent/Foo.app",
+    bundleId: "com.example.app",
+    screenshotPath: "/tmp/foo.png",
+    spec: "test",
+    rubric: DEFAULT_STAGE1_RUBRIC,
+  });
+  // No sim → launch fails → result.ok=false, layer3 never runs.
+  assert.equal(typeof result.ok, "boolean");
+  assert.equal(typeof result.launch.ok, "boolean");
+  assert.ok(result.launch.command.length > 0);
+  if (!result.launch.ok) {
+    assert.equal(result.ok, false);
+    assert.equal(result.layer3, undefined);
+    assert.equal(typeof result.error, "string");
+  }
 });
 
 test("runLayer1 returns pass when forbiddenTokens is empty", async () => {
