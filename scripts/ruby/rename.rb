@@ -79,10 +79,14 @@ def build_patterns(from, to)
   to_camel      = camel_case(to)
   from_camel_pl = pluralize(from_camel)
   to_camel_pl   = pluralize(to_camel)
-  from_human_lo = humanize_lower(from)
-  to_human_lo   = humanize_lower(to)
-  from_human_ti = humanize_title(from)
-  to_human_ti   = humanize_title(to)
+  from_human_lo    = humanize_lower(from)
+  to_human_lo      = humanize_lower(to)
+  from_human_ti    = humanize_title(from)
+  to_human_ti      = humanize_title(to)
+  from_human_lo_pl = from_snake_pl.tr("_", " ")
+  to_human_lo_pl   = to_snake_pl.tr("_", " ")
+  from_human_ti_pl = from_human_lo_pl.split(" ").map(&:capitalize).join(" ")
+  to_human_ti_pl   = to_human_lo_pl.split(" ").map(&:capitalize).join(" ")
 
   # Ruby's \b treats `_` as a word char, so \bshop\b doesn't fire
   # inside `shop_id` or `accounts_shopkeeper`. Hand-rolled boundaries:
@@ -120,14 +124,21 @@ def build_patterns(from, to)
     [/#{snake_l}#{Regexp.escape(from.upcase)}(?![A-Za-z])/,    to.upcase],
   ]
 
-  # Humanized display forms, e.g. "item tag" / "Item Tag" from "ItemTag".
-  # Only meaningful when the PascalCase token is multi-word; for single
-  # words the humanized form equals the flat form already handled above.
+  # Humanized display forms, e.g. "item tag" / "Item Tag" / "item tags" /
+  # "Item Tags" from "ItemTag". Only meaningful when the PascalCase token
+  # is multi-word; for single words the humanized form equals the flat
+  # form already handled above. Plural forms come first so "item tags"
+  # isn't partially matched as "item tag" + residual "s".
   if from_human_lo.include?(" ")
     boundary = "(?<![A-Za-z])"
     boundary_r = "(?![A-Za-z])"
-    patterns.unshift([/#{boundary}#{Regexp.escape(from_human_ti)}#{boundary_r}/, to_human_ti])
-    patterns.unshift([/#{boundary}#{Regexp.escape(from_human_lo)}#{boundary_r}/, to_human_lo])
+    human_patterns = [
+      [/#{boundary}#{Regexp.escape(from_human_ti_pl)}#{boundary_r}/, to_human_ti_pl],
+      [/#{boundary}#{Regexp.escape(from_human_lo_pl)}#{boundary_r}/, to_human_lo_pl],
+      [/#{boundary}#{Regexp.escape(from_human_ti)}#{boundary_r}/,    to_human_ti],
+      [/#{boundary}#{Regexp.escape(from_human_lo)}#{boundary_r}/,    to_human_lo],
+    ]
+    patterns = human_patterns + patterns
   end
 
   patterns
