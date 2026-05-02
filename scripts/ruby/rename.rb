@@ -64,6 +64,10 @@ def humanize_title(pascal)
   humanize_lower(pascal).split(" ").map(&:capitalize).join(" ")
 end
 
+def first_char_up(s)
+  s.empty? ? s : s[0].upcase + s[1..]
+end
+
 def build_patterns(from, to)
   from_snake    = snake_case(from)
   to_snake      = snake_case(to)
@@ -83,10 +87,14 @@ def build_patterns(from, to)
   to_human_lo      = humanize_lower(to)
   from_human_ti    = humanize_title(from)
   to_human_ti      = humanize_title(to)
+  from_human_se    = first_char_up(from_human_lo)
+  to_human_se      = first_char_up(to_human_lo)
   from_human_lo_pl = from_snake_pl.tr("_", " ")
   to_human_lo_pl   = to_snake_pl.tr("_", " ")
   from_human_ti_pl = from_human_lo_pl.split(" ").map(&:capitalize).join(" ")
   to_human_ti_pl   = to_human_lo_pl.split(" ").map(&:capitalize).join(" ")
+  from_human_se_pl = first_char_up(from_human_lo_pl)
+  to_human_se_pl   = first_char_up(to_human_lo_pl)
 
   # Ruby's \b treats `_` as a word char, so \bshop\b doesn't fire
   # inside `shop_id` or `accounts_shopkeeper`. Hand-rolled boundaries:
@@ -124,18 +132,24 @@ def build_patterns(from, to)
     [/#{snake_l}#{Regexp.escape(from.upcase)}(?![A-Za-z])/,    to.upcase],
   ]
 
-  # Humanized display forms, e.g. "item tag" / "Item Tag" / "item tags" /
-  # "Item Tags" from "ItemTag". Only meaningful when the PascalCase token
-  # is multi-word; for single words the humanized form equals the flat
-  # form already handled above. Plural forms come first so "item tags"
+  # Humanized display forms — three case shapes per number:
+  #   lower    "item tag"  / "item tags"  (UI body text, prose)
+  #   title    "Item Tag"  / "Item Tags"  (headings, button labels)
+  #   sentence "Item tag"  / "Item tags"  (sentence start, error messages,
+  #                                        OpenAPI descriptions)
+  # Only meaningful when the PascalCase token is multi-word; for single
+  # words all three humanized forms collapse to the flat / Pascal forms
+  # already handled above. Plural patterns come first so "item tags"
   # isn't partially matched as "item tag" + residual "s".
   if from_human_lo.include?(" ")
     boundary = "(?<![A-Za-z])"
     boundary_r = "(?![A-Za-z])"
     human_patterns = [
       [/#{boundary}#{Regexp.escape(from_human_ti_pl)}#{boundary_r}/, to_human_ti_pl],
-      [/#{boundary}#{Regexp.escape(from_human_lo_pl)}#{boundary_r}/, to_human_lo_pl],
       [/#{boundary}#{Regexp.escape(from_human_ti)}#{boundary_r}/,    to_human_ti],
+      [/#{boundary}#{Regexp.escape(from_human_se_pl)}#{boundary_r}/, to_human_se_pl],
+      [/#{boundary}#{Regexp.escape(from_human_se)}#{boundary_r}/,    to_human_se],
+      [/#{boundary}#{Regexp.escape(from_human_lo_pl)}#{boundary_r}/, to_human_lo_pl],
       [/#{boundary}#{Regexp.escape(from_human_lo)}#{boundary_r}/,    to_human_lo],
     ]
     patterns = human_patterns + patterns
