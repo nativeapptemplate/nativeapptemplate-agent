@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC, discoverIosArtifact, discoverAndroidArtifact, runStage1Visual } from "../src/validation/index.js";
 import { dispatch } from "../src/dispatch.js";
+import { runReviewer } from "../src/agents/reviewer.js";
 
 test("validation layers are exported as functions", () => {
   assert.equal(typeof runLayer1, "function");
@@ -151,6 +152,17 @@ test("installAndLaunch returns a structured failure when no sim is booted (iOS)"
   if (!result.ok) {
     assert.equal(typeof result.error, "string");
   }
+});
+
+test("runReviewer in stub mode passes without touching disk", async () => {
+  const result = await runReviewer({
+    domain: { slug: "x", displayName: "X", entities: [], renamePlan: [], jsonApiContract: {} },
+    rails: { platform: "rails", outDir: "/nonexistent/rails", filesTouched: 0, renamedFrom: [] },
+    ios: { platform: "ios", outDir: "/nonexistent/ios", filesTouched: 0, renamedFrom: [] },
+    android: { platform: "android", outDir: "/nonexistent/android", filesTouched: 0, renamedFrom: [] },
+  });
+  assert.equal(result.contractParity, "pass");
+  assert.deepEqual(result.diffs, []);
 });
 
 test("dispatch runs planner + workers + reviewer + judge end-to-end (stub pipeline)", async () => {
