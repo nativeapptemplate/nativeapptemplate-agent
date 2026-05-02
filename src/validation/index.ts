@@ -18,3 +18,6 @@ export type { VisualJudgeInput, VisualJudgeResult } from "./visual-judge.js";
 
 export { discoverIosArtifact, discoverAndroidArtifact } from "./discover.js";
 export type { IosArtifact, AndroidArtifact } from "./discover.js";
+
+export { runStage1Visual } from "./stage1.js";
+export type { Stage1VisualInput, Stage1VisualResult } from "./stage1.js";

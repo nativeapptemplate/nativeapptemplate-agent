@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC, discoverIosArtifact, discoverAndroidArtifact } from "../src/validation/index.js";
+import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC, discoverIosArtifact, discoverAndroidArtifact, runStage1Visual } from "../src/validation/index.js";
 import { dispatch } from "../src/dispatch.js";
 
 test("validation layers are exported as functions", () => {
@@ -12,6 +12,25 @@ test("validation layers are exported as functions", () => {
   assert.equal(typeof runVisualJudge, "function");
   assert.equal(typeof discoverIosArtifact, "function");
   assert.equal(typeof discoverAndroidArtifact, "function");
+  assert.equal(typeof runStage1Visual, "function");
+});
+
+test("runStage1Visual returns structured failure when artifacts not built", async () => {
+  const result = await runStage1Visual({
+    iosDir: "/nonexistent/ios",
+    androidDir: "/nonexistent/android",
+    spec: "test",
+  });
+  assert.equal(result.ios?.ok, false);
+  assert.equal(result.android?.ok, false);
+  assert.match(result.ios?.error ?? "", /not discovered/i);
+  assert.match(result.android?.error ?? "", /not discovered/i);
+});
+
+test("runStage1Visual returns empty result when no platforms requested", async () => {
+  const result = await runStage1Visual({ spec: "test" });
+  assert.equal(result.ios, undefined);
+  assert.equal(result.android, undefined);
 });
 
 test("discoverAndroidArtifact returns null for missing dir", async () => {
