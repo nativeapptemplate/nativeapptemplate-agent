@@ -143,7 +143,7 @@ export async function runPlanner(spec: string): Promise<DomainSpec> {
 const delay = (ms: number): Promise<void> => new Promise((r) => { setTimeout(r, ms); });
 
 async function runStubPlanner(spec: string): Promise<DomainSpec> {
-  trace("planner", "(stub mode — NATEMPLATE_STUB_ALL or NATEMPLATE_STUB_PLANNER set)");
+  trace("planner", "(stub mode — NATIVEAPPTEMPLATE_STUB_ALL or NATIVEAPPTEMPLATE_STUB_PLANNER set)");
   await delay(200);
   trace("planner", "extracting entities and fields");
   await delay(250);
