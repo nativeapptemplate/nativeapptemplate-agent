@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runLayer1, runLayer2, runLayer3, captureScreenshot } from "../src/validation/index.js";
+import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch } from "../src/validation/index.js";
 import { dispatch } from "../src/dispatch.js";
 
 test("validation layers are exported as functions", () => {
@@ -8,6 +8,7 @@ test("validation layers are exported as functions", () => {
   assert.equal(typeof runLayer2, "function");
   assert.equal(typeof runLayer3, "function");
   assert.equal(typeof captureScreenshot, "function");
+  assert.equal(typeof installAndLaunch, "function");
 });
 
 test("runLayer1 returns pass when forbiddenTokens is empty", async () => {
@@ -71,6 +72,25 @@ test("captureScreenshot returns a structured failure when no sim is booted", asy
   assert.equal(typeof result.command, "string");
   assert.equal(typeof result.durationMs, "number");
   assert.ok(result.command.includes("xcrun simctl"));
+  if (!result.ok) {
+    assert.equal(typeof result.error, "string");
+  }
+});
+
+test("installAndLaunch returns a structured failure when no sim is booted (iOS)", async () => {
+  const result = await installAndLaunch({
+    platform: "ios",
+    appPath: "/nonexistent/path/to/App.app",
+    bundleId: "com.example.app",
+    timeoutMs: 5_000,
+  });
+  // Either no sim booted / missing .app → ok=false, or somehow it succeeded
+  // (unlikely with a nonexistent path). Either way the result shape must
+  // be well-formed.
+  assert.equal(typeof result.ok, "boolean");
+  assert.equal(typeof result.command, "string");
+  assert.equal(typeof result.durationMs, "number");
+  assert.ok(result.command.includes("xcrun simctl install"));
   if (!result.ok) {
     assert.equal(typeof result.error, "string");
   }
