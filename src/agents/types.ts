@@ -43,4 +43,17 @@ export type ReviewerResult = {
 export type JudgeResult = {
   overallPass: boolean;
   summary: string;
+  visual?: VisualJudgeReport;
+};
+
+export type VisualJudgeReport = {
+  ios?: VisualJudgePlatformReport;
+  android?: VisualJudgePlatformReport;
+};
+
+export type VisualJudgePlatformReport = {
+  pass: boolean;
+  screenshotPath?: string;
+  scores?: readonly { criterionId: string; pass: boolean; rationale: string }[];
+  error?: string;
 };
