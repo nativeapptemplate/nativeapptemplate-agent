@@ -1,14 +1,11 @@
-import { resolve, join } from "node:path";
+import { resolve } from "node:path";
 import { trace } from "../trace.js";
 import { isStub } from "../stub.js";
 import { runLayer1 } from "../validation/layer1.js";
-import { runLayer2 } from "../validation/layer2.js";
-import {
-  runVisualJudge,
-  DEFAULT_STAGE1_RUBRIC,
-  type VisualJudgeResult,
-} from "../validation/visual-judge.js";
+import { runLayer2, type Layer2Mode } from "../validation/layer2.js";
+import { runStage1Visual } from "../validation/stage1.js";
 import type { Layer3Criterion } from "../validation/layer3.js";
+import type { VisualJudgeResult } from "../validation/visual-judge.js";
 import type {
   DomainSpec,
   JudgeResult,
@@ -24,12 +21,16 @@ export type JudgeInput = {
   ios: WorkerResult;
   android: WorkerResult;
   reviewer: ReviewerResult;
+  layer2Mode?: Layer2Mode;
   visual?: VisualJudgeConfig;
 };
 
+// outDir-based: runJudge calls runStage1Visual which discovers the build
+// artifact + identifier from each provided platform dir post-Layer-2-build.
+// Caller must enable layer2Mode: "build" for the discovery to find anything.
 export type VisualJudgeConfig = {
-  ios?: { artifactPath: string; bundleId: string };
-  android?: { artifactPath: string; packageName: string };
+  iosDir?: string;
+  androidDir?: string;
   screenshotDir?: string;
   rubric?: readonly Layer3Criterion[];
   spec?: string;
@@ -47,13 +48,14 @@ type PlatformReport = {
 export async function runJudge(input: JudgeInput): Promise<JudgeResult> {
   if (isStub("judge")) return runStubJudge();
 
+  const layer2Mode: Layer2Mode = input.layer2Mode ?? "fast";
   trace("judge", "Layer 1 (structural) — scanning for leftover tokens");
-  trace("judge", "Layer 2 (runtime) — validating toolchains load");
+  trace("judge", `Layer 2 (runtime, ${layer2Mode} mode) — validating toolchains load`);
 
   const reports = await Promise.all([
-    evaluate(input.rails),
-    evaluate(input.ios),
-    evaluate(input.android),
+    evaluate(input.rails, layer2Mode),
+    evaluate(input.ios, layer2Mode),
+    evaluate(input.android, layer2Mode),
   ]);
 
   for (const r of reports) {
@@ -64,7 +66,7 @@ export async function runJudge(input: JudgeInput): Promise<JudgeResult> {
 
   let visualReport: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport } | undefined;
   let layer3Summary = "Layer 3 skipped";
-  if (input.visual && (input.visual.ios || input.visual.android)) {
+  if (input.visual && (input.visual.iosDir || input.visual.androidDir)) {
     visualReport = await runVisualPhase(input.visual, input.domain);
     layer3Summary = formatLayer3Summary(visualReport);
   } else {
@@ -90,47 +92,31 @@ async function runVisualPhase(
   config: VisualJudgeConfig,
   domain: DomainSpec,
 ): Promise<{ ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport }> {
-  const screenshotDir = config.screenshotDir ?? resolve(process.cwd(), "tmp", "screenshots", domain.slug);
-  const rubric = config.rubric ?? DEFAULT_STAGE1_RUBRIC;
-  const spec = config.spec ?? domain.displayName;
-
   const platforms: Array<"ios" | "android"> = [];
-  if (config.ios) platforms.push("ios");
-  if (config.android) platforms.push("android");
+  if (config.iosDir) platforms.push("ios");
+  if (config.androidDir) platforms.push("android");
 
-  trace("judge", `Layer 3 (semantic) — judging ${platforms.join(" + ")} home screen against ${rubric.length}-criterion rubric`);
+  const rubric = config.rubric;
+  trace("judge", `Layer 3 (semantic) — judging ${platforms.join(" + ")} home screen against rubric`);
 
-  const results = await Promise.all(platforms.map(async (platform) => {
-    const cfg = platform === "ios" ? config.ios! : config.android!;
-    const screenshotPath = join(screenshotDir, `${platform}-home.png`);
-    const visualResult = await runVisualJudge(
-      platform === "ios"
-        ? {
-            platform: "ios",
-            artifactPath: cfg.artifactPath,
-            bundleId: (cfg as { bundleId: string }).bundleId,
-            screenshotPath,
-            spec,
-            rubric,
-          }
-        : {
-            platform: "android",
-            artifactPath: cfg.artifactPath,
-            packageName: (cfg as { packageName: string }).packageName,
-            screenshotPath,
-            spec,
-            rubric,
-          },
-    );
-    trace(
-      "judge",
-      `Layer 3 ${platform}: ${visualResult.ok ? "PASS" : "FAIL"}` +
-        (visualResult.error ? ` — ${visualResult.error}` : ""),
-    );
-    return [platform, toPlatformReport(visualResult)] as const;
-  }));
+  const stage1 = await runStage1Visual({
+    ...(config.iosDir !== undefined ? { iosDir: config.iosDir } : {}),
+    ...(config.androidDir !== undefined ? { androidDir: config.androidDir } : {}),
+    spec: config.spec ?? domain.displayName,
+    ...(rubric !== undefined ? { rubric } : {}),
+    ...(config.screenshotDir !== undefined ? { screenshotDir: config.screenshotDir } : {}),
+  });
 
-  return Object.fromEntries(results);
+  const report: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport } = {};
+  if (stage1.ios) {
+    report.ios = toPlatformReport(stage1.ios);
+    trace("judge", `Layer 3 ios: ${stage1.ios.ok ? "PASS" : "FAIL"}` + (stage1.ios.error ? ` — ${stage1.ios.error}` : ""));
+  }
+  if (stage1.android) {
+    report.android = toPlatformReport(stage1.android);
+    trace("judge", `Layer 3 android: ${stage1.android.ok ? "PASS" : "FAIL"}` + (stage1.android.error ? ` — ${stage1.android.error}` : ""));
+  }
+  return report;
 }
 
 function toPlatformReport(result: VisualJudgeResult): VisualJudgePlatformReport {
@@ -165,12 +151,12 @@ async function runStubJudge(): Promise<JudgeResult> {
   return { overallPass: true, summary: "Layer 1/2/3 PASS" };
 }
 
-async function evaluate(worker: WorkerResult): Promise<PlatformReport> {
+async function evaluate(worker: WorkerResult, layer2Mode: Layer2Mode): Promise<PlatformReport> {
   const outDir = resolve(process.cwd(), worker.outDir);
 
   const [layer1, layer2] = await Promise.all([
     runLayer1({ projectDir: outDir, forbiddenTokens: worker.renamedFrom }),
-    runLayer2({ platform: worker.platform, outDir }),
+    runLayer2({ platform: worker.platform, outDir, mode: layer2Mode }),
   ]);
 
   return {
