@@ -6,3 +6,6 @@ export type { Layer2Input, Layer2Result } from "./layer2.js";
 
 export { runLayer3 } from "./layer3.js";
 export type { Layer3Criterion, Layer3Input, Layer3Score, Layer3Result } from "./layer3.js";
+
+export { captureScreenshot } from "./capture.js";
+export type { CapturePlatform, CaptureInput, CaptureResult } from "./capture.js";
