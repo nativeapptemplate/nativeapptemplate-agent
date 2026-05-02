@@ -108,7 +108,12 @@ export async function runPlanner(spec: string): Promise<DomainSpec> {
     return runStubPlanner(spec);
   }
 
-  const client = new Anthropic();
+  // Prefer a dedicated workspace key when set so the agent's spend, rate
+  // limits, and revocability are isolated from the user's other Anthropic
+  // SDK / Claude Code usage. Falls back to ANTHROPIC_API_KEY for the
+  // single-key default path.
+  const apiKey = process.env['NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY'] ?? process.env['ANTHROPIC_API_KEY'];
+  const client = new Anthropic({ apiKey });
   trace("planner", `calling ${MODEL} to extract domain`);
 
   const response = await client.messages.create({
