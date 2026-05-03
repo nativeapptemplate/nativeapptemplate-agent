@@ -47,7 +47,7 @@ test("discoverIosArtifact returns null for missing dir", async () => {
 
 test("DEFAULT_STAGE1_RUBRIC has the expected criteria ids", () => {
   const ids = DEFAULT_STAGE1_RUBRIC.map((c) => c.id);
-  assert.deepEqual(ids, ["domain-match", "no-substrate-leak", "renders-cleanly"]);
+  assert.deepEqual(ids, ["no-substrate-leak", "renders-cleanly"]);
 });
 
 test("runVisualJudge short-circuits on launch failure (no sim booted)", async () => {

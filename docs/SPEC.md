@@ -126,7 +126,7 @@ Even Stage 1 is enough to surface silent field renames: a field renamed on the s
 - Parse the original NL spec into a structured "expected domain" (entities, fields, relationships, key verbs).
 - Read the generated Rails code and ask Opus 4.7 to score, on a structured rubric (Yes/No per criterion with justification), whether the implementation expresses the expected domain.
 - Repeat separately for iOS copy / labels and Android copy / labels, derived from `Localizable.strings` and `strings.xml`.
-- For UI specifically, Opus 4.7 vision reads the simulator and emulator screenshots captured in Layer 2 / section-5 Stage 1 and scores: "does this screen read as a [clinic queue / restaurant waitlist / task tracker] to a real user?"
+- For UI specifically, Opus 4.7 vision reads the simulator and emulator screenshots captured in Layer 2. **Stage 1** scores the post-launch screen for substrate-leak detection and render sanity (catches "the app still says 'Shop' everywhere"). **Stage 2** navigates past onboarding/login via mobile-mcp to the actual domain UI and scores: "does this screen read as a [clinic queue / restaurant waitlist / task tracker] to a real user?"
 
 Guardrails against known LLM-as-judge weaknesses:
 - Rubrics are structured Yes/No-per-criterion, never free-form scoring, to reduce the "well, I guess that's fine" drift LLM judges default to.

@@ -95,15 +95,20 @@ export async function runVisualJudge(input: VisualJudgeInput): Promise<VisualJud
   };
 }
 
-// Default Stage 1 rubric for home-screen judging — three Yes/No criteria
-// covering domain match, substrate-leak detection, and basic render sanity.
-// Phrased so pass=true is the desired state on every criterion.
+// Default Stage 1 rubric — two Yes/No criteria covering substrate-leak
+// detection and basic render sanity. Phrased so pass=true is the desired
+// state on every criterion.
+//
+// Per docs/SPEC.md, Stage 1 captures the post-launch screen and is scoped
+// to "catch egregious rename failures" — substrate-leak detection plus
+// 'does anything render at all'. Domain-semantic matching (e.g. "does this
+// read as a clinic queue?") requires reaching the actual domain UI past
+// onboarding/login and lives in Stage 2 (mobile-mcp navigation), where
+// the agent can drive the app to a list/detail/form screen before
+// judging. Adding a domain-match criterion here would false-fail any
+// substrate that ships with onboarding-before-domain-UI — which is the
+// substrate's intentional design.
 export const DEFAULT_STAGE1_RUBRIC: readonly Layer3Criterion[] = [
-  {
-    id: "domain-match",
-    question:
-      "Does this screen unambiguously read as the SaaS product described in the spec, to a typical user seeing it for the first time?",
-  },
   {
     id: "no-substrate-leak",
     question:
