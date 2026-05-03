@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { scrubbedEnv } from "../env.js";
+import { resolveAdbPath } from "../adb.js";
 
 export type LaunchResult = {
   ok: boolean;
@@ -78,11 +79,12 @@ async function installAndLaunchIos(appPath: string, bundleId: string, timeoutMs:
 }
 
 async function installAndLaunchAndroid(apkPath: string, packageName: string, timeoutMs: number): Promise<LaunchResult> {
+  const adb = resolveAdbPath();
   const started = Date.now();
-  const installCmd = `adb install -r ${apkPath}`;
-  const launchCmd = `adb shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
+  const installCmd = `${adb} install -r ${apkPath}`;
+  const launchCmd = `${adb} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
 
-  const install = await runOnce("adb", ["install", "-r", apkPath], timeoutMs);
+  const install = await runOnce(adb, ["install", "-r", apkPath], timeoutMs);
   if (!install.ok) {
     return {
       ok: false,
@@ -92,7 +94,7 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
     };
   }
   const launch = await runOnce(
-    "adb",
+    adb,
     ["shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"],
     timeoutMs,
   );
