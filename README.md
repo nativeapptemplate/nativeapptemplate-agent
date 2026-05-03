@@ -114,6 +114,9 @@ The agent will also be available as a Claude Code plugin.
 
 - `NATIVEAPPTEMPLATE_VISUAL=1` — opts the run into Stage 1 visual judging (Layer 3). When set, Layer 2 runs in **build mode** instead of fast mode (full `xcodebuild build` + `./gradlew assembleDebug`), then for each platform the agent installs the app on the booted sim/emulator, captures the home screen, and judges it with Opus 4.7 vision against `DEFAULT_STAGE1_RUBRIC`. Adds 60-180s per platform depending on cold-build time. Requires a sim/emulator booted for each platform you want judged. Off by default — `npm run dev` keeps the existing fast path.
 - `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` — dedicated workspace key, see [Security](#security).
+- `ANDROID_SERIAL` — when more than one Android device/emulator is attached (e.g. a physical device plus a running emulator), `adb` standard practice is to set `ANDROID_SERIAL=<serial>` to disambiguate. The agent honors this transparently because it runs `adb` directly. Run `adb devices` to list serials. Visual-judge runs with multiple Android targets attached will error with `more than one device/emulator` if this isn't set.
+
+The agent resolves `adb` to a known-good binary in this priority order: `$ANDROID_HOME/platform-tools/adb`, `$ANDROID_SDK_ROOT/platform-tools/adb`, `~/Library/Android/sdk/platform-tools/adb` (Android Studio default), `/Applications/android-sdk-macosx/platform-tools/adb`, `/opt/homebrew/bin/adb`, `/usr/local/bin/adb`, then PATH. This avoids surprises like a stale `~/.apportable/SDK/bin/adb` (i386, won't exec on Apple Silicon) shadowing a working `adb` on PATH.
 
 ## Validation (three layers)
 

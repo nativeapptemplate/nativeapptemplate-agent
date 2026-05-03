@@ -3,6 +3,7 @@ import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { scrubbedEnv } from "../env.js";
+import { resolveAdbPath } from "../adb.js";
 
 export type CapturePlatform = "ios" | "android";
 
@@ -97,12 +98,13 @@ async function captureIos(outPath: string, timeoutMs: number): Promise<CaptureRe
 }
 
 async function captureAndroid(outPath: string, timeoutMs: number): Promise<CaptureResult> {
-  const command = `adb exec-out screencap -p > ${outPath}`;
+  const adb = resolveAdbPath();
+  const command = `${adb} exec-out screencap -p > ${outPath}`;
   const started = Date.now();
   return new Promise((resolvePromise) => {
     let child;
     try {
-      child = spawn("adb", ["exec-out", "screencap", "-p"], {
+      child = spawn(adb, ["exec-out", "screencap", "-p"], {
         env: scrubbedEnv(),
         stdio: ["ignore", "pipe", "pipe"],
       });
