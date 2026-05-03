@@ -77,13 +77,15 @@ export async function runJudge(input: JudgeInput): Promise<JudgeResult> {
   const visualPass = visualReport
     ? Object.values(visualReport).every((r): r is VisualJudgePlatformReport => Boolean(r) && r!.pass)
     : true;
-  const overallPass = layer1Layer2Pass && visualPass;
+  const reviewerPass = input.reviewer.contractParity === "pass";
+  const overallPass = layer1Layer2Pass && visualPass && reviewerPass;
   const l1Total = reports.filter((r) => r.layer1Pass).length;
   const l2Total = reports.filter((r) => r.layer2Pass).length;
+  const reviewerSummary = reviewerPass ? "reviewer PASS" : "reviewer FAIL";
 
   return {
     overallPass,
-    summary: `Layer 1 ${l1Total}/3 pass · Layer 2 ${l2Total}/3 pass · ${layer3Summary}`,
+    summary: `Layer 1 ${l1Total}/3 pass · Layer 2 ${l2Total}/3 pass · ${layer3Summary} · ${reviewerSummary}`,
     ...(visualReport ? { visual: visualReport } : {}),
   };
 }
