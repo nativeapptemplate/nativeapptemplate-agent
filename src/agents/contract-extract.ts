@@ -7,6 +7,104 @@ export type Endpoint = {
   path: string;
 };
 
+export type ContractDiff = {
+  // Endpoints in Rails not implemented by EITHER mobile client. Informational
+  // only — Rails has admin / server-only endpoints that aren't called from
+  // mobile apps; this list helps surface what's available but unused.
+  railsOnly: Endpoint[];
+  // Endpoints called by a mobile client that Rails doesn't expose. Real
+  // failure: client will get 404 at runtime.
+  iosOrphan: Endpoint[];
+  androidOrphan: Endpoint[];
+  // Endpoints implemented by exactly one mobile client. Real failure if
+  // both should be in feature parity (per "mobile clients must agree").
+  iosOnly: Endpoint[];
+  androidOnly: Endpoint[];
+};
+
+export type CanonicalizationContext = {
+  // Lowercased rename target for "Shopkeeper" — the API role segment in the
+  // URL (`/vet/...` for Vet, `/shopkeeper/...` for the unrenamed substrate).
+  // Defaults to "shopkeeper" if the rename plan doesn't include Shopkeeper.
+  role: string;
+};
+
+const TENANT_PLACEHOLDER = "{account_id}";
+const UUID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+const OPENAPI_PARAM_RE = /^\{[^}]+\}$/;
+const SWIFT_INTERPOLATION_RE = /^\\\([^)]+\)$/;
+
+// Strip tenant prefix, /api/v1, role segment, and normalize path parameter
+// names to {*} so the three platforms' encodings reduce to the same
+// comparable string. Rails OpenAPI server URLs (e.g. `/api/v1/vet`) are
+// already factored out by extractRailsContract, so Rails endpoints arrive
+// here with just the per-operation path.
+export function canonicalizeEndpoint(
+  endpoint: Endpoint,
+  ctx: CanonicalizationContext,
+): Endpoint {
+  const role = ctx.role.toLowerCase();
+  const segments = endpoint.path.split("/").filter(Boolean);
+
+  // Drop tenant segment (literal placeholder or runtime UUID).
+  if (segments[0] === TENANT_PLACEHOLDER || (segments[0] && UUID_RE.test(segments[0]))) {
+    segments.shift();
+  }
+  // Drop /api/v<N>/.
+  if (segments[0] === "api") {
+    segments.shift();
+    if (segments[0] && /^v\d+$/.test(segments[0])) segments.shift();
+  }
+  // Drop role segment.
+  if (segments[0] === role) segments.shift();
+
+  // Normalize path-param names to {*} so {shopId} === {id} === \(id).
+  const normalized = segments.map((s) =>
+    OPENAPI_PARAM_RE.test(s) || SWIFT_INTERPOLATION_RE.test(s) ? "{*}" : s,
+  );
+
+  return { method: endpoint.method, path: "/" + normalized.join("/") };
+}
+
+// Three-way diff. Endpoints are first canonicalized so cross-platform
+// encoding differences don't show up as drift.
+export function diffContracts(
+  rails: readonly Endpoint[],
+  ios: readonly Endpoint[],
+  android: readonly Endpoint[],
+  ctx: CanonicalizationContext,
+): ContractDiff {
+  const canon = (e: Endpoint) => canonicalizeEndpoint(e, ctx);
+  const key = (e: Endpoint) => `${e.method} ${e.path}`;
+
+  const railsSet = new Map(rails.map(canon).map((e) => [key(e), e]));
+  const iosSet = new Map(ios.map(canon).map((e) => [key(e), e]));
+  const androidSet = new Map(android.map(canon).map((e) => [key(e), e]));
+
+  const railsOnly: Endpoint[] = [];
+  for (const [k, e] of railsSet) {
+    if (!iosSet.has(k) && !androidSet.has(k)) railsOnly.push(e);
+  }
+  const iosOrphan: Endpoint[] = [];
+  for (const [k, e] of iosSet) {
+    if (!railsSet.has(k)) iosOrphan.push(e);
+  }
+  const androidOrphan: Endpoint[] = [];
+  for (const [k, e] of androidSet) {
+    if (!railsSet.has(k)) androidOrphan.push(e);
+  }
+  const iosOnly: Endpoint[] = [];
+  for (const [k, e] of iosSet) {
+    if (railsSet.has(k) && !androidSet.has(k)) iosOnly.push(e);
+  }
+  const androidOnly: Endpoint[] = [];
+  for (const [k, e] of androidSet) {
+    if (railsSet.has(k) && !iosSet.has(k)) androidOnly.push(e);
+  }
+
+  return { railsOnly, iosOrphan, androidOrphan, iosOnly, androidOnly };
+}
+
 export type RailsContract = {
   openapiVersion: string;
   title: string;

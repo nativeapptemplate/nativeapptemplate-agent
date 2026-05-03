@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC, discoverIosArtifact, discoverAndroidArtifact, runStage1Visual } from "../src/validation/index.js";
 import { dispatch } from "../src/dispatch.js";
 import { runReviewer } from "../src/agents/reviewer.js";
+import { canonicalizeEndpoint, diffContracts } from "../src/agents/contract-extract.js";
 
 test("validation layers are exported as functions", () => {
   assert.equal(typeof runLayer1, "function");
@@ -163,6 +164,38 @@ test("runReviewer in stub mode passes without touching disk", async () => {
   });
   assert.equal(result.contractParity, "pass");
   assert.deepEqual(result.diffs, []);
+});
+
+test("canonicalizeEndpoint reduces all three platform encodings to the same string", async () => {
+  const ctx = { role: "vet" };
+  // Rails OpenAPI: server is /api/v1/vet, path is just /clinics
+  const rails = canonicalizeEndpoint({ method: "GET", path: "/clinics" }, ctx);
+  // iOS Request struct: "/vet/shops/\(id)" (literal Swift interpolation in extracted string)
+  const ios = canonicalizeEndpoint({ method: "GET", path: "/vet/clinics/\\(id)" }, ctx);
+  // Android Retrofit: literal full path
+  const android = canonicalizeEndpoint(
+    { method: "GET", path: "{account_id}/api/v1/vet/clinics/{id}" },
+    ctx,
+  );
+  assert.equal(rails.path, "/clinics");
+  assert.equal(ios.path, "/clinics/{*}");
+  assert.equal(android.path, "/clinics/{*}");
+});
+
+test("diffContracts surfaces ios orphan when client calls endpoint not in rails", async () => {
+  const ctx = { role: "vet" };
+  const rails = [{ method: "GET" as const, path: "/clinics" }];
+  const ios = [
+    { method: "GET" as const, path: "/vet/clinics" },
+    { method: "DELETE" as const, path: "/vet/clinics/\\(id)/reset" },
+  ];
+  const android = [{ method: "GET" as const, path: "{account_id}/api/v1/vet/clinics" }];
+  const diff = diffContracts(rails, ios, android, ctx);
+  assert.equal(diff.iosOrphan.length, 1);
+  assert.equal(diff.iosOrphan[0]?.method, "DELETE");
+  assert.equal(diff.iosOrphan[0]?.path, "/clinics/{*}/reset");
+  assert.equal(diff.iosOnly.length, 0);
+  assert.equal(diff.androidOnly.length, 0);
 });
 
 test("dispatch runs planner + workers + reviewer + judge end-to-end (stub pipeline)", async () => {
