@@ -39,7 +39,26 @@ It will:
 
 ## Demo
 
-*90-second end-to-end run — coming after the hackathon wrap on 2026-04-27.*
+Three demo specs, both adapt and replace paths, all four validation layers green end-to-end:
+
+| Spec | Domain entity (post-rename) | Path | Result |
+|---|---|---|---|
+| `"a walk-in clinic queue for small veterinary practices"` | `ItemTag → Patient`, `Shop → Clinic`, `Shopkeeper → Vet` | adapt | Layer 1 3/3 · Layer 2 3/3 · Layer 3 2/2 · Reviewer PASS |
+| `"a restaurant waitlist for casual dining"` | `Shop → Restaurant`, `Shopkeeper → Host` | adapt | Layer 1 3/3 · Layer 2 3/3 · Layer 3 2/2 · Reviewer PASS |
+| `"a personal task tracker with due dates"` | `ItemTag → Todo` (replaces queue entry entirely) | replace | Layer 1 3/3 · Layer 2 3/3 · Layer 3 2/2 · Reviewer PASS |
+
+Layer 2 ran in build mode — real `xcodebuild build` and `./gradlew assembleDebug`, full app builds installed on iPhone 17 simulator and Android emulator. Layer 3 captured the home-screen via `xcrun simctl io booted screenshot` / `adb exec-out screencap` and judged against the rubric using Opus 4.7 vision (median of 3 samples per criterion).
+
+The agent works on either the **free (MIT) edition** or the **paid edition** without code changes — the same pipeline handles both substrates; multi-tenant features (org switching, invitations, role permissions) survive the rename pipeline when targeting paid.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/demo-ios-vet-clinic-queue.png" width="300"><br><sub>iOS — Vet Clinic Queue welcome screen</sub></td>
+    <td align="center"><img src="docs/images/demo-android-vet-clinic-queue.png" width="300"><br><sub>Android — Vet Clinic Queue welcome screen</sub></td>
+  </tr>
+</table>
+
+Both screenshots are real captures from the booted iOS Simulator and Android emulator post-`./gradlew assembleDebug` / `xcodebuild build`, after the agent installed and launched the generated app.
 
 ## Architecture
 

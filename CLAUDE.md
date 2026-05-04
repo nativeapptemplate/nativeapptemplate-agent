@@ -30,13 +30,13 @@ Project-wide Claude Code instructions. Keep this file short — it's loaded into
 
 ## Substrate (what the agent operates on)
 
-MIT-licensed free edition only — never reach into the paid repos. The three substrate repos can live anywhere on the developer's machine; point the agent at them via environment variables:
+The agent works on either the free (MIT-licensed) edition or the paid edition — the same code path handles both, validated end-to-end. Pick which substrate to use by pointing the env vars at the corresponding repos:
 
-- `$NATIVEAPPTEMPLATE_API` — Rails 8.1 API repo (`nativeapptemplateapi`, Ruby 7,687 LOC)
-- `$NATIVEAPPTEMPLATE_IOS` — SwiftUI iOS repo (`NativeAppTemplate-Free-iOS`, Swift 15,311 LOC, iOS 26.2+)
-- `$NATIVEAPPTEMPLATE_ANDROID` — Jetpack Compose Android repo (`NativeAppTemplate-Free-Android`, Kotlin 19,521 LOC, API 26+)
+- `$NATIVEAPPTEMPLATE_API` — Rails 8.1 API repo (`nativeapptemplateapi`, single repo serves both editions; multi-tenancy + invitations are conditional features)
+- `$NATIVEAPPTEMPLATE_IOS` — SwiftUI iOS repo. Free: `NativeAppTemplate-Free-iOS` (Swift 15,311 LOC). Paid: `NativeAppTemplate` (Swift 23,003 LOC, adds org switching, invitations, role permissions).
+- `$NATIVEAPPTEMPLATE_ANDROID` — Jetpack Compose Android repo. Free: `NativeAppTemplate-Free-Android` (Kotlin 19,521 LOC). Paid: `NativeAppTemplate` (Kotlin 28,401 LOC).
 
-Combined ~42.5k LOC of application code. Shared JSON:API contract between all three.
+The renamer's substitution rules (Shop / Shopkeeper / ItemTag / NativeAppTemplate) apply identically to both editions. Paid-only concepts (Account, Member, Invitation) aren't in the rename plan, so paid features survive the generation intact. Both editions hit the same Rails OpenAPI server, so the reviewer's three-way diff works against either.
 
 **Substrate repos are read-only from the agent's perspective.** The agent never commits, pushes, edits, or runs destructive commands inside the substrate directories. To customize, the agent copies the substrate into `./out/<spec-slug>/{rails,ios,android}/` as fresh git-initialized project directories, and works exclusively inside `./out/` thereafter. Treat the substrate paths the same way you'd treat a read-only mount.
 
