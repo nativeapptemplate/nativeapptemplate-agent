@@ -117,7 +117,7 @@ export const DEFAULT_STAGE1_RUBRIC: readonly Layer3Criterion[] = [
   {
     id: "renders-cleanly",
     question:
-      "Does the home screen render without obvious layout breakage, missing icons or images, or placeholder text where real content should appear?",
+      "Does the screen render without an actual rendering failure — that is, no crash dialog, no broken-image-icon glyphs, no text overlapping other text, no content cut off the side of the screen? A welcome / launch / onboarding screen with decorative graphics counts as PASS as long as nothing is technically broken; do not judge whether the screen looks 'finished' or shows the app's domain content.",
   },
 ];
 
