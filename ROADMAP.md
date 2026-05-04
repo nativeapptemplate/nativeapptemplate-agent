@@ -39,7 +39,7 @@ This track is permanent. It is not a free trial of a commercial product — it i
 
 A chat interface on nativeapptemplate.com that runs the agent for paying users, with two things the open-source CLI doesn't give them:
 
-1. A path to the **paid-edition substrate**, so generated apps include multi-tenancy, invitations, and role-based access without any extra wiring.
+1. A path to the **paid-edition substrate**, so generated apps include multi-tenancy, invitations, and role-based access without any extra wiring. **Validated end-to-end during v0.1 development** — the agent's same code path handles both free and paid substrates by choosing which repos the env vars point at; multi-tenant features (org switching, invitations, role permissions) survive the rename pipeline intact.
 2. Convenience features that come from running on our infrastructure — generation history, shareable results, priority execution.
 
 The hosted version is a natural follow-on, not the primary product. It's the option for people who want the paid substrate and don't want to manage the agent themselves.
