@@ -160,9 +160,15 @@ end
 
 all_patterns = plan.flat_map { |p| build_patterns(p.fetch("from"), p.fetch("to")) }
 
-def skip?(path)
-  return true if SKIP_DIR_SEGMENTS.any? { |d| path.include?("/#{d}/") || path.end_with?("/#{d}") }
-  return true if SKIP_SUBPATHS.any? { |sp| path.include?("/#{sp}") }
+def skip?(path, root)
+  # Compare against the path RELATIVE to the project root, not the absolute
+  # path. Otherwise SKIP_DIR_SEGMENTS like "tmp" / "log" / "build" silently
+  # match user-cwd ancestors (e.g. /tmp/myproject/...) and skip every file.
+  rel = path.sub(/\A#{Regexp.escape(root)}\/?/, "")
+  return false if rel == path  # path wasn't under root; don't skip
+  segments = rel.split("/")
+  return true if segments.any? { |seg| SKIP_DIR_SEGMENTS.include?(seg) }
+  return true if SKIP_SUBPATHS.any? { |sp| rel.include?(sp) || rel.start_with?(sp) }
   false
 end
 
@@ -176,7 +182,7 @@ end
 # Pass 1 — rewrite file contents.
 Dir.glob("#{root}/**/*", File::FNM_DOTMATCH).each do |path|
   next unless File.file?(path)
-  next if skip?(path)
+  next if skip?(path, root)
   next unless text_file?(path)
 
   stats[:files_scanned] += 1
@@ -203,7 +209,7 @@ end
 # Pass 2 — rename paths. Deepest-first so renaming a parent directory
 # doesn't invalidate paths we haven't visited yet.
 Dir.glob("#{root}/**/*", File::FNM_DOTMATCH).sort_by { |p| -p.length }.each do |path|
-  next if skip?(path)
+  next if skip?(path, root)
   next unless File.exist?(path)
 
   old_name = File.basename(path)
