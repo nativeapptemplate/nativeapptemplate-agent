@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { dispatch } from "./dispatch.js";
 import { loadDotenvIfPresent } from "./env.js";
 

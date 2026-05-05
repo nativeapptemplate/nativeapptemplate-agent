@@ -1,11 +1,21 @@
 {
   "name": "nativeapptemplate-agent",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "A Claude Code agent that turns a natural-language SaaS spec into a working three-platform implementation (Rails API + SwiftUI iOS + Jetpack Compose Android).",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "nativeapptemplate-agent": "dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "scripts/ruby/",
+    "README.md",
+    "LICENSE",
+    "CLAUDE.md"
+  ],
+  "engines": {
+    "node": ">=22"
   },
   "directories": {
     "doc": "docs"
@@ -17,11 +27,35 @@
     "typecheck:tests": "tsc --noEmit -p tsconfig.test.json",
     "test": "NATIVEAPPTEMPLATE_STUB_ALL=1 node --import tsx --test tests/smoke.test.ts",
     "ci": "npm run build && npm run typecheck:tests && npm test",
-    "cost": "bash scripts/cost.sh"
+    "cost": "bash scripts/cost.sh",
+    "prepublishOnly": "npm run ci"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nativeapptemplate/nativeapptemplate-agent.git"
+  },
+  "homepage": "https://github.com/nativeapptemplate/nativeapptemplate-agent#readme",
+  "bugs": {
+    "url": "https://github.com/nativeapptemplate/nativeapptemplate-agent/issues"
+  },
+  "keywords": [
+    "claude",
+    "agent",
+    "code-generation",
+    "saas",
+    "ios",
+    "android",
+    "rails",
+    "swift",
+    "kotlin",
+    "boilerplate",
+    "generator",
+    "anthropic",
+    "claude-agent-sdk",
+    "mcp"
+  ],
+  "author": "Daisuke Adachi",
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^25.6.0",
     "tsx": "^4.21.0",
