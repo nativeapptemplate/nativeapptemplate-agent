@@ -8,7 +8,16 @@ A Claude Code agent that turns a natural-language spec — something as informal
 
 Coherent across all three, in under an hour.
 
-> **Status:** Hackathon build. Developed during [Built with Opus 4.7: a Claude Code Hackathon](https://cerebralvalley.ai/e/built-with-4-7-hackathon) (April 21–27, 2026). Active development in progress — expect breaking changes through the end of April.
+[![npm](https://img.shields.io/npm/v/nativeapptemplate-agent.svg)](https://www.npmjs.com/package/nativeapptemplate-agent)
+[![CI](https://github.com/nativeapptemplate/nativeapptemplate-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/nativeapptemplate/nativeapptemplate-agent/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![node: >=22](https://img.shields.io/node/v/nativeapptemplate-agent.svg)](https://nodejs.org/)
+
+```bash
+npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices"
+```
+
+> **Status: v0.1.2 stable.** First built during [Built with Opus 4.7: a Claude Code Hackathon](https://cerebralvalley.ai/e/built-with-4-7-hackathon) (April 21–27, 2026); shipped to npm post-hackathon. Verified end-to-end on the three demo specs below from a fresh `/tmp/` cwd. Active development continues — see the [roadmap](./ROADMAP.md) for what's next.
 
 ---
 
@@ -89,12 +98,10 @@ The agent operates on the free, MIT-licensed edition of NativeAppTemplate — th
 
 Combined ~42.5k LOC. Extracted from [MyTurnTag Creator](https://myturntag.com), a walk-in queue-management SaaS live on both app stores since 2024.
 
-## Usage (target interface)
-
-> **Not yet functional — hackathon build in progress.** The interface below is the target; `npx` won't work until v0.1 ships at the end of hackathon week.
+## Usage
 
 ```bash
-# Standalone CLI — must-have for the hackathon demo
+# Standalone CLI
 npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices"
 
 # Stretch specs the agent is also designed to handle
@@ -172,9 +179,9 @@ The agent strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `NATIVEAPPTEMP
 
 ## Contributing
 
-During hackathon week (April 21–27, 2026) the repository moves quickly and breaking changes are expected. After that, contributions are welcome via standard GitHub issues and PRs. A `CONTRIBUTING.md` with detailed guidelines will land once the hackathon dust settles.
+Issues and PRs welcome. The repository is stable now (v0.1.x) — no more hackathon-pace rewrites. A `CONTRIBUTING.md` with detailed guidelines will land alongside v0.2.
 
-If you spot something broken before then, feel free to open an issue — just don't be surprised if the fix lands as part of a larger rewrite.
+For now, the simplest path is: open an issue describing what you're trying to do, and we'll figure out the right shape together before code lands. Bug reports with reproducible commands (and the `/tmp/<dir>/tmp/trace/` log) are especially welcome.
 
 ## License
 
