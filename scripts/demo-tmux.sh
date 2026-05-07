@@ -29,8 +29,10 @@ if ! command -v tmux >/dev/null 2>&1; then
 fi
 
 mkdir -p "$trace_dir"
+# Truncate to zero on every launch — demo recording needs each pane to start
+# blank so the agent's new log lines stream in visibly during beat 3.
 for agent in rails ios android reviewer; do
-  touch "$trace_dir/$agent.log"
+  : > "$trace_dir/$agent.log"
 done
 
 if tmux has-session -t "$session" 2>/dev/null; then
@@ -52,6 +54,15 @@ tmux send-keys -t "$session" "tail -F tmp/trace/reviewer.log" C-m
 
 tmux select-layout -t "$session" tiled
 tmux select-pane -t "$session" -t 0
+
+# Hide the tmux status bar so the demo recording shows only pane content —
+# the default status line leaks the hostname and date in the right segment.
+tmux set-option -t "$session" status off
+
+# Soften pane borders to a subtle gray so the viewer's eye lands on log
+# content rather than the default yellow/green frame.
+tmux set-option -t "$session" pane-border-style "fg=colour240"
+tmux set-option -t "$session" pane-active-border-style "fg=colour240"
 
 echo "session ready: tmux attach -t $session"
 echo "in another terminal, run the agent: npm run dev -- \"<your spec here>\""
