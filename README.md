@@ -48,6 +48,10 @@ It will:
 
 ## Demo
 
+https://github.com/user-attachments/assets/bd1ed091-93d8-45d7-b502-c21720218484
+
+90-second end-to-end run: spec → renamed Rails API + iOS app + Android app, all three platforms validated. Also on [YouTube](https://youtu.be/z08ueZX-02I) for full-screen viewing.
+
 Three demo specs, both adapt and replace paths, all four validation layers green end-to-end:
 
 | Spec | Domain entity (post-rename) | Path | Result |
@@ -59,13 +63,6 @@ Three demo specs, both adapt and replace paths, all four validation layers green
 Layer 2 ran in build mode — real `xcodebuild build` and `./gradlew assembleDebug`, full app builds installed on iPhone 17 simulator and Android emulator. Layer 3 captured the home-screen via `xcrun simctl io booted screenshot` / `adb exec-out screencap` and judged against the rubric using Opus 4.7 vision (median of 3 samples per criterion).
 
 The agent works on either the **free (MIT) edition** or the **paid edition** without code changes — the same pipeline handles both substrates; multi-tenant features (org switching, invitations, role permissions) survive the rename pipeline when targeting paid.
-
-<table>
-  <tr>
-    <td align="center"><img src="docs/images/demo-ios-vet-clinic-queue.png" width="300"><br><sub>iOS — Vet Clinic Queue welcome screen</sub></td>
-    <td align="center"><img src="docs/images/demo-android-vet-clinic-queue.png" width="300"><br><sub>Android — Vet Clinic Queue welcome screen</sub></td>
-  </tr>
-</table>
 
 Both screenshots are real captures from the booted iOS Simulator and Android emulator post-`./gradlew assembleDebug` / `xcodebuild build`, after the agent installed and launched the generated app.
 
