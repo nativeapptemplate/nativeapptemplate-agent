@@ -471,6 +471,101 @@ test("runStage2Scenario short-circuits on missing element and surfaces a meaning
   await fake.close();
 });
 
+test("runStage2Visual walks scenario + Layer 3 against a fake mobile-mcp", async () => {
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { runStage2Visual, DEFAULT_STAGE2_RUBRIC } = await import("../src/validation/stage2-judge.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
+
+  // Fake mobile-mcp serving an "Idled" badge that satisfies the
+  // scenario's tail wait_for_text + assert_text. We only stub the
+  // primitives the truncated scenario below actually calls.
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  fake.registerTool(
+    "mobile_list_elements_on_screen",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify([
+            { label: "Idled", x: 200, y: 400, width: 80, height: 24 },
+          ]),
+        },
+      ],
+    }),
+  );
+  fake.registerTool(
+    "mobile_save_screenshot",
+    { description: "fake", inputSchema: { saveTo: z.string() } },
+    async () => ({ content: [] }),
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  const screenshotDir = mkdtempSync(join(tmpdir(), "stage2-judge-"));
+
+  const result = await runStage2Visual({
+    spec: "a vet clinic queue",
+    iosScenario: {
+      name: "smoke",
+      steps: [
+        // Truncated walk: just enough to get a screenshot + an assert
+        // hit, so we exercise the runner -> Layer 3 wiring without
+        // pretending to mock a real auth flow.
+        { kind: "wait_for_text", text: "Idled", timeoutMs: 500 },
+        { kind: "screenshot", label: "post-toggle" },
+        { kind: "assert_text", text: "Idled" },
+      ],
+    },
+    rubric: DEFAULT_STAGE2_RUBRIC,
+    screenshotDir,
+    iosClient: mobile,
+  });
+
+  // STUB_ALL is on (NATIVEAPPTEMPLATE_STUB_ALL=1) so isStub("judge")
+  // routes Layer 3 through its stub path and every criterion passes.
+  // We're verifying wiring + structural output here, not vision quality.
+  assert.equal(result.ios?.pass, true);
+  assert.equal(result.ios?.scenarioName, "smoke");
+  assert.equal(result.ios?.stepCount, 3);
+  assert.equal(result.ios?.stepsPassed, 3);
+  assert.equal(result.ios?.screenshots.length, 1);
+  assert.ok(result.ios?.representativeScreenshot?.endsWith("smoke-01-post-toggle.png"));
+  assert.equal(result.ios?.layer3Scores?.length, DEFAULT_STAGE2_RUBRIC.length);
+
+  await mobile.close();
+  await fake.close();
+});
+
+test("dispatch with NATIVEAPPTEMPLATE_VISUAL=2 plumbs through to JudgeResult.visual.<platform>.stage2 (stub pipeline)", async () => {
+  // We can't run the full real Stage 2 here (no booted sim), but we
+  // CAN verify the env-var → judge config wiring by patching the env
+  // and checking that dispatch produces a JudgeResult shape that would
+  // contain stage2 when wired. In stub mode, judge short-circuits to
+  // runStubJudge — so the real assertion is "the plumbing typechecks
+  // and dispatch still completes". That's covered by the build step
+  // and the existing stub-pipeline test. Here we just sanity-check
+  // that VISUAL=2 doesn't break the stub path.
+  process.env['NATIVEAPPTEMPLATE_VISUAL'] = "2";
+  try {
+    const { dispatch: dispatchFn } = await import("../src/dispatch.js");
+    const result = await dispatchFn("a walk-in clinic queue for vets");
+    assert.equal(result.overallPass, true);
+    assert.match(result.summary, /PASS/);
+  } finally {
+    delete process.env['NATIVEAPPTEMPLATE_VISUAL'];
+  }
+});
+
 test("createMcpServer registers generate_app and routes through dispatch", async () => {
   const { createMcpServer } = await import("../src/mcp.js");
   const { InMemoryTransport } = await import(
