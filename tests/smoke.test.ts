@@ -203,3 +203,31 @@ test("dispatch runs planner + workers + reviewer + judge end-to-end (stub pipeli
   assert.equal(result.overallPass, true);
   assert.match(result.summary, /PASS/);
 });
+
+test("createMcpServer registers generate_app and routes through dispatch", async () => {
+  const { createMcpServer } = await import("../src/mcp.js");
+  const { InMemoryTransport } = await import(
+    "@modelcontextprotocol/sdk/inMemory.js"
+  );
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+
+  const server = createMcpServer();
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+  const tools = await client.listTools();
+  assert.ok(tools.tools.some((t) => t.name === "generate_app"));
+
+  const call = await client.callTool({
+    name: "generate_app",
+    arguments: { spec: "a walk-in clinic queue for small veterinary practices" },
+  });
+  assert.equal(call.isError, false);
+  const sc = call.structuredContent as { overallPass?: boolean; summary?: string };
+  assert.equal(sc.overallPass, true);
+  assert.match(sc.summary ?? "", /PASS/);
+
+  await client.close();
+  await server.close();
+});
