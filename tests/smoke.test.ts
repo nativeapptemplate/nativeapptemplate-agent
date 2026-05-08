@@ -204,6 +204,103 @@ test("dispatch runs planner + workers + reviewer + judge end-to-end (stub pipeli
   assert.match(result.summary, /PASS/);
 });
 
+test("createMobileClient in stub mode short-circuits without spawning", async () => {
+  const { createMobileClient, isStubMobile } = await import("../src/mobile.js");
+  assert.equal(isStubMobile(), true);
+  const mobile = await createMobileClient();
+  assert.deepEqual(await mobile.listDevices(), []);
+  assert.deepEqual(await mobile.listElements(), []);
+  await mobile.click(10, 20);
+  await mobile.typeKeys("hello");
+  await mobile.pressButton("HOME");
+  const shot = await mobile.takeScreenshot();
+  assert.equal(shot.mimeType, "image/png");
+  assert.equal(shot.data.length, 0);
+  await mobile.saveScreenshot("/tmp/ignored.png");
+  await mobile.close();
+});
+
+test("attachMobileClient drives a fake mobile-mcp server end-to-end", async () => {
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
+
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  const calls: { name: string; args: unknown }[] = [];
+
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify([{ name: "iPhone 17", platform: "ios" }]) }],
+    }),
+  );
+  fake.registerTool(
+    "mobile_list_elements_on_screen",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify([{ label: "Sign Up", x: 100, y: 200 }]) }],
+    }),
+  );
+  fake.registerTool(
+    "mobile_click_on_screen_at_coordinates",
+    { description: "fake", inputSchema: { x: z.number(), y: z.number() } },
+    async (args) => {
+      calls.push({ name: "click", args });
+      return { content: [] };
+    },
+  );
+  fake.registerTool(
+    "mobile_type_keys",
+    { description: "fake", inputSchema: { text: z.string() } },
+    async (args) => {
+      calls.push({ name: "type", args });
+      return { content: [] };
+    },
+  );
+  fake.registerTool(
+    "mobile_take_screenshot",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [{ type: "image", data: Buffer.from("PNGDATA").toString("base64"), mimeType: "image/png" }],
+    }),
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  // NB: stub mode is on (NATIVEAPPTEMPLATE_STUB_ALL=1) so a separate
+  // createMobileClient() call would short-circuit. attachMobileClient skips
+  // that gate by accepting an already-connected Client, which is the seam
+  // we want to exercise.
+  const devices = await mobile.listDevices();
+  assert.equal(devices.length, 1);
+  assert.equal((devices[0] as { name: string }).name, "iPhone 17");
+
+  const elements = await mobile.listElements();
+  assert.equal(elements.length, 1);
+  assert.equal((elements[0] as { label: string }).label, "Sign Up");
+
+  await mobile.click(100, 200);
+  await mobile.typeKeys("hello@example.com");
+
+  const shot = await mobile.takeScreenshot();
+  assert.equal(shot.mimeType, "image/png");
+  assert.equal(shot.data.toString("utf8"), "PNGDATA");
+
+  assert.deepEqual(calls, [
+    { name: "click", args: { x: 100, y: 200 } },
+    { name: "type", args: { text: "hello@example.com" } },
+  ]);
+
+  await mobile.close();
+  await fake.close();
+});
+
 test("createMcpServer registers generate_app and routes through dispatch", async () => {
   const { createMcpServer } = await import("../src/mcp.js");
   const { InMemoryTransport } = await import(
