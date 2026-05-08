@@ -1,0 +1,90 @@
+#!/usr/bin/env node
+import { realpathSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import { dispatch } from "./dispatch.js";
+import { loadDotenvIfPresent } from "./env.js";
+
+// MCP surface (MONETIZATION.md §"MCP as a distribution surface"):
+// thin wrapper around dispatch() so any MCP-compatible AI assistant
+// (Claude Code, Cursor, Cline, Continue, Goose, ...) can invoke the
+// agent as a tool. Same backend as the CLI; different wire format.
+//
+// Run via: `npx -y nativeapptemplate-agent-mcp` from an MCP client config.
+
+export function createMcpServer(): McpServer {
+  const server = new McpServer({
+    name: "nativeapptemplate-agent",
+    version: readPackageVersion(),
+  });
+
+  server.registerTool(
+    "generate_app",
+    {
+      title: "Generate three-platform SaaS app",
+      description:
+        "Generate a working three-platform SaaS app from a natural-language spec — Rails 8.1 API + SwiftUI iOS + Jetpack Compose Android. Validated end-to-end (rename completeness, build, vision judge). Output lands in ./out/<spec-slug>/{rails,ios,android}/. Each invocation runs ~3-5 minutes and consumes Anthropic API usage on the configured key, separate from the calling assistant's session.",
+      inputSchema: {
+        spec: z
+          .string()
+          .min(1)
+          .describe(
+            'Natural-language SaaS spec, e.g. "a walk-in queue for a barbershop"',
+          ),
+      },
+    },
+    async ({ spec }) => {
+      const result = await dispatch(spec);
+      return {
+        content: [{ type: "text", text: result.summary }],
+        structuredContent: {
+          overallPass: result.overallPass,
+          summary: result.summary,
+          ...(result.visual ? { visual: result.visual } : {}),
+        },
+        isError: !result.overallPass,
+      };
+    },
+  );
+
+  return server;
+}
+
+export async function main(): Promise<void> {
+  loadDotenvIfPresent();
+  const server = createMcpServer();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
+
+function readPackageVersion(): string {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(readFileSync(resolve(here, "..", "package.json"), "utf8"));
+    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+if (isEntryPoint()) {
+  main().catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  });
+}
+
+function isEntryPoint(): boolean {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  try {
+    const modulePath = fileURLToPath(import.meta.url);
+    const argv1Real = realpathSync(argv1);
+    return argv1Real === modulePath;
+  } catch {
+    return false;
+  }
+}
