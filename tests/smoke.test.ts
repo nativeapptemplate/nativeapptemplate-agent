@@ -578,26 +578,67 @@ test("env-bridge: productTokenFor uppercases the slug-derived flat token", async
   );
 });
 
-test("env-bridge: readSubstrateApiVars prefers shell env over gradle.properties", async () => {
-  const { readSubstrateApiVars } = await import("../src/env-bridge.js");
-  // Shell wins. We can't easily mock ~/.gradle/gradle.properties for
-  // this test, so we assert only the shell-priority path: anything we
-  // export here MUST appear in the result.
-  process.env['NATIVEAPPTEMPLATE_API_DOMAIN'] = "shell-set.example.com";
+test("env-bridge: readSubstrateApiVars pulls HOST + PORT from substrate Rails .env", async () => {
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+
+  const fakeSubstrate = mkdtempSync(join(tmpdir(), "substrate-api-"));
+  writeFileSync(
+    join(fakeSubstrate, ".env"),
+    "HOST=192.168.1.11\nPORT=3000\nSOLID_QUEUE_IN_PUMA=true\n",
+  );
+
+  const realSubstrate = process.env['NATIVEAPPTEMPLATE_API'];
+  process.env['NATIVEAPPTEMPLATE_API'] = fakeSubstrate;
   try {
+    const { readSubstrateApiVars } = await import("../src/env-bridge.js");
     const result = await readSubstrateApiVars();
-    assert.equal(result['API_DOMAIN'], "shell-set.example.com");
+    assert.equal(result['API_DOMAIN'], "192.168.1.11");
+    assert.equal(result['API_PORT'], "3000");
+    // SOLID_QUEUE_IN_PUMA is .env clutter, must not bleed into the bridge.
+    assert.equal(Object.keys(result).includes('SOLID_QUEUE_IN_PUMA'), false);
   } finally {
-    delete process.env['NATIVEAPPTEMPLATE_API_DOMAIN'];
+    if (realSubstrate !== undefined) process.env['NATIVEAPPTEMPLATE_API'] = realSubstrate;
+    else delete process.env['NATIVEAPPTEMPLATE_API'];
   }
 });
 
-test("env-bridge: buildBridgeValues maps API_* suffixes onto <PRODUCT>_API_*", async () => {
-  const { buildBridgeValues } = await import("../src/env-bridge.js");
-  process.env['NATIVEAPPTEMPLATE_API_DOMAIN'] = "192.168.1.11";
-  process.env['NATIVEAPPTEMPLATE_API_PORT'] = "3000";
+test("env-bridge: readSubstrateApiVars takes SCHEME from shell env (Rails .env doesn't carry it)", async () => {
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+
+  const fakeSubstrate = mkdtempSync(join(tmpdir(), "substrate-scheme-"));
+  writeFileSync(join(fakeSubstrate, ".env"), "HOST=192.168.1.11\nPORT=3000\n");
+
+  const realSubstrate = process.env['NATIVEAPPTEMPLATE_API'];
+  process.env['NATIVEAPPTEMPLATE_API'] = fakeSubstrate;
   process.env['NATIVEAPPTEMPLATE_API_SCHEME'] = "http";
   try {
+    const { readSubstrateApiVars } = await import("../src/env-bridge.js");
+    const result = await readSubstrateApiVars();
+    assert.equal(result['API_SCHEME'], "http");
+  } finally {
+    if (realSubstrate !== undefined) process.env['NATIVEAPPTEMPLATE_API'] = realSubstrate;
+    else delete process.env['NATIVEAPPTEMPLATE_API'];
+    delete process.env['NATIVEAPPTEMPLATE_API_SCHEME'];
+  }
+});
+
+test("env-bridge: buildBridgeValues maps Rails .env HOST+PORT onto <PRODUCT>_API_DOMAIN+PORT", async () => {
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+
+  const fakeSubstrate = mkdtempSync(join(tmpdir(), "substrate-build-"));
+  writeFileSync(join(fakeSubstrate, ".env"), "HOST=192.168.1.11\nPORT=3000\n");
+
+  const realSubstrate = process.env['NATIVEAPPTEMPLATE_API'];
+  process.env['NATIVEAPPTEMPLATE_API'] = fakeSubstrate;
+  process.env['NATIVEAPPTEMPLATE_API_SCHEME'] = "http";
+  try {
+    const { buildBridgeValues } = await import("../src/env-bridge.js");
     const bridge = await buildBridgeValues({
       slug: "vet-clinic-queue",
       displayName: "Vet Clinic Queue",
@@ -609,8 +650,8 @@ test("env-bridge: buildBridgeValues maps API_* suffixes onto <PRODUCT>_API_*", a
     assert.equal(bridge.values['VETCLINICQUEUE_API_PORT'], "3000");
     assert.equal(bridge.values['VETCLINICQUEUE_API_SCHEME'], "http");
   } finally {
-    delete process.env['NATIVEAPPTEMPLATE_API_DOMAIN'];
-    delete process.env['NATIVEAPPTEMPLATE_API_PORT'];
+    if (realSubstrate !== undefined) process.env['NATIVEAPPTEMPLATE_API'] = realSubstrate;
+    else delete process.env['NATIVEAPPTEMPLATE_API'];
     delete process.env['NATIVEAPPTEMPLATE_API_SCHEME'];
   }
 });
