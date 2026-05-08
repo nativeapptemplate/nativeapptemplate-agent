@@ -21,3 +21,15 @@ export type { IosArtifact, AndroidArtifact } from "./discover.js";
 
 export { runStage1Visual } from "./stage1.js";
 export type { Stage1VisualInput, Stage1VisualResult } from "./stage1.js";
+
+export { runStage2Scenario } from "./stage2.js";
+export type {
+  Stage2Step,
+  Stage2Scenario,
+  Stage2StepResult,
+  Stage2Result,
+  Stage2Input,
+} from "./stage2.js";
+
+export { buildQueueScenario } from "./scenarios/queue.js";
+export type { QueueScenarioInputs } from "./scenarios/queue.js";
