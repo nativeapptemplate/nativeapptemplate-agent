@@ -566,6 +566,137 @@ test("dispatch with NATIVEAPPTEMPLATE_VISUAL=2 plumbs through to JudgeResult.vis
   }
 });
 
+test("env-bridge: productTokenFor uppercases the slug-derived flat token", async () => {
+  const { productTokenFor } = await import("../src/env-bridge.js");
+  assert.equal(
+    productTokenFor({ slug: "vet-clinic-queue", displayName: "x", entities: [], renamePlan: [], jsonApiContract: {} }),
+    "VETCLINICQUEUE",
+  );
+  assert.equal(
+    productTokenFor({ slug: "clinic-queue", displayName: "x", entities: [], renamePlan: [], jsonApiContract: {} }),
+    "CLINICQUEUE",
+  );
+});
+
+test("env-bridge: readSubstrateApiVars prefers shell env over gradle.properties", async () => {
+  const { readSubstrateApiVars } = await import("../src/env-bridge.js");
+  // Shell wins. We can't easily mock ~/.gradle/gradle.properties for
+  // this test, so we assert only the shell-priority path: anything we
+  // export here MUST appear in the result.
+  process.env['NATIVEAPPTEMPLATE_API_DOMAIN'] = "shell-set.example.com";
+  try {
+    const result = await readSubstrateApiVars();
+    assert.equal(result['API_DOMAIN'], "shell-set.example.com");
+  } finally {
+    delete process.env['NATIVEAPPTEMPLATE_API_DOMAIN'];
+  }
+});
+
+test("env-bridge: buildBridgeValues maps API_* suffixes onto <PRODUCT>_API_*", async () => {
+  const { buildBridgeValues } = await import("../src/env-bridge.js");
+  process.env['NATIVEAPPTEMPLATE_API_DOMAIN'] = "192.168.1.11";
+  process.env['NATIVEAPPTEMPLATE_API_PORT'] = "3000";
+  process.env['NATIVEAPPTEMPLATE_API_SCHEME'] = "http";
+  try {
+    const bridge = await buildBridgeValues({
+      slug: "vet-clinic-queue",
+      displayName: "Vet Clinic Queue",
+      entities: [],
+      renamePlan: [],
+      jsonApiContract: {},
+    });
+    assert.equal(bridge.values['VETCLINICQUEUE_API_DOMAIN'], "192.168.1.11");
+    assert.equal(bridge.values['VETCLINICQUEUE_API_PORT'], "3000");
+    assert.equal(bridge.values['VETCLINICQUEUE_API_SCHEME'], "http");
+  } finally {
+    delete process.env['NATIVEAPPTEMPLATE_API_DOMAIN'];
+    delete process.env['NATIVEAPPTEMPLATE_API_PORT'];
+    delete process.env['NATIVEAPPTEMPLATE_API_SCHEME'];
+  }
+});
+
+test("env-bridge: applyBridgeToProcessEnv sets ORG_GRADLE_PROJECT_* and SIMCTL_CHILD_*", async () => {
+  const { applyBridgeToProcessEnv } = await import("../src/env-bridge.js");
+  applyBridgeToProcessEnv({
+    values: { VETCLINICQUEUE_API_DOMAIN: "192.168.1.11", VETCLINICQUEUE_API_PORT: "3000" },
+  });
+  try {
+    assert.equal(process.env['ORG_GRADLE_PROJECT_VETCLINICQUEUE_API_DOMAIN'], "192.168.1.11");
+    assert.equal(process.env['ORG_GRADLE_PROJECT_VETCLINICQUEUE_API_PORT'], "3000");
+    assert.equal(process.env['SIMCTL_CHILD_VETCLINICQUEUE_API_DOMAIN'], "192.168.1.11");
+    assert.equal(process.env['SIMCTL_CHILD_VETCLINICQUEUE_API_PORT'], "3000");
+  } finally {
+    delete process.env['ORG_GRADLE_PROJECT_VETCLINICQUEUE_API_DOMAIN'];
+    delete process.env['ORG_GRADLE_PROJECT_VETCLINICQUEUE_API_PORT'];
+    delete process.env['SIMCTL_CHILD_VETCLINICQUEUE_API_DOMAIN'];
+    delete process.env['SIMCTL_CHILD_VETCLINICQUEUE_API_PORT'];
+  }
+});
+
+test("env-bridge: syncGradleProperties sentinel block round-trips and replaces idempotently", async () => {
+  // Point HOME at a temp dir so the test doesn't touch the real
+  // ~/.gradle/gradle.properties.
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+
+  const fakeHome = mkdtempSync(join(tmpdir(), "env-bridge-"));
+  mkdirSync(join(fakeHome, ".gradle"), { recursive: true });
+  const gradlePath = join(fakeHome, ".gradle", "gradle.properties");
+  writeFileSync(
+    gradlePath,
+    "# pre-existing content\nNATIVEAPPTEMPLATE_API_DOMAIN=api.nativeapptemplate.com\n",
+  );
+
+  const realHome = process.env['HOME'];
+  process.env['HOME'] = fakeHome;
+  try {
+    const { syncGradleProperties } = await import("../src/env-bridge.js");
+
+    // First write — adds sentinel block, preserves prior content.
+    const r1 = await syncGradleProperties({
+      values: { VETCLINICQUEUE_API_DOMAIN: "192.168.1.11", VETCLINICQUEUE_API_PORT: "3000" },
+    });
+    assert.equal(r1.wrote, true);
+    let content = readFileSync(gradlePath, "utf8");
+    assert.match(content, /^NATIVEAPPTEMPLATE_API_DOMAIN=api\.nativeapptemplate\.com$/m);
+    assert.match(content, /^# BEGIN nativeapptemplate-agent/m);
+    assert.match(content, /^VETCLINICQUEUE_API_DOMAIN=192\.168\.1\.11$/m);
+    assert.match(content, /^VETCLINICQUEUE_API_PORT=3000$/m);
+    assert.match(content, /^# END nativeapptemplate-agent$/m);
+
+    // Second write with the same values — idempotent, no churn.
+    const r2 = await syncGradleProperties({
+      values: { VETCLINICQUEUE_API_DOMAIN: "192.168.1.11", VETCLINICQUEUE_API_PORT: "3000" },
+    });
+    assert.equal(r2.wrote, false);
+
+    // Third write with different slug's keys — replaces the block,
+    // doesn't append a second block.
+    const r3 = await syncGradleProperties({
+      values: { CLINICQUEUE_API_DOMAIN: "10.0.0.5" },
+    });
+    assert.equal(r3.wrote, true);
+    content = readFileSync(gradlePath, "utf8");
+    assert.equal((content.match(/# BEGIN nativeapptemplate-agent/g) ?? []).length, 1);
+    assert.match(content, /^CLINICQUEUE_API_DOMAIN=10\.0\.0\.5$/m);
+    assert.doesNotMatch(content, /VETCLINICQUEUE_API_/);
+
+    // Empty bridge — removes sentinel block, leaves rest untouched.
+    const r4 = await syncGradleProperties({ values: {} });
+    assert.equal(r4.removedStale, true);
+    content = readFileSync(gradlePath, "utf8");
+    assert.doesNotMatch(content, /BEGIN nativeapptemplate-agent/);
+    assert.match(content, /^NATIVEAPPTEMPLATE_API_DOMAIN=api\.nativeapptemplate\.com$/m);
+
+    // Smoke: existsSync still true.
+    assert.equal(existsSync(gradlePath), true);
+  } finally {
+    if (realHome !== undefined) process.env['HOME'] = realHome;
+    else delete process.env['HOME'];
+  }
+});
+
 test("createMcpServer registers generate_app and routes through dispatch", async () => {
   const { createMcpServer } = await import("../src/mcp.js");
   const { InMemoryTransport } = await import(

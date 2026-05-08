@@ -5,10 +5,31 @@ import { runIosWorker } from "./agents/workers/ios.js";
 import { runAndroidWorker } from "./agents/workers/android.js";
 import { runReviewer } from "./agents/reviewer.js";
 import { runJudge, type VisualJudgeConfig } from "./agents/judge.js";
+import { applyBridgeToProcessEnv, buildBridgeValues, syncGradleProperties } from "./env-bridge.js";
+import { trace } from "./trace.js";
 import type { JudgeResult } from "./agents/types.js";
 
 export async function dispatch(spec: string): Promise<JudgeResult> {
   const domain = await runPlanner(spec);
+
+  // Mirror the substrate's NATIVEAPPTEMPLATE_API_* config to the
+  // renamed product equivalents (<PRODUCT>_API_*) so the agent's auto-
+  // validation runs see the right values without forcing the user to
+  // hand-set per-app env vars. See src/env-bridge.ts.
+  const bridge = await buildBridgeValues(domain);
+  if (Object.keys(bridge.values).length > 0) {
+    applyBridgeToProcessEnv(bridge);
+    const sync = await syncGradleProperties(bridge);
+    const keys = Object.keys(bridge.values).sort().join(", ");
+    trace("dispatch", `env-bridge: mirrored ${keys}`);
+    if (sync.wrote) trace("dispatch", `env-bridge: wrote sentinel block to ${sync.path}`);
+  } else {
+    // No substrate values to mirror — clean up any stale sentinel block
+    // from a prior run so we don't leave dangling values behind.
+    await syncGradleProperties(bridge);
+    trace("dispatch", "env-bridge: no NATIVEAPPTEMPLATE_API_* in shell or gradle.properties; nothing to mirror");
+  }
+
   const [rails, ios, android] = await Promise.all([
     runRailsWorker(domain),
     runIosWorker(domain),
