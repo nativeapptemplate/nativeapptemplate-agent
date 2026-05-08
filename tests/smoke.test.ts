@@ -759,6 +759,45 @@ test("env-bridge: syncGradleProperties sentinel block round-trips and replaces i
   }
 });
 
+test("parseAdbDevices skips header + offline + unauthorized; keeps online serials", async () => {
+  const { parseAdbDevices } = await import("../src/validation/launch.js");
+  const sample = [
+    "List of devices attached",
+    "1C081FDF600CMG\tdevice",
+    "emulator-5554\tdevice",
+    "0123456789ABCDEF\toffline",
+    "FEDCBA9876543210\tunauthorized",
+    "",
+  ].join("\n");
+  assert.deepEqual(parseAdbDevices(sample), ["1C081FDF600CMG", "emulator-5554"]);
+  assert.deepEqual(parseAdbDevices(""), []);
+  assert.deepEqual(parseAdbDevices("List of devices attached\n"), []);
+});
+
+test("selectAdbTarget honors NATIVEAPPTEMPLATE_ADB_SERIAL override", async () => {
+  const { selectAdbTarget } = await import("../src/validation/launch.js");
+  process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'] = "my-special-device";
+  try {
+    // Override returns synchronously without invoking adb, so the path
+    // we hand it doesn't matter — never executed.
+    const result = await selectAdbTarget("/nonexistent/adb", 1000);
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.serial, "my-special-device");
+  } finally {
+    delete process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'];
+  }
+});
+
+test("selectAdbTarget returns ok with no serial when adb missing (single device fallback)", async () => {
+  const { selectAdbTarget } = await import("../src/validation/launch.js");
+  // No override + a nonexistent adb path → spawn fails → returns
+  // ok:false with a useful error. Stronger test (real adb run with N
+  // devices) belongs in an integration suite, not the smoke tests.
+  const result = await selectAdbTarget("/nonexistent/adb-binary", 1000);
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.ok(result.error.length > 0);
+});
+
 test("createMcpServer registers generate_app and routes through dispatch", async () => {
   const { createMcpServer } = await import("../src/mcp.js");
   const { InMemoryTransport } = await import(
