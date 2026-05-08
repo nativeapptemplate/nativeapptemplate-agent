@@ -26,7 +26,7 @@ export type RenamePair = {
 
 export type Platform = "rails" | "ios" | "android";
 
-export type AgentName = "planner" | Platform | "reviewer" | "judge";
+export type AgentName = "planner" | Platform | "reviewer" | "judge" | "dispatch";
 
 export type WorkerResult = {
   platform: Platform;
