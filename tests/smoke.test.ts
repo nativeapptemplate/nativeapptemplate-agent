@@ -698,7 +698,7 @@ test("env-bridge: syncGradleProperties sentinel block round-trips and replaces i
     const r1 = await syncGradleProperties({
       values: { VETCLINICQUEUE_API_DOMAIN: "192.168.1.11", VETCLINICQUEUE_API_PORT: "3000" },
     });
-    assert.equal(r1.wrote, true);
+    assert.equal(r1.mode, "wrote");
     let content = readFileSync(gradlePath, "utf8");
     assert.match(content, /^NATIVEAPPTEMPLATE_API_DOMAIN=api\.nativeapptemplate\.com$/m);
     assert.match(content, /^# BEGIN nativeapptemplate-agent/m);
@@ -710,14 +710,14 @@ test("env-bridge: syncGradleProperties sentinel block round-trips and replaces i
     const r2 = await syncGradleProperties({
       values: { VETCLINICQUEUE_API_DOMAIN: "192.168.1.11", VETCLINICQUEUE_API_PORT: "3000" },
     });
-    assert.equal(r2.wrote, false);
+    assert.equal(r2.mode, "noop");
 
     // Third write with different slug's keys — replaces the block,
     // doesn't append a second block.
     const r3 = await syncGradleProperties({
       values: { CLINICQUEUE_API_DOMAIN: "10.0.0.5" },
     });
-    assert.equal(r3.wrote, true);
+    assert.equal(r3.mode, "wrote");
     content = readFileSync(gradlePath, "utf8");
     assert.equal((content.match(/# BEGIN nativeapptemplate-agent/g) ?? []).length, 1);
     assert.match(content, /^CLINICQUEUE_API_DOMAIN=10\.0\.0\.5$/m);
@@ -732,6 +732,27 @@ test("env-bridge: syncGradleProperties sentinel block round-trips and replaces i
 
     // Smoke: existsSync still true.
     assert.equal(existsSync(gradlePath), true);
+
+    // NATIVEAPPTEMPLATE_BRIDGE=off — skip the file write entirely.
+    process.env['NATIVEAPPTEMPLATE_BRIDGE'] = "off";
+    const r5 = await syncGradleProperties({
+      values: { CLINICQUEUE_API_DOMAIN: "10.0.0.99" },
+    });
+    delete process.env['NATIVEAPPTEMPLATE_BRIDGE'];
+    assert.equal(r5.mode, "skipped");
+    content = readFileSync(gradlePath, "utf8");
+    assert.doesNotMatch(content, /CLINICQUEUE_API_DOMAIN=10\.0\.0\.99/);
+
+    // NATIVEAPPTEMPLATE_BRIDGE_DRY_RUN=1 — log preview, don't write.
+    process.env['NATIVEAPPTEMPLATE_BRIDGE_DRY_RUN'] = "1";
+    const r6 = await syncGradleProperties({
+      values: { CLINICQUEUE_API_DOMAIN: "10.0.0.99" },
+    });
+    delete process.env['NATIVEAPPTEMPLATE_BRIDGE_DRY_RUN'];
+    assert.equal(r6.mode, "dry-run");
+    assert.match(r6.preview ?? "", /CLINICQUEUE_API_DOMAIN=10\.0\.0\.99/);
+    content = readFileSync(gradlePath, "utf8");
+    assert.doesNotMatch(content, /CLINICQUEUE_API_DOMAIN=10\.0\.0\.99/);
   } finally {
     if (realHome !== undefined) process.env['HOME'] = realHome;
     else delete process.env['HOME'];

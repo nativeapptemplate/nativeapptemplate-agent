@@ -117,33 +117,65 @@ export function applyBridgeToProcessEnv(bridge: BridgeValues): void {
   }
 }
 
+export type SyncMode = "wrote" | "skipped" | "dry-run" | "noop";
+
+export type SyncResult = {
+  path: string;
+  mode: SyncMode;
+  removedStale: boolean;
+  // The exact content that was (or would have been) written. Useful for
+  // dry-run logging without re-computing.
+  preview?: string;
+};
+
 // Write a sentinel block to ~/.gradle/gradle.properties containing the
 // mirrored keys. Replaces an existing block from a prior run; preserves
 // every line outside the block. If gradle.properties doesn't exist,
 // creates it. If the bridge has no values (substrate vars unset),
 // removes the existing block (so stale values from a prior run don't
 // linger) and writes nothing else.
-export async function syncGradleProperties(bridge: BridgeValues): Promise<{
-  path: string;
-  wrote: boolean;
-  removedStale: boolean;
-}> {
+//
+// Safety knobs (env vars, both default to off):
+//   NATIVEAPPTEMPLATE_BRIDGE=off       — skip the file write entirely;
+//                                         process.env injection still
+//                                         runs for the agent's own
+//                                         child-spawn paths.
+//   NATIVEAPPTEMPLATE_BRIDGE_DRY_RUN=1 — log what would be written
+//                                         instead of writing. Useful for
+//                                         users who want to inspect the
+//                                         bridge's behavior before
+//                                         giving it write access to
+//                                         their user-global gradle.
+export async function syncGradleProperties(bridge: BridgeValues): Promise<SyncResult> {
   const path = join(homedir(), ".gradle", "gradle.properties");
-  const existing = await readFileOrEmpty(path);
-  const stripped = removeSentinelBlock(existing);
-  const removedStale = stripped !== existing && Object.keys(bridge.values).length === 0;
 
-  if (Object.keys(bridge.values).length === 0) {
-    if (existing === stripped) return { path, wrote: false, removedStale: false };
-    await writeFile(path, stripped);
-    return { path, wrote: false, removedStale };
+  if (process.env['NATIVEAPPTEMPLATE_BRIDGE'] === "off") {
+    return { path, mode: "skipped", removedStale: false };
   }
 
-  const block = formatSentinelBlock(bridge.values);
-  const next = ensureTrailingNewline(stripped) + block + "\n";
-  if (next === existing) return { path, wrote: false, removedStale: false };
+  const existing = await readFileOrEmpty(path);
+  const stripped = removeSentinelBlock(existing);
+  const hasValues = Object.keys(bridge.values).length > 0;
+  const removedStale = stripped !== existing && !hasValues;
+
+  let next: string;
+  if (!hasValues) {
+    next = stripped;
+  } else {
+    const block = formatSentinelBlock(bridge.values);
+    next = ensureTrailingNewline(stripped) + block + "\n";
+  }
+
+  const dryRun = process.env['NATIVEAPPTEMPLATE_BRIDGE_DRY_RUN'] === "1";
+  if (next === existing) {
+    return { path, mode: "noop", removedStale };
+  }
+  if (dryRun) {
+    return { path, mode: "dry-run", removedStale, preview: next };
+  }
+
   await writeFile(path, next);
-  return { path, wrote: true, removedStale };
+  return { path, mode: hasValues ? "wrote" : "noop", removedStale };
 }
 
 async function readGradleProperties(): Promise<Readonly<Record<string, string>>> {

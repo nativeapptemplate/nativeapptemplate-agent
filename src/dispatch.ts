@@ -22,12 +22,26 @@ export async function dispatch(spec: string): Promise<JudgeResult> {
     const sync = await syncGradleProperties(bridge);
     const keys = Object.keys(bridge.values).sort().join(", ");
     trace("dispatch", `env-bridge: mirrored ${keys}`);
-    if (sync.wrote) trace("dispatch", `env-bridge: wrote sentinel block to ${sync.path}`);
+    switch (sync.mode) {
+      case "wrote":
+        trace("dispatch", `env-bridge: wrote sentinel block to ${sync.path}`);
+        break;
+      case "skipped":
+        trace("dispatch", `env-bridge: file write skipped (NATIVEAPPTEMPLATE_BRIDGE=off); process.env still injected`);
+        break;
+      case "dry-run":
+        trace("dispatch", `env-bridge: DRY RUN — would write to ${sync.path}:`);
+        for (const line of (sync.preview ?? "").split("\n")) trace("dispatch", `  ${line}`);
+        break;
+      case "noop":
+        // Same content already in place — nothing to log.
+        break;
+    }
   } else {
     // No substrate values to mirror — clean up any stale sentinel block
     // from a prior run so we don't leave dangling values behind.
     await syncGradleProperties(bridge);
-    trace("dispatch", "env-bridge: no NATIVEAPPTEMPLATE_API_* in shell or gradle.properties; nothing to mirror");
+    trace("dispatch", "env-bridge: no HOST/PORT in $NATIVEAPPTEMPLATE_API/.env; nothing to mirror");
   }
 
   const [rails, ios, android] = await Promise.all([
