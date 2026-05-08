@@ -33,3 +33,6 @@ export type {
 
 export { buildQueueScenario } from "./scenarios/queue.js";
 export type { QueueScenarioInputs } from "./scenarios/queue.js";
+
+export { runStage2Visual, DEFAULT_STAGE2_RUBRIC } from "./stage2-judge.js";
+export type { Stage2VisualInput, Stage2VisualResult } from "./stage2-judge.js";

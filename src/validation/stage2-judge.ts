@@ -1,0 +1,146 @@
+import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { runStage2Scenario, type Stage2Result, type Stage2Scenario } from "./stage2.js";
+import { runLayer3, type Layer3Criterion } from "./layer3.js";
+import { createMobileClient, type MobileClient } from "../mobile.js";
+import type { Stage2PlatformReport } from "../agents/types.js";
+
+// Layer 2 Stage 2 visual judge: pairs the scripted-CRUD scenario runner
+// with the Layer 3 vision judge so the agent can score post-CRUD
+// screenshots ("does this read as a [renamed-domain] queue?") rather
+// than just the launch screen.
+//
+// Per platform: connect mobile-mcp → walk the scenario → judge the
+// representative (last) screenshot against a Stage-2-specific rubric →
+// fold into a Stage2PlatformReport. Caller is responsible for ensuring
+// Layer 2 has built the artifact, the sim/emulator is booted, and the
+// app is already installed + launched on the home screen — runStage2-
+// Visual picks up from there and walks the user-flow.
+//
+// Stub story: the underlying mobile.ts wrapper short-circuits when
+// NATIVEAPPTEMPLATE_STUB_MOBILE / STUB_ALL is set, so the stub runner
+// returns no elements and wait_for_text times out. To keep stub mode
+// usable for smoke tests, callers should pass a pre-built MobileClient
+// (the test factory `attachMobileClient` against an in-memory server),
+// or accept that scenario execution will fail in stub mode and surface
+// as a structured Stage2PlatformReport with ok=false.
+
+export type Stage2VisualInput = {
+  // Build a per-platform scenario from outside. We don't pull domain
+  // through to keep the orchestrator decoupled — callers (judge.ts)
+  // build with buildQueueScenario(domain, inputs).
+  iosScenario?: Stage2Scenario;
+  androidScenario?: Stage2Scenario;
+  screenshotDir?: string;
+  spec: string;
+  rubric?: readonly Layer3Criterion[];
+  // Test seam — let tests pass a pre-wired client (e.g. against an
+  // in-memory fake mobile-mcp) instead of spawning npx mobile-mcp.
+  iosClient?: MobileClient;
+  androidClient?: MobileClient;
+};
+
+export type Stage2VisualResult = {
+  ios?: Stage2PlatformReport;
+  android?: Stage2PlatformReport;
+};
+
+// Stage 2 rubric — domain content (because we've now navigated to the
+// list/detail view past auth) plus a defensive substrate-leak check.
+// Stage 1's "renders cleanly" criterion is intentionally not repeated;
+// if the app crashed Layer 2 build mode would have caught it.
+export const DEFAULT_STAGE2_RUBRIC: readonly Layer3Criterion[] = [
+  {
+    id: "domain-content",
+    question:
+      "Does this screen show the user's domain content (a list with at least one user-created entry, or a detail view of one such entry, with that entry's state badge visible)? PASS if there's a visible list/detail item the user just created. FAIL if it shows only a launch / welcome / login / signup / empty state.",
+  },
+  {
+    id: "no-substrate-leak",
+    question:
+      "Is the screen free of substrate-original tokens like 'Shop', 'Shopkeeper', 'ItemTag', 'NativeAppTemplate', or 'Number Tag'?",
+  },
+];
+
+export async function runStage2Visual(input: Stage2VisualInput): Promise<Stage2VisualResult> {
+  const screenshotDir = input.screenshotDir ?? join(process.cwd(), "tmp", "screenshots");
+  await mkdir(screenshotDir, { recursive: true });
+  const rubric = input.rubric ?? DEFAULT_STAGE2_RUBRIC;
+
+  const result: Stage2VisualResult = {};
+  if (input.iosScenario) {
+    result.ios = await runOnePlatform({
+      scenario: input.iosScenario,
+      screenshotDir,
+      spec: input.spec,
+      rubric,
+      ...(input.iosClient !== undefined ? { client: input.iosClient } : {}),
+    });
+  }
+  if (input.androidScenario) {
+    result.android = await runOnePlatform({
+      scenario: input.androidScenario,
+      screenshotDir,
+      spec: input.spec,
+      rubric,
+      ...(input.androidClient !== undefined ? { client: input.androidClient } : {}),
+    });
+  }
+  return result;
+}
+
+type RunOneArgs = {
+  scenario: Stage2Scenario;
+  screenshotDir: string;
+  spec: string;
+  rubric: readonly Layer3Criterion[];
+  client?: MobileClient;
+};
+
+async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
+  const ownsClient = args.client === undefined;
+  const client = args.client ?? (await createMobileClient());
+  try {
+    const scenario = await runStage2Scenario({
+      client,
+      scenario: args.scenario,
+      screenshotDir: args.screenshotDir,
+    });
+
+    const baseReport = toBaseReport(scenario);
+
+    if (!scenario.ok || scenario.screenshots.length === 0) {
+      return baseReport;
+    }
+
+    const representative = scenario.screenshots[scenario.screenshots.length - 1]!;
+    const layer3 = await runLayer3({
+      screenshotPath: representative,
+      rubric: args.rubric,
+      spec: args.spec,
+    });
+
+    return {
+      ...baseReport,
+      pass: scenario.ok && layer3.pass,
+      representativeScreenshot: representative,
+      layer3Scores: layer3.scores,
+    };
+  } finally {
+    if (ownsClient) await client.close();
+  }
+}
+
+function toBaseReport(scenario: Stage2Result): Stage2PlatformReport {
+  const stepsPassed = scenario.steps.filter((s) => s.ok).length;
+  const failingError = scenario.steps.find((s) => !s.ok)?.error;
+  const report: Stage2PlatformReport = {
+    pass: scenario.ok,
+    scenarioName: scenario.scenarioName,
+    stepCount: scenario.steps.length,
+    stepsPassed,
+    screenshots: scenario.screenshots,
+  };
+  if (failingError !== undefined) report.error = failingError;
+  return report;
+}

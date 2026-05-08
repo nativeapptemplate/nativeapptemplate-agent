@@ -56,4 +56,16 @@ export type VisualJudgePlatformReport = {
   screenshotPath?: string;
   scores?: readonly { criterionId: string; pass: boolean; rationale: string }[];
   error?: string;
+  stage2?: Stage2PlatformReport;
+};
+
+export type Stage2PlatformReport = {
+  pass: boolean;
+  scenarioName: string;
+  stepCount: number;
+  stepsPassed: number;
+  screenshots: readonly string[];
+  representativeScreenshot?: string;
+  layer3Scores?: readonly { criterionId: string; pass: boolean; rationale: string }[];
+  error?: string;
 };

@@ -4,6 +4,8 @@ import { isStub } from "../stub.js";
 import { runLayer1 } from "../validation/layer1.js";
 import { runLayer2, type Layer2Mode } from "../validation/layer2.js";
 import { runStage1Visual } from "../validation/stage1.js";
+import { runStage2Visual } from "../validation/stage2-judge.js";
+import { buildQueueScenario } from "../validation/scenarios/queue.js";
 import type { Layer3Criterion } from "../validation/layer3.js";
 import type { VisualJudgeResult } from "../validation/visual-judge.js";
 import type {
@@ -11,6 +13,7 @@ import type {
   JudgeResult,
   Platform,
   ReviewerResult,
+  Stage2PlatformReport,
   VisualJudgePlatformReport,
   WorkerResult,
 } from "./types.js";
@@ -28,12 +31,24 @@ export type JudgeInput = {
 // outDir-based: runJudge calls runStage1Visual which discovers the build
 // artifact + identifier from each provided platform dir post-Layer-2-build.
 // Caller must enable layer2Mode: "build" for the discovery to find anything.
+//
+// stage2: when set, runJudge follows Stage 1 with a scripted-CRUD walk
+// via mobile-mcp, capturing intermediate screenshots and feeding the
+// post-toggle screenshot through Layer 3 against a Stage-2-specific
+// rubric. Off by default; opt-in via NATIVEAPPTEMPLATE_VISUAL=2 in the
+// dispatch entry point.
 export type VisualJudgeConfig = {
   iosDir?: string;
   androidDir?: string;
   screenshotDir?: string;
   rubric?: readonly Layer3Criterion[];
   spec?: string;
+  stage2?: {
+    primaryResourceName: string;
+    email: string;
+    password: string;
+    rubric?: readonly Layer3Criterion[];
+  };
 };
 
 type PlatformReport = {
@@ -68,6 +83,9 @@ export async function runJudge(input: JudgeInput): Promise<JudgeResult> {
   let layer3Summary = "Layer 3 skipped";
   if (input.visual && (input.visual.iosDir || input.visual.androidDir)) {
     visualReport = await runVisualPhase(input.visual, input.domain);
+    if (input.visual.stage2) {
+      visualReport = await runStage2Phase(visualReport, input.visual, input.domain);
+    }
     layer3Summary = formatLayer3Summary(visualReport);
   } else {
     trace("judge", "Layer 3 (semantic, Opus 4.7 vision judge) — visual config not provided; skipped");
@@ -119,6 +137,61 @@ async function runVisualPhase(
     trace("judge", `Layer 3 android: ${stage1.android.ok ? "PASS" : "FAIL"}` + (stage1.android.error ? ` — ${stage1.android.error}` : ""));
   }
   return report;
+}
+
+async function runStage2Phase(
+  base: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport },
+  config: VisualJudgeConfig,
+  domain: DomainSpec,
+): Promise<{ ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport }> {
+  if (!config.stage2) return base;
+
+  const inputs = {
+    email: config.stage2.email,
+    password: config.stage2.password,
+    primaryResourceName: config.stage2.primaryResourceName,
+  };
+  const scenario = buildQueueScenario(domain, inputs);
+
+  // Only walk Stage 2 on platforms whose Stage 1 already passed — a
+  // failed launch means there's no live app to drive.
+  const wantIos = config.iosDir !== undefined && base.ios?.pass === true;
+  const wantAndroid = config.androidDir !== undefined && base.android?.pass === true;
+
+  if (!wantIos && !wantAndroid) {
+    trace("judge", "Stage 2 — skipped (no Stage 1 PASS to build on)");
+    return base;
+  }
+
+  const platforms = [wantIos && "ios", wantAndroid && "android"].filter(Boolean).join(" + ");
+  trace("judge", `Stage 2 — scripted-CRUD walk via mobile-mcp on ${platforms}`);
+
+  const stage2 = await runStage2Visual({
+    spec: config.spec ?? domain.displayName,
+    ...(wantIos ? { iosScenario: scenario } : {}),
+    ...(wantAndroid ? { androidScenario: scenario } : {}),
+    ...(config.stage2.rubric !== undefined ? { rubric: config.stage2.rubric } : {}),
+    ...(config.screenshotDir !== undefined ? { screenshotDir: config.screenshotDir } : {}),
+  });
+
+  const merged: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport } = { ...base };
+  if (stage2.ios && merged.ios) {
+    merged.ios = mergeStage2(merged.ios, stage2.ios);
+    trace("judge", `Stage 2 ios: ${stage2.ios.pass ? "PASS" : "FAIL"}` + (stage2.ios.error ? ` — ${stage2.ios.error}` : ""));
+  }
+  if (stage2.android && merged.android) {
+    merged.android = mergeStage2(merged.android, stage2.android);
+    trace("judge", `Stage 2 android: ${stage2.android.pass ? "PASS" : "FAIL"}` + (stage2.android.error ? ` — ${stage2.android.error}` : ""));
+  }
+  return merged;
+}
+
+function mergeStage2(base: VisualJudgePlatformReport, stage2: Stage2PlatformReport): VisualJudgePlatformReport {
+  return {
+    ...base,
+    pass: base.pass && stage2.pass,
+    stage2,
+  };
 }
 
 function toPlatformReport(result: VisualJudgeResult): VisualJudgePlatformReport {

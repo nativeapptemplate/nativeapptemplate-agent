@@ -16,16 +16,30 @@ export async function dispatch(spec: string): Promise<JudgeResult> {
   ]);
   const reviewer = await runReviewer({ domain, rails, ios, android });
 
-  // Stage 1 visual judging is opt-in via NATIVEAPPTEMPLATE_VISUAL=1.
-  // It forces Layer 2 build mode (so .app / .apk artifacts exist for the
-  // discovery + install + launch + capture chain) and adds 60-180s to a
-  // run depending on the substrate's cold-build time. Off by default.
-  const visualEnabled = process.env['NATIVEAPPTEMPLATE_VISUAL'] === "1";
-  const visual: VisualJudgeConfig | undefined = visualEnabled
+  // Visual judging is opt-in via NATIVEAPPTEMPLATE_VISUAL:
+  //   =1  Stage 1 only — post-launch home screen rubric (substrate-leak
+  //       detection + render sanity). Adds 60-180s for build mode.
+  //   =2  Stage 1 + Stage 2 — same plus a scripted-CRUD walk via
+  //       mobile-mcp (sign up → create resource → toggle state) with
+  //       Layer 3 scoring on the post-toggle screen. Adds another
+  //       60-120s and requires a sim/emulator booted with the app
+  //       already launched after Stage 1. Off by default.
+  const visualLevelRaw = process.env['NATIVEAPPTEMPLATE_VISUAL'] ?? "";
+  const visualLevel = visualLevelRaw === "2" ? 2 : visualLevelRaw === "1" ? 1 : 0;
+  const visual: VisualJudgeConfig | undefined = visualLevel >= 1
     ? {
         iosDir: resolve(process.cwd(), ios.outDir),
         androidDir: resolve(process.cwd(), android.outDir),
         spec: domain.displayName,
+        ...(visualLevel >= 2
+          ? {
+              stage2: {
+                primaryResourceName: domain.displayName,
+                email: "stage2@example.com",
+                password: "ValidPassword1!",
+              },
+            }
+          : {}),
       }
     : undefined;
 
@@ -35,7 +49,7 @@ export async function dispatch(spec: string): Promise<JudgeResult> {
     ios,
     android,
     reviewer,
-    ...(visualEnabled ? { layer2Mode: "build" as const } : {}),
+    ...(visualLevel >= 1 ? { layer2Mode: "build" as const } : {}),
     ...(visual ? { visual } : {}),
   });
 }
