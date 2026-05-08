@@ -73,11 +73,13 @@ export function buildQueueScenario(
     { kind: "tap_text", text: "Save" },
 
     // Toggle the entry from Idled → Completed (substrate's two-state
-    // machine per CLAUDE.md). The button label may render as the *target*
-    // state ("Complete") or the current state ("Idled"); we wait for the
-    // current state then tap it.
+    // machine per CLAUDE.md). The state badge renders as the current
+    // state ("Idled") and the toggle button renders as the action
+    // ("Mark as completed"). After tapping, the badge switches to
+    // "Completed". Matcher is case-insensitive substring, so iOS chip
+    // text "idled" and Android chip text "IDLED" both satisfy "Idled".
     { kind: "wait_for_text", text: "Idled" },
-    { kind: "tap_text", text: "Idled" },
+    { kind: "tap_text", text: "Mark as completed" },
     { kind: "wait_for_text", text: "Completed" },
     { kind: "screenshot", label: "05-entry-completed" },
     { kind: "assert_text", text: "Completed" },
