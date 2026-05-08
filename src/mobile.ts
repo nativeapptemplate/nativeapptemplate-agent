@@ -33,6 +33,11 @@ export type Screenshot = {
 
 export type MobileClient = {
   callTool(name: string, args?: Record<string, unknown>): Promise<CallToolResult>;
+  // mobile-mcp requires a `device` argument on every tool call EXCEPT
+  // mobile_list_available_devices. useDevice() sets a sticky device
+  // name; subsequent calls inject it transparently. Pass undefined to
+  // clear. Real-device target names come straight from listDevices().
+  useDevice(name: string | undefined): void;
   listDevices(): Promise<readonly ScreenElement[]>;
   listElements(): Promise<readonly ScreenElement[]>;
   click(x: number, y: number): Promise<void>;
@@ -87,14 +92,27 @@ export function isStubMobile(): boolean {
   );
 }
 
+// Tools that operate at the mobile-mcp server level rather than against
+// a specific device. These don't take a `device` argument and would
+// fail validation if we injected one.
+const DEVICE_INDEPENDENT_TOOLS = new Set([
+  "mobile_list_available_devices",
+]);
+
 function wrapClient(client: Client): MobileClient {
+  let activeDevice: string | undefined;
+
   const callTool = async (
     name: string,
     args?: Record<string, unknown>,
   ): Promise<CallToolResult> => {
+    const merged: Record<string, unknown> =
+      activeDevice !== undefined && !DEVICE_INDEPENDENT_TOOLS.has(name)
+        ? { device: activeDevice, ...(args ?? {}) }
+        : (args ?? {});
     const result = (await client.callTool({
       name,
-      arguments: args ?? {},
+      arguments: merged,
     })) as CallToolResult;
     if (result.isError) {
       throw new Error(`mobile-mcp ${name} failed: ${textOf(result)}`);
@@ -114,6 +132,9 @@ function wrapClient(client: Client): MobileClient {
 
   return {
     callTool,
+    useDevice(name) {
+      activeDevice = name;
+    },
     async listDevices() {
       const result = await callTool("mobile_list_available_devices");
       const parsed = parseJsonText<readonly ScreenElement[]>(result, []);
@@ -164,6 +185,7 @@ function createStubMobileClient(): MobileClient {
   const stubResult: CallToolResult = { content: [] };
   return {
     callTool: async () => stubResult,
+    useDevice: () => {},
     listDevices: async () => [],
     listElements: async () => [],
     click: async () => {},
