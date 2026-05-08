@@ -301,6 +301,176 @@ test("attachMobileClient drives a fake mobile-mcp server end-to-end", async () =
   await fake.close();
 });
 
+test("buildQueueScenario uses renamed Shop label and walks sign-up → list → toggle", async () => {
+  const { buildQueueScenario } = await import("../src/validation/scenarios/queue.js");
+  const scenario = buildQueueScenario(
+    {
+      slug: "vet-clinic",
+      displayName: "Vet Clinic",
+      entities: [],
+      renamePlan: [
+        { from: "Shop", to: "Clinic" },
+        { from: "Shopkeeper", to: "Vet" },
+      ],
+      jsonApiContract: {},
+    },
+    { email: "x@y.z", password: "p", primaryResourceName: "Acme" },
+  );
+  assert.equal(scenario.name, "queue-crud-vet-clinic");
+  // Renamed primary noun reaches the wait_for_text after auth.
+  assert.ok(
+    scenario.steps.some((s) => s.kind === "wait_for_text" && s.text === "Clinic"),
+    "expected a wait_for_text 'Clinic' step",
+  );
+  // Inputs reach the type steps.
+  assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "x@y.z"));
+  assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "Acme"));
+  // Toggle reaches the assert at the tail.
+  const tail = scenario.steps[scenario.steps.length - 1];
+  assert.deepEqual(tail, { kind: "assert_text", text: "Completed" });
+});
+
+test("runStage2Scenario walks a simple step list against a fake mobile-mcp", async () => {
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { runStage2Scenario } = await import("../src/validation/stage2.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
+
+  // Fake mobile-mcp serving a tiny screen with a "Sign Up" button at
+  // (100, 200) rect 80x40 → expected center (140, 220).
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  const calls: { name: string; args: unknown }[] = [];
+
+  fake.registerTool(
+    "mobile_list_elements_on_screen",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify([
+            { label: "Sign Up", x: 100, y: 200, width: 80, height: 40 },
+            { label: "Welcome", x: 0, y: 0, width: 400, height: 60 },
+          ]),
+        },
+      ],
+    }),
+  );
+  fake.registerTool(
+    "mobile_click_on_screen_at_coordinates",
+    { description: "fake", inputSchema: { x: z.number(), y: z.number() } },
+    async (args) => {
+      calls.push({ name: "click", args });
+      return { content: [] };
+    },
+  );
+  fake.registerTool(
+    "mobile_type_keys",
+    { description: "fake", inputSchema: { text: z.string() } },
+    async (args) => {
+      calls.push({ name: "type", args });
+      return { content: [] };
+    },
+  );
+  fake.registerTool(
+    "mobile_save_screenshot",
+    { description: "fake", inputSchema: { saveTo: z.string() } },
+    async (args) => {
+      calls.push({ name: "saveScreenshot", args });
+      return { content: [] };
+    },
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  const screenshotDir = mkdtempSync(join(tmpdir(), "stage2-test-"));
+
+  const result = await runStage2Scenario({
+    client: mobile,
+    scenario: {
+      name: "smoke",
+      steps: [
+        { kind: "wait_for_text", text: "Welcome" },
+        { kind: "tap_text", text: "Sign Up" },
+        { kind: "type", text: "user@example.com" },
+        { kind: "screenshot", label: "after-tap" },
+        { kind: "assert_text", text: "Sign Up" },
+      ],
+    },
+    screenshotDir,
+    pollIntervalMs: 10,
+    defaultWaitMs: 500,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.steps.length, 5);
+  assert.ok(result.steps.every((s) => s.ok));
+  // Click landed on the Sign-Up element's center.
+  const click = calls.find((c) => c.name === "click");
+  assert.deepEqual(click?.args, { x: 140, y: 220 });
+  // Type text propagated.
+  assert.deepEqual(calls.find((c) => c.name === "type")?.args, { text: "user@example.com" });
+  // Screenshot saved with a slugged filename.
+  const saved = calls.find((c) => c.name === "saveScreenshot");
+  assert.ok((saved?.args as { saveTo: string }).saveTo.endsWith("smoke-03-after-tap.png"));
+  assert.equal(result.screenshots.length, 1);
+
+  await mobile.close();
+  await fake.close();
+});
+
+test("runStage2Scenario short-circuits on missing element and surfaces a meaningful error", async () => {
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { runStage2Scenario } = await import("../src/validation/stage2.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  fake.registerTool(
+    "mobile_list_elements_on_screen",
+    { description: "fake", inputSchema: {} },
+    async () => ({ content: [{ type: "text", text: "[]" }] }),
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  const result = await runStage2Scenario({
+    client: mobile,
+    scenario: {
+      name: "missing",
+      steps: [
+        { kind: "wait_for_text", text: "Sign Up", timeoutMs: 200 },
+        { kind: "type", text: "should not run" },
+      ],
+    },
+    screenshotDir: mkdtempSync(join(tmpdir(), "stage2-fail-")),
+    pollIntervalMs: 10,
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.steps.length, 1);
+  assert.equal(result.steps[0]?.ok, false);
+  assert.match(result.steps[0]?.error ?? "", /not found within 200ms/);
+
+  await mobile.close();
+  await fake.close();
+});
+
 test("createMcpServer registers generate_app and routes through dispatch", async () => {
   const { createMcpServer } = await import("../src/mcp.js");
   const { InMemoryTransport } = await import(
