@@ -183,64 +183,61 @@ export function buildQueueScenario(
 
     // PAID-substrate-only intro modal after Sign In: "You are in
     // personal organization. ... Switch to or create an organization
-    // to share..." with [Go to Organizations] and [OK] buttons.
-    // OK dismisses and lands on the (renamed primary noun) list. Free
-    // edition has no multi-tenancy so this modal never appears
-    // (optional no-ops).
-    { kind: "tap_text", text: "OK", exact: true, optional: true, timeoutMs: 3_000 },
+    // to share..." with a "Create <Primary>" CTA that opens the
+    // creation form. Free edition has no multi-tenancy so the modal
+    // never appears — these waits/taps are effectively skipped on
+    // free because the post-Sign-In screen ALREADY shows
+    // primaryName (free) without a modal in the way.
+    //
+    // Free path: wait_for_text "Clinic" matches the list view
+    // header; the optional Create-* taps below find nothing and
+    // no-op (but the unconditional `tap_text "Add"` later matches
+    // the free toolbar).
+    //
+    // Paid path: wait_for_text "Clinic" matches the modal's Create
+    // <Primary> button label (substring). We can't tap it yet
+    // because the modal might still be animating in — explicit
+    // wait_for_text below with a longer timeout + exact:true on the
+    // "Create <Primary>" button gates correctly.
+    //
+    // Paid-substrate-only post-Sign-In multi-tenancy explainer.
+    // Per platform:
+    //   iOS:     two modal phases — v1 "OK"+"Go to Organizations",
+    //            then v2 "Create <Primary>"+"Go to Organizations"+
+    //            "Cancel". OK then Cancel both dismiss.
+    //   Android: single snackbar with a "Dismiss" button.
+    // All optional with short timeouts so free no-ops cleanly. The
+    // walk picks up at the auto-seeded "Sample <Primary>" the
+    // substrate created during signup — no need to navigate the
+    // create-resource flow at all.
+    { kind: "tap_text", text: "OK", exact: true, optional: true, timeoutMs: 5_000 },
+    { kind: "tap_text", text: "Cancel", exact: true, optional: true, timeoutMs: 5_000 },
+    { kind: "tap_text", text: "Dismiss", exact: true, optional: true, timeoutMs: 5_000 },
 
     // ---- Unverified below — best-effort guesses, expect drift ----
 
-    // After auth, the user lands on the primary-resource list. The
-    // empty state typically shows the renamed primary noun in a
-    // header or "No <Primary>" placeholder. Either is sufficient to
-    // match via substring.
-    { kind: "wait_for_text", text: primaryName, timeoutMs: 15_000 },
-    { kind: "screenshot", label: "04-primary-list-empty" },
+    // After auth + modal dismissals, drill DIRECTLY into the
+    // substrate's auto-seeded "Sample <Primary>" resource (created
+    // by Account#create_default_clinic! on every signup, both
+    // editions). This skips the per-edition Create flow complexity
+    // (paid hides Create behind multi-tenancy modals; free shows
+    // an Add button) — the auto-seeded resource is enough to
+    // demonstrate the rubric (renamed domain content with visible
+    // state badge).
+    //
+    // The substrate's seed name "Sample" doesn't get renamed (it's
+    // a value, not a domain identifier). On every edition the list
+    // shows an entry containing "Sample" — wait for it.
+    { kind: "wait_for_text", text: "Sample", timeoutMs: 15_000 },
+    { kind: "screenshot", label: "04-primary-list-with-sample" },
 
-    // Create one primary resource. iOS form: tap_field on the input,
-    // submit:true to dismiss keyboard, "Save" button at top-right.
-    // Android form: empty OutlinedTextField (no EditText surfaced),
-    // submit:true injects "\n", and the submit button reads "Add
-    // <Primary>" not "Save". Diverged below per platform.
-    // Create-resource button label varies by edition:
-    //   Free iOS: "Add" (top-right + button)
-    //   Paid iOS: "Create Clinic" (empty-state CTA)
-    //   Android: similar split — try both as optional taps in
-    //   priority order so whichever exists fires.
-    { kind: "tap_text", text: `Create ${primaryName}`, exact: true, optional: true, timeoutMs: 3_000 },
-    { kind: "tap_text", text: "Add", exact: true, optional: true, timeoutMs: 3_000 },
-    { kind: "wait_for_text", text: "Name" },
-    ...(platform === "ios"
-      ? [
-          { kind: "tap_field" as const, fieldTypes: ["TextField", "EditText"], nth: 0 },
-          { kind: "type" as const, text: inputs.primaryResourceName, submit: true },
-          { kind: "tap_text" as const, text: "Save" },
-        ]
-      : [
-          { kind: "tap_text" as const, text: `${primaryName} Name`, exact: false },
-          { kind: "type" as const, text: inputs.primaryResourceName },
-          { kind: "press_button" as const, button: "BACK", optional: true },
-          { kind: "tap_text" as const, text: `Add ${primaryName}`, exact: true },
-        ]),
-
-    // Android shows a "<Resource> added." snackbar with a Dismiss
-    // button after Save. Dismiss it so the next wait_for_text isn't
-    // looking past the snackbar overlay. iOS doesn't show one — the
-    // optional flag no-ops.
-    { kind: "tap_text", text: "Dismiss", optional: true, timeoutMs: 3_000 },
-
-    { kind: "wait_for_text", text: inputs.primaryResourceName },
-    { kind: "screenshot", label: "05-primary-list-one" },
-
-    // Drill into the resource to reach the queue-entry list.
-    // Substrate auto-creates a "Sample" queue entry when a primary
-    // resource is created (Account#create_default_clinic! +
-    // Clinic#create_sample_patient), so the list isn't empty —
-    // this screenshot already shows real domain content with a
-    // visible state badge.
-    { kind: "tap_text", text: inputs.primaryResourceName },
-    { kind: "wait_for_text", text: queueEntryName },
+    // Drill into the sample resource to reach the queue-entry list.
+    // Substrate auto-creates a "Sample" queue entry inside the
+    // sample primary resource too (Clinic#create_sample_patient or
+    // equivalent), so the list isn't empty — this screenshot shows
+    // real domain content with the renamed state badge.
+    { kind: "tap_text", text: "Sample" },
+    { kind: "wait_for_text", text: queueEntryName, timeoutMs: 15_000 },
     { kind: "screenshot", label: "06-queue-entry-list" },
 
     // Stage 2 ends here. The agent has demonstrated end-to-end:

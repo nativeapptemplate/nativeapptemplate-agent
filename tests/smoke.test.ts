@@ -334,12 +334,17 @@ test("buildQueueScenario opens with verified welcome → start → auth choice �
   assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "Test User"));
   assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "x@y.z"));
   assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "p"));
-  assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "Acme"));
 
-  // Renamed primary noun threads through to the post-auth wait.
+  // Drills into the auto-seeded "Sample <Primary>" rather than
+  // creating a new resource (the substrate's
+  // Account#create_default_clinic! seeds one on every signup).
   assert.ok(
-    scenario.steps.some((s) => s.kind === "wait_for_text" && s.text === "Clinic"),
-    "expected a wait_for_text 'Clinic' step",
+    scenario.steps.some((s) => s.kind === "wait_for_text" && s.text === "Sample"),
+    "expected a wait_for_text 'Sample' step",
+  );
+  assert.ok(
+    scenario.steps.some((s) => s.kind === "tap_text" && s.text === "Sample"),
+    "expected a tap_text 'Sample' step",
   );
 
   // Scenario tails with the queue-entry-list screenshot (not the

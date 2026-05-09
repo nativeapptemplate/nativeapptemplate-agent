@@ -26,7 +26,7 @@ import type { MobileClient, ScreenElement } from "../mobile.js";
 //     PR 3 of the Stage 2 series.
 
 export type Stage2Step =
-  | { kind: "wait_for_text"; text: string; timeoutMs?: number }
+  | { kind: "wait_for_text"; text: string; timeoutMs?: number; exact?: boolean }
   // optional:true swallows wait/find failures and just continues. Use
   // for system overlays that appear conditionally (e.g. iOS Keychain
   // "Save password?" prompt after signup) — you want to dismiss the
@@ -164,7 +164,7 @@ type RunStepArgs = {
 async function runStep(a: RunStepArgs): Promise<string | undefined> {
   switch (a.step.kind) {
     case "wait_for_text": {
-      await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs);
+      await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs, undefined, a.step.exact);
       return undefined;
     }
     case "tap_text": {
