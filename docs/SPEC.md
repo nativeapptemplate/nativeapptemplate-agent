@@ -2,8 +2,45 @@
 
 **Author:** Daisuke
 **Event:** Built with Opus 4.7: a Claude Code Hackathon (Cerebral Valley × Anthropic, April 21, 2026)
-**Status:** Pre-hackathon specification, v1.0
-**Repository:** `github.com/nativeapptemplate/nativeapptemplate-agent` (to be created)
+**Status:** Post-launch (last updated 2026-05-10; v0.2.0 shipped 2026-05-09 — see addendum below for plan-vs-shipped delta)
+**Repository:** [`github.com/nativeapptemplate/nativeapptemplate-agent`](https://github.com/nativeapptemplate/nativeapptemplate-agent)
+
+---
+
+## 0. Post-launch addendum (2026-05-10)
+
+This document was originally a **pre-hackathon specification** (v1.0). It's preserved as the historical plan; everything below sections 1–11 reads as it did the week of the hackathon. This addendum captures what actually shipped relative to that plan.
+
+**For current usage:** see [`README.md`](../README.md) and the [v0.2.0 GitHub Release notes](https://github.com/nativeapptemplate/nativeapptemplate-agent/releases/tag/v0.2.0).
+
+### Plan vs. shipped (as of 2026-05-10)
+
+| Spec area | Status | Notes |
+|---|---|---|
+| §3 Substrate — free MIT edition only | **Expanded** | Agent now operates on **both** free and paid editions without code changes. The rename pipeline targets only the free-shared concepts (Shop / Shopkeeper / ItemTag), so paid-only concepts (`Account`, `Member`, `Invitation`) survive intact when targeting paid. CLAUDE.md policy: test paid first because free is a strict subset. |
+| §4 Operations 1–3 | **Shipped** | Rename + adapt/replace + drive-build-green all working across the validation matrix. |
+| §5 Vision-guided self-repair, Stage 1 | **Shipped** | `NATIVEAPPTEMPLATE_VISUAL=1` opts in. Layer 2 escalates to build mode (`xcodebuild build` + `./gradlew assembleDebug`); home-screen judged with `DEFAULT_STAGE1_RUBRIC`. |
+| §5 Vision-guided self-repair, Stage 2 | **Shipped** | `NATIVEAPPTEMPLATE_VISUAL=2` opts in. The agent boots Rails under `mise exec -- bin/dev` (after `bundle install` + `db:prepare` + `db:seed_fu`), then drives the parameterized queue scenario (Welcome → Sign Up → email-confirm via `bin/rails runner` → Sign In → drill into auto-seeded sample) on both platforms via `mobile-mcp`. Layer 3 judges the post-walk screenshot against `DEFAULT_STAGE2_RUBRIC` (domain content + no substrate-token leak). |
+| §5 Vision-guided self-repair, Stage 3 | **Not shipped** | Multi-step CRUD (sign-up → CRUD → state transitions → logout) deferred. The Stage 2 walk currently stops at "drill into auto-seeded sample"; full Add/Toggle/Delete steps are a known follow-up. |
+| §5 Self-repair iteration cap | **Not shipped** | The 5-iteration self-repair loop is documented in CLAUDE.md but not yet implemented as a coded retry loop. Failures currently surface and the agent exits. |
+| §6 Layer 1 — structural (ripgrep + OpenAPI) | **Shipped** | Both ripgrep token scan and the three-way OpenAPI parity reviewer (Phase 1–3, PRs #46–#48) are in production. |
+| §6 Layer 2 Stage 1 (boot, build, launch) | **Shipped** | Default behavior. |
+| §6 Layer 2 Stage 2 (UI-driven scenario) | **Shipped** | Behind `NATIVEAPPTEMPLATE_VISUAL=2`; see §5 Stage 2 row. The original spec mentioned an HTTP-tail watcher for 4xx/5xx; the actual implementation walks the UI directly and lets the scenario `wait_for_text`/`assert_text` catch error states. |
+| §7 Evaluation plan (3 specs × 3 platforms = 9 projects) | **Exceeded** | Validated against 12 PASS combinations (full 6-cell matrix × 2 platforms): free × 3 specs × 2 platforms (6) + paid × 3 specs × 2 platforms (6). Both new paid cells (sushi waitlist, task tracker) passed first-try with no code changes — strong evidence the parameterized scenario is genuinely edition-agnostic. |
+| §8 Packaging (CLI + Claude Code plugin) | **Expanded** | Third surface added: **MCP server** (`nativeapptemplate-agent-mcp`, PR #60) — stdio MCP server wrapping `dispatch()` as a `generate_app` tool. Anyone with an MCP-capable agent (Claude Desktop, Cursor, etc.) can drive the agent without the CLI. |
+| §8 Packaging — env bridging (new) | **Shipped** | At run time the agent mirrors `NATIVEAPPTEMPLATE_API_*` (HOST/PORT/SCHEME) into renamed-product variants (`<PRODUCT>_API_*`) so the generated Android app picks them up via `~/.gradle/gradle.properties` and the iOS sim launch picks them up via `SIMCTL_CHILD_*` (PR #64). Safety knobs: `NATIVEAPPTEMPLATE_BRIDGE=off` skips the file write; `NATIVEAPPTEMPLATE_BRIDGE_DRY_RUN=1` previews. |
+| §9 Non-goals (paid-edition features) | **Stable** | Paid-edition features (multi-tenancy URL routing, invitations, role permissions, org switching) remain out of the rename pipeline by design. The agent operates against paid substrates fine — it just doesn't generate new paid-only features into renamed projects. |
+| §11 Hackathon must-haves | **All met** | All Must-have + Stretch criteria green at v0.2.0; see release notes for the post-hackathon delta. |
+
+### What changed structurally since v1.0 of this spec
+
+- **Distribution surfaces went from 2 to 3** (added MCP server).
+- **Substrate scope went from "free-only" to "free + paid"** without code changes; same pipeline.
+- **Validation went from "9 generated projects, target Layer 1+2 pass + Layer 3 score"** to a concrete 12-cell PASS matrix.
+- **Stage 2 went from aspirational ("stretch") to default-when-opted-in** (`NATIVEAPPTEMPLATE_VISUAL=2`).
+- **A new env-bridging concern emerged** (renamed `<PRODUCT>_API_*` vars need to reach the generated apps' build/launch env) — addressed by the bridge module, not in the original spec.
+
+The **historical pre-hackathon spec** follows below, unchanged.
 
 ---
 
