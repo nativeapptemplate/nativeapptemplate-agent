@@ -484,8 +484,16 @@ test("runStage2Visual walks scenario + Layer 3 against a fake mobile-mcp", async
 
   // Fake mobile-mcp serving an "Idled" badge that satisfies the
   // scenario's tail wait_for_text + assert_text. We only stub the
-  // primitives the truncated scenario below actually calls.
+  // primitives the truncated scenario below actually calls — plus
+  // list_available_devices for the selectDevice bootstrap.
   const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify([{ name: "iPhone 17", platform: "ios" }]) }],
+    }),
+  );
   fake.registerTool(
     "mobile_list_elements_on_screen",
     { description: "fake", inputSchema: {} },
@@ -796,6 +804,250 @@ test("selectAdbTarget returns ok with no serial when adb missing (single device 
   const result = await selectAdbTarget("/nonexistent/adb-binary", 1000);
   assert.equal(result.ok, false);
   if (!result.ok) assert.ok(result.error.length > 0);
+});
+
+test("attachMobileClient: listDevices unwraps {devices: [...]} envelope and listElements strips text prefix", async () => {
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
+
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  // mobile-mcp 0.0.54 wraps the device list inside {"devices": [...]}.
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            devices: [{ id: "B929BDBD-X", name: "iPhone 17", platform: "ios", type: "simulator" }],
+          }),
+        },
+      ],
+    }),
+  );
+  // mobile-mcp 0.0.54 prepends "Found these elements on screen: " to
+  // its JSON array, so a naïve JSON.parse of the whole text fails.
+  fake.registerTool(
+    "mobile_list_elements_on_screen",
+    { description: "fake", inputSchema: { device: z.string() } },
+    async () => ({
+      content: [
+        {
+          type: "text",
+          text:
+            'Found these elements on screen: ' +
+            JSON.stringify([
+              { type: "Button", label: "Start", coordinates: { x: 311, y: 66, width: 70, height: 36 } },
+            ]),
+        },
+      ],
+    }),
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  const devices = await mobile.listDevices();
+  assert.equal(devices.length, 1);
+  assert.equal((devices[0] as { id: string }).id, "B929BDBD-X");
+
+  mobile.useDevice("B929BDBD-X");
+  const elements = await mobile.listElements();
+  assert.equal(elements.length, 1);
+  assert.equal((elements[0] as { label: string }).label, "Start");
+
+  await mobile.close();
+  await fake.close();
+});
+
+test("attachMobileClient: useDevice injects `device` arg into every subsequent call", async () => {
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
+
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  const calls: { name: string; args: Record<string, unknown> }[] = [];
+
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async (args) => {
+      calls.push({ name: "list_devices", args });
+      return {
+        content: [{ type: "text", text: JSON.stringify([{ name: "iPhone 17", platform: "ios" }]) }],
+      };
+    },
+  );
+  fake.registerTool(
+    "mobile_list_elements_on_screen",
+    { description: "fake", inputSchema: { device: z.string() } },
+    async (args) => {
+      calls.push({ name: "list_elements", args });
+      return { content: [{ type: "text", text: "[]" }] };
+    },
+  );
+  fake.registerTool(
+    "mobile_click_on_screen_at_coordinates",
+    { description: "fake", inputSchema: { device: z.string(), x: z.number(), y: z.number() } },
+    async (args) => {
+      calls.push({ name: "click", args });
+      return { content: [] };
+    },
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  // Before useDevice — listDevices works (device-independent tool).
+  await mobile.listDevices();
+  assert.equal(calls[0]?.name, "list_devices");
+  assert.deepEqual(calls[0]?.args, {});
+
+  // Set device and exercise device-dependent calls.
+  mobile.useDevice("iPhone 17");
+  await mobile.listElements();
+  await mobile.click(10, 20);
+
+  assert.deepEqual(calls[1]?.args, { device: "iPhone 17" });
+  assert.deepEqual(calls[2]?.args, { device: "iPhone 17", x: 10, y: 20 });
+
+  // Clear device — back to no injection (and listDevices still works).
+  mobile.useDevice(undefined);
+  await mobile.listDevices();
+  assert.deepEqual(calls[3]?.args, {});
+
+  await mobile.close();
+  await fake.close();
+});
+
+test("selectDevice picks iOS sim by platform field, sets it on the client", async () => {
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { selectDevice } = await import("../src/validation/stage2-judge.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
+
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  const calls: { name: string; args: Record<string, unknown> }[] = [];
+
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify([
+            { name: "emulator-5554", platform: "android" },
+            { name: "iPhone 17", platform: "ios" },
+            { name: "iPad Pro", platform: "ios" },
+          ]),
+        },
+      ],
+    }),
+  );
+  fake.registerTool(
+    "mobile_take_screenshot",
+    { description: "fake", inputSchema: { device: z.string() } },
+    async (args) => {
+      calls.push({ name: "take_screenshot", args });
+      return {
+        content: [{ type: "image", data: "AAAA", mimeType: "image/png" }],
+      };
+    },
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  const err = await selectDevice(mobile, "ios");
+  assert.equal(err, undefined);
+
+  // After selectDevice, subsequent calls should carry the picked iOS device.
+  await mobile.takeScreenshot();
+  assert.equal(calls[0]?.args['device'], "iPhone 17");
+
+  await mobile.close();
+  await fake.close();
+});
+
+test("selectDevice surfaces a useful error when no platform match found", async () => {
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { selectDevice } = await import("../src/validation/stage2-judge.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify([{ name: "emulator-5554", platform: "android" }]) }],
+    }),
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  const err = await selectDevice(mobile, "ios");
+  assert.match(err ?? "", /no mobile-mcp device matched platform=ios/);
+  assert.match(err ?? "", /emulator-5554/);
+  assert.match(err ?? "", /NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE/);
+
+  await mobile.close();
+  await fake.close();
+});
+
+test("selectDevice honors NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE override (no listDevices call)", async () => {
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { selectDevice } = await import("../src/validation/stage2-judge.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+
+  let listCalled = false;
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async () => {
+      listCalled = true;
+      return { content: [{ type: "text", text: "[]" }] };
+    },
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  process.env['NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE'] = "MyExplicitDevice";
+  try {
+    const err = await selectDevice(mobile, "ios");
+    assert.equal(err, undefined);
+    assert.equal(listCalled, false, "override should skip listDevices entirely");
+  } finally {
+    delete process.env['NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE'];
+  }
+
+  await mobile.close();
+  await fake.close();
 });
 
 test("createMcpServer registers generate_app and routes through dispatch", async () => {

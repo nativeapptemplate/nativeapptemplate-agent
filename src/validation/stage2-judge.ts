@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { runStage2Scenario, type Stage2Result, type Stage2Scenario } from "./stage2.js";
 import { runLayer3, type Layer3Criterion } from "./layer3.js";
-import { createMobileClient, type MobileClient } from "../mobile.js";
+import { createMobileClient, type MobileClient, type ScreenElement } from "../mobile.js";
 import type { Stage2PlatformReport } from "../agents/types.js";
 
 // Layer 2 Stage 2 visual judge: pairs the scripted-CRUD scenario runner
@@ -70,6 +70,7 @@ export async function runStage2Visual(input: Stage2VisualInput): Promise<Stage2V
   const result: Stage2VisualResult = {};
   if (input.iosScenario) {
     result.ios = await runOnePlatform({
+      platform: "ios",
       scenario: input.iosScenario,
       screenshotDir,
       spec: input.spec,
@@ -79,6 +80,7 @@ export async function runStage2Visual(input: Stage2VisualInput): Promise<Stage2V
   }
   if (input.androidScenario) {
     result.android = await runOnePlatform({
+      platform: "android",
       scenario: input.androidScenario,
       screenshotDir,
       spec: input.spec,
@@ -90,6 +92,7 @@ export async function runStage2Visual(input: Stage2VisualInput): Promise<Stage2V
 }
 
 type RunOneArgs = {
+  platform: "ios" | "android";
   scenario: Stage2Scenario;
   screenshotDir: string;
   spec: string;
@@ -101,6 +104,22 @@ async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
   const ownsClient = args.client === undefined;
   const client = args.client ?? (await createMobileClient());
   try {
+    // mobile-mcp requires a `device` argument on every tool call.
+    // Bootstrap: list available devices, pick the right one for this
+    // platform, set it as the active device on the wrapper. Subsequent
+    // calls inject device transparently.
+    const targetingErr = await selectDevice(client, args.platform);
+    if (targetingErr) {
+      return {
+        pass: false,
+        scenarioName: args.scenario.name,
+        stepCount: args.scenario.steps.length,
+        stepsPassed: 0,
+        screenshots: [],
+        error: targetingErr,
+      };
+    }
+
     const scenario = await runStage2Scenario({
       client,
       scenario: args.scenario,
@@ -129,6 +148,73 @@ async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
   } finally {
     if (ownsClient) await client.close();
   }
+}
+
+// Picks the mobile-mcp device for a platform and sets it as active on
+// the wrapper. Returns undefined on success, an error string on
+// failure. Heuristic: filter listDevices() by platform field if
+// available; otherwise filter by a substring match on the name (iOS
+// names tend to start with "iPhone"/"iPad"; Android emulators with
+// "emulator-"). Honors NATIVEAPPTEMPLATE_MOBILE_<IOS|ANDROID>_DEVICE
+// env var as an override for explicit targeting.
+export async function selectDevice(
+  client: MobileClient,
+  platform: "ios" | "android",
+): Promise<string | undefined> {
+  const overrideKey =
+    platform === "ios" ? "NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE" : "NATIVEAPPTEMPLATE_MOBILE_ANDROID_DEVICE";
+  const override = process.env[overrideKey];
+  if (override) {
+    client.useDevice(override);
+    return undefined;
+  }
+
+  let devices: readonly ScreenElement[];
+  try {
+    devices = await client.listDevices();
+  } catch (err) {
+    return `mobile-mcp listDevices failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  if (devices.length === 0) {
+    return `no mobile-mcp devices available (boot the ${platform} sim/emulator first)`;
+  }
+
+  const match = devices.find((d) => devicePlatformMatches(d, platform));
+  if (!match) {
+    const names = devices.map((d) => deviceNameOf(d) ?? "<unnamed>").join(", ");
+    return `no mobile-mcp device matched platform=${platform} (saw: ${names}). Override with ${overrideKey}=<device-name>.`;
+  }
+  const name = deviceNameOf(match);
+  if (!name) {
+    return `mobile-mcp returned a matching device with no usable name field`;
+  }
+  client.useDevice(name);
+  return undefined;
+}
+
+function deviceNameOf(d: ScreenElement): string | undefined {
+  // mobile-mcp's response carries both `id` (canonical handle — UDID
+  // for iOS sims, serial for Android emulators/devices) and `name`
+  // (display name like "Pixel 6", "iPhone 17"). Pass the canonical id
+  // to the `device` parameter on subsequent tool calls — it's
+  // unambiguous when multiple devices share a display name.
+  for (const key of ["id", "udid", "serial", "name", "deviceName"] as const) {
+    const v = d[key];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return undefined;
+}
+
+function devicePlatformMatches(d: ScreenElement, platform: "ios" | "android"): boolean {
+  // Direct platform field is the easy case.
+  for (const key of ["platform", "type", "os"] as const) {
+    const v = d[key];
+    if (typeof v === "string" && v.toLowerCase().includes(platform)) return true;
+  }
+  // Fallback: heuristic on the name.
+  const name = deviceNameOf(d) ?? "";
+  if (platform === "ios") return /^(iPhone|iPad|iPod)/i.test(name);
+  return /^(emulator-|Android|Pixel|Galaxy|Nexus)/i.test(name);
 }
 
 function toBaseReport(scenario: Stage2Result): Stage2PlatformReport {
