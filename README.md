@@ -17,7 +17,7 @@ Coherent across all three, in under an hour.
 npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices"
 ```
 
-> **Status: v0.1.2 stable.** First built during [Built with Opus 4.7: a Claude Code Hackathon](https://cerebralvalley.ai/e/built-with-4-7-hackathon) (April 21–27, 2026); shipped to npm post-hackathon. Verified end-to-end on the three demo specs below from a fresh `/tmp/` cwd. Active development continues — see the [roadmap](./ROADMAP.md) for what's next.
+> **Status: v0.1.2 stable.** First built during [Built with Opus 4.7: a Claude Code Hackathon](https://cerebralvalley.ai/e/built-with-4-7-hackathon) (April 21–27, 2026); shipped to npm post-hackathon. Verified end-to-end on the three demo specs below from a fresh `/tmp/` cwd. Stage 2 (scripted-CRUD walk-through via `mobile-mcp` against a live Rails server) and paid-edition parity validation landed post-launch. Active development continues — see the [roadmap](./ROADMAP.md) for what's next.
 
 ---
 
@@ -60,9 +60,9 @@ Three demo specs, both adapt and replace paths, all four validation layers green
 | `"a restaurant waitlist for casual dining"` | `Shop → Restaurant`, `Shopkeeper → Host` | adapt | Layer 1 3/3 · Layer 2 3/3 · Layer 3 2/2 · Reviewer PASS |
 | `"a personal task tracker with due dates"` | `ItemTag → Todo` (replaces queue entry entirely) | replace | Layer 1 3/3 · Layer 2 3/3 · Layer 3 2/2 · Reviewer PASS |
 
-Layer 2 ran in build mode — real `xcodebuild build` and `./gradlew assembleDebug`, full app builds installed on iPhone 17 simulator and Android emulator. Layer 3 captured the home-screen via `xcrun simctl io booted screenshot` / `adb exec-out screencap` and judged against the rubric using Opus 4.7 vision (median of 3 samples per criterion).
+Layer 2 ran in build mode — real `xcodebuild build` and `./gradlew assembleDebug`, full app builds installed on iPhone 17 simulator and Android emulator. Layer 3 captured the home-screen via `xcrun simctl io booted screenshot` / `adb exec-out screencap` and judged against the rubric using Opus 4.7 vision (median of 3 samples per criterion). With `NATIVEAPPTEMPLATE_VISUAL=2`, Layer 2 additionally drives a scripted-CRUD walk-through via `mobile-mcp` against a live Rails server — Welcome → Sign Up → email-confirm via `bin/rails runner` → Sign In → drill into the auto-seeded sample — and Layer 3 then judges the post-walk screenshot against a domain-content rubric.
 
-The agent works on either the **free (MIT) edition** or the **paid edition** without code changes — the same pipeline handles both substrates; multi-tenant features (org switching, invitations, role permissions) survive the rename pipeline when targeting paid.
+The agent works on either the **free (MIT) edition** or the **paid edition** without code changes — the same pipeline handles both substrates; multi-tenant features (org switching, invitations, role permissions) survive the rename pipeline when targeting paid. The agent tests paid first because free is a strict subset of paid; running paid first catches regressions that wouldn't surface against free alone.
 
 Both screenshots are real captures from the booted iOS Simulator and Android emulator post-`./gradlew assembleDebug` / `xcodebuild build`, after the agent installed and launched the generated app.
 
@@ -136,6 +136,9 @@ The agent will also be available as a Claude Code plugin.
 ### Optional flags
 
 - `NATIVEAPPTEMPLATE_VISUAL=1` — opts the run into Stage 1 visual judging (Layer 3). When set, Layer 2 runs in **build mode** instead of fast mode (full `xcodebuild build` + `./gradlew assembleDebug`), then for each platform the agent installs the app on the booted sim/emulator, captures the home screen, and judges it with Opus 4.7 vision against `DEFAULT_STAGE1_RUBRIC`. Adds 60-180s per platform depending on cold-build time. Requires a sim/emulator booted for each platform you want judged. Off by default — `npm run dev` keeps the existing fast path.
+- `NATIVEAPPTEMPLATE_VISUAL=2` — implies `=1` and additionally runs **Stage 2**: the agent boots the generated Rails app under `mise exec -- bin/dev` (after `bundle install` + `bin/rails db:prepare` + `bin/rails db:seed_fu`), waits for it to listen, then drives the iOS sim and Android emulator through the parameterized queue scenario (Sign Up → email-confirm via `bin/rails runner` → Sign In → drill into auto-seeded sample). Layer 3 then judges the last captured screenshot against `DEFAULT_STAGE2_RUBRIC` (domain content + no substrate-token leak). Adds 2–4 minutes per platform on top of `=1`. Requires both sims/emulators booted and the substrate's `mise` toolchain installed for `bin/dev`.
+- `NATIVEAPPTEMPLATE_BRIDGE=off` — skip writing to `~/.gradle/gradle.properties`. The agent normally mirrors `NATIVEAPPTEMPLATE_API_*` (HOST/PORT/SCHEME) into renamed-product variants (`<PRODUCT>_API_*`) at run time so the generated Android app picks them up via `gradle.properties` and the iOS sim launch picks them up via `SIMCTL_CHILD_*`. Set this to disable the file write (process.env injection still runs for child-spawn paths).
+- `NATIVEAPPTEMPLATE_BRIDGE_DRY_RUN=1` — log what would be written to `~/.gradle/gradle.properties` instead of writing. Useful before granting the bridge write access to your user-global gradle.
 - `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` — dedicated workspace key, see [Security](#security).
 - `ANDROID_SERIAL` — when more than one Android device/emulator is attached (e.g. a physical device plus a running emulator), `adb` standard practice is to set `ANDROID_SERIAL=<serial>` to disambiguate. The agent honors this transparently because it runs `adb` directly. Run `adb devices` to list serials. Visual-judge runs with multiple Android targets attached will error with `more than one device/emulator` if this isn't set.
 
@@ -146,7 +149,7 @@ The agent resolves `adb` to a known-good binary in this priority order: `$ANDROI
 The agent doesn't just generate code and exit — it validates the output.
 
 1. **Structural.** `ripgrep` for leftover domain tokens; OpenAPI contract parity check between Rails, iOS networking, and Android repository layers. A silent rename inconsistency fails the run before any tests execute.
-2. **Runtime.** Boot the generated Rails server; build and launch iOS and Android apps; drive a scripted CRUD scenario via [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp). Any 4xx/5xx or unhandled client error fails the run.
+2. **Runtime.** Verify the generated Rails app boots (`bin/rails runner 'puts OK'`); type-check or build the iOS and Android apps. With `NATIVEAPPTEMPLATE_VISUAL=1`, escalate to a full build (`xcodebuild build` + `./gradlew assembleDebug`) and install on the booted sim/emulator. With `=2`, additionally boot the live Rails server and drive a scripted CRUD walk-through via [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp). Any 4xx/5xx or unhandled client error fails the run.
 3. **Semantic.** Opus 4.7 as judge — scores whether the generated code and rendered UI actually express the intended domain. Vision judges read simulator/emulator screenshots directly.
 
 See [`docs/SPEC.md`](./docs/SPEC.md) for the full design.
