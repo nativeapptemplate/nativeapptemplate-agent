@@ -6,6 +6,8 @@ import { runAndroidWorker } from "./agents/workers/android.js";
 import { runReviewer } from "./agents/reviewer.js";
 import { runJudge, type VisualJudgeConfig } from "./agents/judge.js";
 import { applyBridgeToProcessEnv, buildBridgeValues, syncGradleProperties } from "./env-bridge.js";
+import { startRails, type RailsHandle } from "./rails-lifecycle.js";
+import { isStub } from "./stub.js";
 import { trace } from "./trace.js";
 import type { JudgeResult } from "./agents/types.js";
 
@@ -71,21 +73,46 @@ export async function dispatch(spec: string): Promise<JudgeResult> {
               stage2: {
                 primaryResourceName: domain.displayName,
                 fullName: "Stage Two Test",
-                email: "stage2@example.com",
+                // Unique per-run email so re-runs don't collide on
+                // "email already taken". The substrate's signup
+                // accepts "+tag" addresses as distinct identities.
+                email: `stage2+${Date.now()}@example.com`,
                 password: "ValidPassword1!",
+                railsOutDir: resolve(process.cwd(), rails.outDir),
               },
             }
           : {}),
       }
     : undefined;
 
-  return runJudge({
-    domain,
-    rails,
-    ios,
-    android,
-    reviewer,
-    ...(visualLevel >= 1 ? { layer2Mode: "build" as const } : {}),
-    ...(visual ? { visual } : {}),
-  });
+  // For NATIVEAPPTEMPLATE_VISUAL=2, Stage 2 needs a live Rails server
+  // to talk to (the iOS/Android apps make real HTTP calls during
+  // signup, resource create, etc.). Layer 2 build mode validates that
+  // rails *boots*; we own keeping it *running* during Stage 2 here.
+  // Skip in judge-stub mode (smoke tests) — there's no real judge to
+  // serve, so spawning Rails would be useless and require `mise` in
+  // the test environment.
+  let railsServer: RailsHandle | undefined;
+  if (visualLevel >= 2 && !isStub("judge")) {
+    railsServer = await startRails({ outDir: resolve(process.cwd(), rails.outDir) });
+    trace("dispatch", `rails-lifecycle: live at ${railsServer.url} for Stage 2`);
+  }
+
+  try {
+    return await runJudge({
+      domain,
+      rails,
+      ios,
+      android,
+      reviewer,
+      ...(visualLevel >= 1 ? { layer2Mode: "build" as const } : {}),
+      ...(visual ? { visual } : {}),
+    });
+  } finally {
+    if (railsServer) {
+      await railsServer.stop().catch((err) => {
+        trace("dispatch", `rails-lifecycle: stop() error: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }
+  }
 }

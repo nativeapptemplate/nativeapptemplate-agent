@@ -41,7 +41,11 @@ export type MobileClient = {
   listDevices(): Promise<readonly ScreenElement[]>;
   listElements(): Promise<readonly ScreenElement[]>;
   click(x: number, y: number): Promise<void>;
-  typeKeys(text: string): Promise<void>;
+  // submit:true taps the on-screen keyboard's return/submit key after
+  // typing — useful for dismissing the keyboard or submitting a form
+  // field. mobile-mcp 0.0.54 requires the param; we default it to false
+  // so per-call control stays opt-in.
+  typeKeys(text: string, submit?: boolean): Promise<void>;
   pressButton(button: string): Promise<void>;
   takeScreenshot(): Promise<Screenshot>;
   saveScreenshot(absolutePath: string): Promise<void>;
@@ -162,10 +166,22 @@ function wrapClient(client: Client): MobileClient {
       }
     },
     async click(x, y) {
-      await callTool("mobile_click_on_screen_at_coordinates", { x, y });
+      // mobile-mcp 0.0.54's iOS backend (mobilecli `io tap`) rejects
+      // non-integer coordinates. centerOf often produces .5 values for
+      // even-width elements; floor them at the tool boundary so callers
+      // don't have to think about it.
+      await callTool("mobile_click_on_screen_at_coordinates", {
+        x: Math.floor(x),
+        y: Math.floor(y),
+      });
     },
-    async typeKeys(text) {
-      await callTool("mobile_type_keys", { text });
+    async typeKeys(text, submit = false) {
+      // mobile-mcp 0.0.54 requires `submit: boolean` — passing only
+      // {text} fails Zod validation with "expected boolean, received
+      // undefined". Default false; opt in to true via the second
+      // arg when the caller wants the keyboard's return/submit key
+      // tapped after typing (form-submit / keyboard-dismiss).
+      await callTool("mobile_type_keys", { text, submit });
     },
     async pressButton(button) {
       await callTool("mobile_press_button", { button });
@@ -205,7 +221,7 @@ function createStubMobileClient(): MobileClient {
     listDevices: async () => [],
     listElements: async () => [],
     click: async () => {},
-    typeKeys: async () => {},
+    typeKeys: async (_text: string, _submit?: boolean) => {},
     pressButton: async () => {},
     takeScreenshot: async () => ({ data: Buffer.alloc(0), mimeType: "image/png" }),
     saveScreenshot: async () => {},

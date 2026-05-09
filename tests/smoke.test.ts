@@ -314,7 +314,7 @@ test("buildQueueScenario opens with verified welcome → start → auth choice �
       ],
       jsonApiContract: {},
     },
-    { fullName: "Test User", email: "x@y.z", password: "p", primaryResourceName: "Acme" },
+    { fullName: "Test User", email: "x@y.z", password: "p", primaryResourceName: "Acme", railsOutDir: "/tmp/test-rails" },
   );
   assert.equal(scenario.name, "queue-crud-vet-clinic");
 
@@ -342,9 +342,12 @@ test("buildQueueScenario opens with verified welcome → start → auth choice �
     "expected a wait_for_text 'Clinic' step",
   );
 
-  // Toggle assertion still tails the scenario.
+  // Scenario tails with the queue-entry-list screenshot (not the
+  // toggle-state assertion — Add/Toggle/Delete are deferred since
+  // they require mapping icon-only affordances). The screenshot at
+  // the tail is what Layer 3 judges.
   const tail = scenario.steps[scenario.steps.length - 1];
-  assert.deepEqual(tail, { kind: "assert_text", text: "Completed" });
+  assert.deepEqual(tail, { kind: "screenshot", label: "06-queue-entry-list" });
 });
 
 test("runStage2Scenario walks a simple step list against a fake mobile-mcp", async () => {

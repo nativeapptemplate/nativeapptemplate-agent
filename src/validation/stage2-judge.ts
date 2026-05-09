@@ -128,7 +128,12 @@ async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
 
     const baseReport = toBaseReport(scenario);
 
-    if (!scenario.ok || scenario.screenshots.length === 0) {
+    // Run Layer 3 on the LAST captured screenshot even if a later
+    // scenario step failed — a partial walk that reached the domain
+    // content is still worth scoring. Stage2PlatformReport.pass
+    // remains gated on scenario.ok && layer3.pass below, so partial
+    // walks don't sneak through as overall PASS.
+    if (scenario.screenshots.length === 0) {
       return baseReport;
     }
 
