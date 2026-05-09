@@ -31,7 +31,11 @@ export type Stage2Step =
   // for system overlays that appear conditionally (e.g. iOS Keychain
   // "Save password?" prompt after signup) — you want to dismiss the
   // dialog if it shows, otherwise no-op.
-  | { kind: "tap_text"; text: string; timeoutMs?: number; optional?: boolean }
+  // exact:true matches the WHOLE element text (case-insensitive)
+  // instead of substring. Use when the target text is a substring of
+  // a longer label (e.g. "Password" matches "Forgot your password?"
+  // via substring; exact:true scopes to the standalone "Password").
+  | { kind: "tap_text"; text: string; timeoutMs?: number; optional?: boolean; exact?: boolean }
   | { kind: "tap_coordinates"; x: number; y: number; label?: string }
   // Tap a few px below an element matched by text. For forms where a
   // StaticText label sits above a TextField with no label-for binding
@@ -170,7 +174,7 @@ async function runStep(a: RunStepArgs): Promise<string | undefined> {
       // Button at the bottom (e.g. iOS sign-up form has both).
       const optional = a.step.optional === true;
       try {
-        const el = await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs, "Button");
+        const el = await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs, "Button", a.step.exact);
         const center = centerOf(el);
         if (!center) throw new Error(`tap_text "${a.step.text}": found element but could not extract coordinates`);
         await a.client.click(center.x, center.y);
@@ -228,7 +232,7 @@ async function runStep(a: RunStepArgs): Promise<string | undefined> {
     }
     case "tap_field": {
       const fieldTypes = a.step.fieldTypes.map((t) => t.toLowerCase());
-      const nth = a.step.nth ?? 0;
+      const rawNth = a.step.nth ?? 0;
       const elements = await a.client.listElements();
       const matches = elements.filter((el) => {
         const t = el["type"];
@@ -236,9 +240,15 @@ async function runStep(a: RunStepArgs): Promise<string | undefined> {
         const lower = t.toLowerCase();
         return fieldTypes.some((ft) => lower.includes(ft));
       });
+      // Negative nth counts from the end (Python-style). Useful for
+      // cross-platform forms where the same fieldTypes list yields a
+      // different number of matches per platform: iOS Sign In has 1
+      // SecureTextField; Android has 2 EditText (Email + Password).
+      // nth=-1 = "last match" = password on both.
+      const nth = rawNth < 0 ? matches.length + rawNth : rawNth;
       const target = matches[nth];
       if (!target) {
-        throw new Error(`tap_field [${a.step.fieldTypes.join(",")}] (nth=${nth}): no element matched (saw ${matches.length} of these types out of ${elements.length} total)`);
+        throw new Error(`tap_field [${a.step.fieldTypes.join(",")}] (nth=${rawNth}, resolved=${nth}): no element matched (saw ${matches.length} of these types out of ${elements.length} total)`);
       }
       const center = centerOf(target);
       if (!center) throw new Error(`tap_field [${a.step.fieldTypes.join(",")}]: found element but could not extract coordinates`);
@@ -277,13 +287,14 @@ async function waitForText(
   timeoutMs: number,
   pollMs: number,
   preferType?: string,
+  exact?: boolean,
 ): Promise<ScreenElement> {
   const deadline = Date.now() + timeoutMs;
   let lastSeen = 0;
   while (Date.now() < deadline) {
     const elements = await client.listElements();
     lastSeen = elements.length;
-    const match = findByText(elements, text, preferType);
+    const match = findByText(elements, text, preferType, exact);
     if (match) return match;
     await sleep(pollMs);
   }
@@ -298,13 +309,17 @@ function findByText(
   elements: readonly ScreenElement[],
   needle: string,
   preferType?: string,
+  exact?: boolean,
 ): ScreenElement | undefined {
   const target = needle.toLowerCase();
   const matches: ScreenElement[] = [];
   for (const el of elements) {
     for (const field of TEXT_FIELDS) {
       const v = el[field];
-      if (typeof v === "string" && v.toLowerCase().includes(target)) {
+      if (typeof v !== "string") continue;
+      const lower = v.toLowerCase();
+      const hit = exact ? lower === target : lower.includes(target);
+      if (hit) {
         matches.push(el);
         break;
       }

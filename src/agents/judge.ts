@@ -160,14 +160,16 @@ async function runStage2Phase(
   const splitEmail = config.stage2.email.split("@");
   const emailLocal = splitEmail[0] ?? "stage2";
   const emailDomain = splitEmail[1] ?? "example.com";
-  const iosScenario = buildQueueScenario(domain, {
-    ...baseInputs,
-    email: `${emailLocal}+ios@${emailDomain}`,
-  });
-  const androidScenario = buildQueueScenario(domain, {
-    ...baseInputs,
-    email: `${emailLocal}+android@${emailDomain}`,
-  });
+  const iosScenario = buildQueueScenario(
+    domain,
+    { ...baseInputs, email: `${emailLocal}+ios@${emailDomain}` },
+    "ios",
+  );
+  const androidScenario = buildQueueScenario(
+    domain,
+    { ...baseInputs, email: `${emailLocal}+android@${emailDomain}` },
+    "android",
+  );
 
   // Only walk Stage 2 on platforms whose Stage 1 already passed — a
   // failed launch means there's no live app to drive.

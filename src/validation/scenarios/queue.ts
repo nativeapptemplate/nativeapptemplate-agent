@@ -50,12 +50,45 @@ export type QueueScenarioInputs = {
   railsOutDir: string;
 };
 
+export type Platform = "ios" | "android";
+
 export function buildQueueScenario(
   domain: DomainSpec,
   inputs: QueueScenarioInputs,
+  platform: Platform = "ios",
 ): Stage2Scenario {
   const primaryName = renamedTo(domain, "Shop") ?? "Shop";
   const queueEntryName = renamedTo(domain, "ItemTag") ?? "ItemTag";
+
+  // Sign In form-fill diverges per platform: iOS Compose uses a
+  // SecureTextField type for the password (queryable by tap_field);
+  // Android Compose's empty OutlinedTextField doesn't surface an
+  // EditText in the accessibility tree until it has content. Tap the
+  // visible TextView label to focus the field instead.
+  const signInFormFill: Stage2Step[] = platform === "ios"
+    ? [
+        { kind: "tap_field", fieldTypes: ["TextField", "EditText"], nth: 0 },
+        { kind: "type", text: inputs.email, submit: true },
+        { kind: "tap_field", fieldTypes: ["SecureTextField", "EditText"], nth: -1 },
+        { kind: "type", text: inputs.password, submit: true },
+      ]
+    : [
+        // exact:true scopes to the standalone label TextView. Without
+        // it, "Password" substring-matches "Forgot your password?" (a
+        // link that navigates away to the password-reset screen).
+        //
+        // submit:true is OMITTED on Android because mobile-mcp injects
+        // a literal newline character ("\n", surfaces as "&#10;") into
+        // the field instead of dismissing the keyboard — which then
+        // fails Email validation. Use press_button "BACK" instead to
+        // dismiss the keyboard before the next tap.
+        { kind: "tap_text", text: "Email", exact: true },
+        { kind: "type", text: inputs.email },
+        { kind: "press_button", button: "BACK", optional: true },
+        { kind: "tap_text", text: "Password", exact: true },
+        { kind: "type", text: inputs.password },
+        { kind: "press_button", button: "BACK", optional: true },
+      ];
 
   const steps: Stage2Step[] = [
     // ---- Verified: Welcome → Auth choice → Sign Up form ----
@@ -132,25 +165,11 @@ export function buildQueueScenario(
     { kind: "tap_text", text: "Dismiss", optional: true, timeoutMs: 3_000 },
     { kind: "tap_text", text: "Sign In to Your Account" },
     { kind: "wait_for_text", text: "Email", timeoutMs: 10_000 },
-    // Sign In form is more compact than Sign Up — tap_below_text
-    // math doesn't land cleanly on the SecureTextField. Use
-    // tap_field with explicit type for both fields here so we
-    // hit the inputs by accessibility type, not by label-offset
-    // guesswork. nth indexes by element-type ordering: TextField=Email,
-    // SecureTextField=Password.
-    { kind: "tap_field", fieldTypes: ["TextField", "EditText"], nth: 0 },
-    // submit:true dismisses the keyboard so the next tap lands on
-    // the actual SecureTextField, not on the keyboard.
-    { kind: "type", text: inputs.email, submit: true },
-    // Android EditText is used for both regular and password fields;
-// the password one has type="android.widget.EditText" with a
-// password input flag. There's only ONE EditText after the email
-// has been filled and form re-rendered, so nth=1 picks the
-// SecureTextField on iOS / second EditText on Android. On iOS
-// the SecureTextField is a distinct type; "SecureTextField"
-// matches it directly.
-{ kind: "tap_field", fieldTypes: ["SecureTextField", "EditText"], nth: 0 },
-    { kind: "type", text: inputs.password, submit: true },
+    // Sign In form-fill is platform-specific (built above). iOS uses
+    // tap_field with SecureTextField; Android uses tap_text "Email" /
+    // "Password" since Compose's empty OutlinedTextField doesn't
+    // surface an EditText in the accessibility tree.
+    ...signInFormFill,
     { kind: "tap_text", text: "Sign In" },
 
     // iOS Keychain shows "Save password?" again after a successful
@@ -167,15 +186,31 @@ export function buildQueueScenario(
     { kind: "wait_for_text", text: primaryName, timeoutMs: 15_000 },
     { kind: "screenshot", label: "04-primary-list-empty" },
 
-    // Create one primary resource. The form has a "Clinic Name"
-    // StaticText label (which substring-matches "Name") above an
-    // unlabeled TextField — same pattern as Sign Up. Use tap_field
-    // by element type so we hit the input directly, not the label.
+    // Create one primary resource. iOS form: tap_field on the input,
+    // submit:true to dismiss keyboard, "Save" button at top-right.
+    // Android form: empty OutlinedTextField (no EditText surfaced),
+    // submit:true injects "\n", and the submit button reads "Add
+    // <Primary>" not "Save". Diverged below per platform.
     { kind: "tap_text", text: "Add" },
     { kind: "wait_for_text", text: "Name" },
-    { kind: "tap_field", fieldTypes: ["TextField", "EditText"], nth: 0 },
-    { kind: "type", text: inputs.primaryResourceName, submit: true },
-    { kind: "tap_text", text: "Save" },
+    ...(platform === "ios"
+      ? [
+          { kind: "tap_field" as const, fieldTypes: ["TextField", "EditText"], nth: 0 },
+          { kind: "type" as const, text: inputs.primaryResourceName, submit: true },
+          { kind: "tap_text" as const, text: "Save" },
+        ]
+      : [
+          { kind: "tap_text" as const, text: "Clinic Name", exact: false },
+          { kind: "type" as const, text: inputs.primaryResourceName },
+          { kind: "press_button" as const, button: "BACK", optional: true },
+          { kind: "tap_text" as const, text: `Add ${primaryName}`, exact: true },
+        ]),
+
+    // Android shows a "<Resource> added." snackbar with a Dismiss
+    // button after Save. Dismiss it so the next wait_for_text isn't
+    // looking past the snackbar overlay. iOS doesn't show one — the
+    // optional flag no-ops.
+    { kind: "tap_text", text: "Dismiss", optional: true, timeoutMs: 3_000 },
 
     { kind: "wait_for_text", text: inputs.primaryResourceName },
     { kind: "screenshot", label: "05-primary-list-one" },
