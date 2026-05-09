@@ -181,6 +181,14 @@ export function buildQueueScenario(
     { kind: "tap_text", text: "今はしない", optional: true, timeoutMs: 3_000 },
     { kind: "tap_text", text: "Not Now", optional: true, timeoutMs: 3_000 },
 
+    // PAID-substrate-only intro modal after Sign In: "You are in
+    // personal organization. ... Switch to or create an organization
+    // to share..." with [Go to Organizations] and [OK] buttons.
+    // OK dismisses and lands on the (renamed primary noun) list. Free
+    // edition has no multi-tenancy so this modal never appears
+    // (optional no-ops).
+    { kind: "tap_text", text: "OK", exact: true, optional: true, timeoutMs: 3_000 },
+
     // ---- Unverified below — best-effort guesses, expect drift ----
 
     // After auth, the user lands on the primary-resource list. The
@@ -195,7 +203,13 @@ export function buildQueueScenario(
     // Android form: empty OutlinedTextField (no EditText surfaced),
     // submit:true injects "\n", and the submit button reads "Add
     // <Primary>" not "Save". Diverged below per platform.
-    { kind: "tap_text", text: "Add" },
+    // Create-resource button label varies by edition:
+    //   Free iOS: "Add" (top-right + button)
+    //   Paid iOS: "Create Clinic" (empty-state CTA)
+    //   Android: similar split — try both as optional taps in
+    //   priority order so whichever exists fires.
+    { kind: "tap_text", text: `Create ${primaryName}`, exact: true, optional: true, timeoutMs: 3_000 },
+    { kind: "tap_text", text: "Add", exact: true, optional: true, timeoutMs: 3_000 },
     { kind: "wait_for_text", text: "Name" },
     ...(platform === "ios"
       ? [

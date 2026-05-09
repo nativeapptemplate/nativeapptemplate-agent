@@ -30,11 +30,13 @@ Project-wide Claude Code instructions. Keep this file short — it's loaded into
 
 ## Substrate (what the agent operates on)
 
-The agent works on either the free (MIT-licensed) edition or the paid edition — the same code path handles both, validated end-to-end. Pick which substrate to use by pointing the env vars at the corresponding repos:
+The agent targets BOTH the paid and free (MIT-licensed) editions — the same code path handles both, validated end-to-end. **Test the paid edition first**: the free edition is a strict subset of paid (paid = free + multi-tenancy + invitations + role permissions + org switching), so anything that works on paid works on free, but not vice-versa. Catching paid-only regressions first avoids "free passes, paid breaks" surprises.
+
+Env vars point at the paid edition by default. Pick which substrate to use by pointing them at the corresponding repos:
 
 - `$NATIVEAPPTEMPLATE_API` — Rails 8.1 API repo (`nativeapptemplateapi`, single repo serves both editions; multi-tenancy + invitations are conditional features)
-- `$NATIVEAPPTEMPLATE_IOS` — SwiftUI iOS repo. Free: `NativeAppTemplate-Free-iOS` (Swift 15,311 LOC). Paid: `NativeAppTemplate` (Swift 23,003 LOC, adds org switching, invitations, role permissions).
-- `$NATIVEAPPTEMPLATE_ANDROID` — Jetpack Compose Android repo. Free: `NativeAppTemplate-Free-Android` (Kotlin 19,521 LOC). Paid: `NativeAppTemplate` (Kotlin 28,401 LOC).
+- `$NATIVEAPPTEMPLATE_IOS` — SwiftUI iOS repo. Paid: `NativeAppTemplate` (Swift 23,003 LOC, adds org switching, invitations, role permissions). Free: `NativeAppTemplate-Free-iOS` (Swift 15,311 LOC).
+- `$NATIVEAPPTEMPLATE_ANDROID` — Jetpack Compose Android repo. Paid: `NativeAppTemplate` (Kotlin 28,401 LOC). Free: `NativeAppTemplate-Free-Android` (Kotlin 19,521 LOC).
 
 The renamer's substitution rules (Shop / Shopkeeper / ItemTag / NativeAppTemplate) apply identically to both editions. Paid-only concepts (Account, Member, Invitation) aren't in the rename plan, so paid features survive the generation intact. Both editions hit the same Rails OpenAPI server, so the reviewer's three-way diff works against either.
 
@@ -46,7 +48,7 @@ The renamer's substitution rules (Shop / Shopkeeper / ItemTag / NativeAppTemplat
 - `Shopkeeper` → the authenticated user/owner of a Shop
 - `ItemTag` (aka Number Tag) → a queue entry, attached to a Shop
 - **ItemTag has TWO states: `Idled` ↔ `Completed`.** It's a toggle, not a three-state machine. If a user's spec wants three states (e.g. "in-service"), extend the machine rather than assume it.
-- Free edition is single-organization (personal account is transparent). Paid-edition features (multi-tenancy, invitations, roles, org switching) are out of scope for the hackathon.
+- Free edition is single-organization (personal account is transparent). Paid edition adds multi-tenancy, invitations, roles, org switching — all out of scope for the rename pipeline (paid-only concepts aren't in the rename plan), but the agent still operates against paid substrates by default since paid is a superset of free.
 
 ## Repository state
 
@@ -132,6 +134,6 @@ Ships as:
 
 - **Don't reimplement mobile UI automation.** Use mobile-mcp. The hackathon is not about inventing device automation.
 - **Don't extend scope beyond the queue / simple-CRUD-SaaS family** during the hackathon week. See `docs/SPEC.md` section 9 for the full non-goals list.
-- **Don't target the paid edition.** The deliverable operates only on the MIT-licensed free edition so judges can reproduce it end-to-end.
+- **Test the paid edition first.** Free is a strict subset of paid, so running paid first catches regressions that wouldn't surface against free alone. The OSS reproducibility story (judges/contributors with no paid license) lives in the free edition — once paid is green, point env vars at the free repos and re-run for the public demo.
 - **Don't skip the validation layers to save time.** They are the demo story. A run that green-builds without passing Layer 3 is a failed run.
-- **Don't edit, commit, push, or run `git clean` / `rm` inside `$NATIVEAPPTEMPLATE_API`, `$NATIVEAPPTEMPLATE_IOS`, or `$NATIVEAPPTEMPLATE_ANDROID`.** Those are the developer's working copies of the free-edition substrate, possibly shared with other projects on the same machine. Copy them into `./out/<slug>/` first; change nothing in place. If unsure whether a command is safe, ask.
+- **Don't edit, commit, push, or run `git clean` / `rm` inside `$NATIVEAPPTEMPLATE_API`, `$NATIVEAPPTEMPLATE_IOS`, or `$NATIVEAPPTEMPLATE_ANDROID`.** Those are the developer's working copies of the substrate (paid by default; possibly free), shared with other projects on the same machine. Copy them into `./out/<slug>/` first; change nothing in place. If unsure whether a command is safe, ask.
