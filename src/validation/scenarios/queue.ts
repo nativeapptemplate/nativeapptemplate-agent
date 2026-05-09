@@ -59,6 +59,10 @@ export function buildQueueScenario(
 ): Stage2Scenario {
   const primaryName = renamedTo(domain, "Shop") ?? "Shop";
   const queueEntryName = renamedTo(domain, "ItemTag") ?? "ItemTag";
+  // Renamed Shopkeeper class (Vet for clinic, Host for restaurant,
+  // Curator for journal, etc.). Used by the rails_runner confirm
+  // step to bypass email confirmation server-side.
+  const shopkeeperClass = renamedTo(domain, "Shopkeeper") ?? "Shopkeeper";
 
   // Sign In form-fill diverges per platform: iOS Compose uses a
   // SecureTextField type for the password (queryable by tap_field);
@@ -152,7 +156,7 @@ export function buildQueueScenario(
     {
       kind: "rails_runner",
       outDir: inputs.railsOutDir,
-      ruby: `Vet.find_by(email: ${JSON.stringify(inputs.email)})&.confirm`,
+      ruby: `${shopkeeperClass}.find_by(email: ${JSON.stringify(inputs.email)})&.confirm`,
       label: "confirm vet",
     },
 
@@ -200,7 +204,7 @@ export function buildQueueScenario(
           { kind: "tap_text" as const, text: "Save" },
         ]
       : [
-          { kind: "tap_text" as const, text: "Clinic Name", exact: false },
+          { kind: "tap_text" as const, text: `${primaryName} Name`, exact: false },
           { kind: "type" as const, text: inputs.primaryResourceName },
           { kind: "press_button" as const, button: "BACK", optional: true },
           { kind: "tap_text" as const, text: `Add ${primaryName}`, exact: true },
