@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { scrubbedEnv } from "../env.js";
 import { resolveAdbPath } from "../adb.js";
+import { selectAdbTarget } from "./launch.js";
 
 export type CapturePlatform = "ios" | "android";
 
@@ -99,12 +100,30 @@ async function captureIos(outPath: string, timeoutMs: number): Promise<CaptureRe
 
 async function captureAndroid(outPath: string, timeoutMs: number): Promise<CaptureResult> {
   const adb = resolveAdbPath();
-  const command = `${adb} exec-out screencap -p > ${outPath}`;
   const started = Date.now();
+
+  // Same multi-device disambiguation as installAndLaunchAndroid: when
+  // >1 device is attached, adb fails with "more than one device/
+  // emulator" unless -s <serial> picks one. Reuse selectAdbTarget so
+  // the install path and the screenshot path target the same device.
+  const targeting = await selectAdbTarget(adb, timeoutMs);
+  if (!targeting.ok) {
+    return {
+      ok: false,
+      path: outPath,
+      command: `${adb} devices`,
+      durationMs: Date.now() - started,
+      error: targeting.error,
+    };
+  }
+  const targetArgs = targeting.serial !== undefined ? ["-s", targeting.serial] : [];
+  const targetForCmd = targeting.serial !== undefined ? ` -s ${targeting.serial}` : "";
+  const command = `${adb}${targetForCmd} exec-out screencap -p > ${outPath}`;
+
   return new Promise((resolvePromise) => {
     let child;
     try {
-      child = spawn(adb, ["exec-out", "screencap", "-p"], {
+      child = spawn(adb, [...targetArgs, "exec-out", "screencap", "-p"], {
         env: scrubbedEnv(),
         stdio: ["ignore", "pipe", "pipe"],
       });

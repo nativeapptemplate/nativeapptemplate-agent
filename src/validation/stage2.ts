@@ -1,6 +1,8 @@
+import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
+import { scrubbedEnv } from "../env.js";
 import type { MobileClient, ScreenElement } from "../mobile.js";
 
 // Layer 2 Stage 2 scenario runner per docs/SPEC.md.
@@ -24,13 +26,47 @@ import type { MobileClient, ScreenElement } from "../mobile.js";
 //     PR 3 of the Stage 2 series.
 
 export type Stage2Step =
-  | { kind: "wait_for_text"; text: string; timeoutMs?: number }
-  | { kind: "tap_text"; text: string; timeoutMs?: number }
+  | { kind: "wait_for_text"; text: string; timeoutMs?: number; exact?: boolean }
+  // optional:true swallows wait/find failures and just continues. Use
+  // for system overlays that appear conditionally (e.g. iOS Keychain
+  // "Save password?" prompt after signup) — you want to dismiss the
+  // dialog if it shows, otherwise no-op.
+  // exact:true matches the WHOLE element text (case-insensitive)
+  // instead of substring. Use when the target text is a substring of
+  // a longer label (e.g. "Password" matches "Forgot your password?"
+  // via substring; exact:true scopes to the standalone "Password").
+  | { kind: "tap_text"; text: string; timeoutMs?: number; optional?: boolean; exact?: boolean }
   | { kind: "tap_coordinates"; x: number; y: number; label?: string }
-  | { kind: "type"; text: string }
-  | { kind: "press_button"; button: string }
+  // Tap a few px below an element matched by text. For forms where a
+  // StaticText label sits above a TextField with no label-for binding
+  // (the substrate's pattern) — tap_text would hit the dead label;
+  // tap_below_text focuses the field below it. Default offset is 30px.
+  | { kind: "tap_below_text"; text: string; offsetY?: number; timeoutMs?: number }
+  // submit:true taps the keyboard's return/submit key after typing —
+  // useful as the last form-field type to dismiss the keyboard so a
+  // submit button below it becomes tappable.
+  | { kind: "type"; text: string; submit?: boolean }
+  | { kind: "press_button"; button: string; optional?: boolean }
   | { kind: "screenshot"; label: string }
-  | { kind: "assert_text"; text: string };
+  | { kind: "assert_text"; text: string }
+  // Run a single-line Ruby snippet via `mise exec -- bin/rails runner`
+  // in the given outDir. Used to bypass parts of the substrate's auth
+  // flow that aren't traversable via UI alone (e.g. clicking the email
+  // confirmation link). The Ruby snippet runs server-side, scoped to
+  // the just-spawned Stage 2 Rails process, so it can manipulate the
+  // app's database directly.
+  | { kind: "rails_runner"; outDir: string; ruby: string; label?: string; timeoutMs?: number }
+  // Tap an unlabeled input by element type. iOS forms often have a
+  // StaticText label sitting above an unlabeled TextField/
+  // SecureTextField; tap_below_text bias-taps where the field
+  // *should* be, but is fragile when the form layout differs from
+  // the substrate's typical Sign Up form. tap_field finds the n-th
+  // element matching ANY of the provided types (substring,
+  // case-insensitive — so "TextField" matches "TextField" + iOS
+  // "SecureTextField", "EditText" matches Android "android.widget.
+  // EditText") and taps its center directly. Pass multiple types to
+  // handle iOS + Android in one step.
+  | { kind: "tap_field"; fieldTypes: readonly string[]; nth?: number };
 
 export type Stage2Scenario = {
   name: string;
@@ -128,26 +164,53 @@ type RunStepArgs = {
 async function runStep(a: RunStepArgs): Promise<string | undefined> {
   switch (a.step.kind) {
     case "wait_for_text": {
-      await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs);
+      await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs, undefined, a.step.exact);
       return undefined;
     }
     case "tap_text": {
-      const el = await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs);
-      const center = centerOf(el);
-      if (!center) throw new Error(`tap_text "${a.step.text}": found element but could not extract coordinates`);
-      await a.client.click(center.x, center.y);
+      // Prefer a Button-typed match when multiple elements share the
+      // text — tap_text implies tapping something interactive, and
+      // pages often duplicate copy between a StaticText header and a
+      // Button at the bottom (e.g. iOS sign-up form has both).
+      const optional = a.step.optional === true;
+      try {
+        const el = await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs, "Button", a.step.exact);
+        const center = centerOf(el);
+        if (!center) throw new Error(`tap_text "${a.step.text}": found element but could not extract coordinates`);
+        await a.client.click(center.x, center.y);
+      } catch (err) {
+        if (optional) return undefined;
+        throw err;
+      }
       return undefined;
     }
     case "tap_coordinates": {
       await a.client.click(a.step.x, a.step.y);
       return undefined;
     }
+    case "tap_below_text": {
+      const el = await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs);
+      const center = centerOf(el);
+      if (!center) throw new Error(`tap_below_text "${a.step.text}": found element but could not extract coordinates`);
+      const labelHeight = labelHeightOf(el) ?? 0;
+      const offsetY = a.step.offsetY ?? 30;
+      // Bias to the center of where the field below typically sits:
+      // labelCenter.y + labelHeight/2 (bottom of label) + offsetY.
+      const targetY = center.y + labelHeight / 2 + offsetY;
+      await a.client.click(center.x, targetY);
+      return undefined;
+    }
     case "type": {
-      await a.client.typeKeys(a.step.text);
+      await a.client.typeKeys(a.step.text, a.step.submit ?? false);
       return undefined;
     }
     case "press_button": {
-      await a.client.pressButton(a.step.button);
+      try {
+        await a.client.pressButton(a.step.button);
+      } catch (err) {
+        if (a.step.optional) return undefined;
+        throw err;
+      }
       return undefined;
     }
     case "screenshot": {
@@ -163,7 +226,59 @@ async function runStep(a: RunStepArgs): Promise<string | undefined> {
       }
       return undefined;
     }
+    case "rails_runner": {
+      await runRailsRunner(a.step.outDir, a.step.ruby, a.step.timeoutMs ?? 30_000, a.step.label);
+      return undefined;
+    }
+    case "tap_field": {
+      const fieldTypes = a.step.fieldTypes.map((t) => t.toLowerCase());
+      const rawNth = a.step.nth ?? 0;
+      const elements = await a.client.listElements();
+      const matches = elements.filter((el) => {
+        const t = el["type"];
+        if (typeof t !== "string") return false;
+        const lower = t.toLowerCase();
+        return fieldTypes.some((ft) => lower.includes(ft));
+      });
+      // Negative nth counts from the end (Python-style). Useful for
+      // cross-platform forms where the same fieldTypes list yields a
+      // different number of matches per platform: iOS Sign In has 1
+      // SecureTextField; Android has 2 EditText (Email + Password).
+      // nth=-1 = "last match" = password on both.
+      const nth = rawNth < 0 ? matches.length + rawNth : rawNth;
+      const target = matches[nth];
+      if (!target) {
+        throw new Error(`tap_field [${a.step.fieldTypes.join(",")}] (nth=${rawNth}, resolved=${nth}): no element matched (saw ${matches.length} of these types out of ${elements.length} total)`);
+      }
+      const center = centerOf(target);
+      if (!center) throw new Error(`tap_field [${a.step.fieldTypes.join(",")}]: found element but could not extract coordinates`);
+      await a.client.click(center.x, center.y);
+      return undefined;
+    }
   }
+}
+
+async function runRailsRunner(outDir: string, ruby: string, timeoutMs: number, label?: string): Promise<void> {
+  await new Promise<void>((resolveStep, rejectStep) => {
+    const child = spawn("mise", ["exec", "--", "bin/rails", "runner", ruby], {
+      cwd: outDir,
+      env: scrubbedEnv(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const out: string[] = [];
+    child.stdout?.on("data", (c: Buffer) => out.push(c.toString("utf8")));
+    child.stderr?.on("data", (c: Buffer) => out.push(c.toString("utf8")));
+    const timer = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolveStep();
+      else rejectStep(new Error(`rails_runner${label ? ` (${label})` : ""} exited ${code}: ${out.join("").slice(-500)}`));
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      rejectStep(err);
+    });
+  });
 }
 
 async function waitForText(
@@ -171,13 +286,15 @@ async function waitForText(
   text: string,
   timeoutMs: number,
   pollMs: number,
+  preferType?: string,
+  exact?: boolean,
 ): Promise<ScreenElement> {
   const deadline = Date.now() + timeoutMs;
   let lastSeen = 0;
   while (Date.now() < deadline) {
     const elements = await client.listElements();
     lastSeen = elements.length;
-    const match = findByText(elements, text);
+    const match = findByText(elements, text, preferType, exact);
     if (match) return match;
     await sleep(pollMs);
   }
@@ -186,15 +303,69 @@ async function waitForText(
   );
 }
 
-const TEXT_FIELDS = ["label", "name", "text", "value", "title", "accessibilityLabel", "placeholder"] as const;
+const TEXT_FIELDS = ["label", "name", "text", "value", "title", "accessibilityLabel", "placeholder", "identifier"] as const;
 
-function findByText(elements: readonly ScreenElement[], needle: string): ScreenElement | undefined {
+function findByText(
+  elements: readonly ScreenElement[],
+  needle: string,
+  preferType?: string,
+  exact?: boolean,
+): ScreenElement | undefined {
   const target = needle.toLowerCase();
+  const matches: ScreenElement[] = [];
   for (const el of elements) {
     for (const field of TEXT_FIELDS) {
       const v = el[field];
-      if (typeof v === "string" && v.toLowerCase().includes(target)) return el;
+      if (typeof v !== "string") continue;
+      const lower = v.toLowerCase();
+      const hit = exact ? lower === target : lower.includes(target);
+      if (hit) {
+        matches.push(el);
+        break;
+      }
     }
+  }
+  if (matches.length === 0) return undefined;
+  // When the same text appears on multiple elements (e.g. "Sign Up"
+  // shows up as both a StaticText page-header AND a Button at the
+  // bottom of the form), prefer the typed match the caller asked for
+  // — typically Button for tappable intents. preferType is a
+  // case-insensitive substring match so it covers both iOS ("Button")
+  // and Android ("android.widget.Button") type strings.
+  if (preferType) {
+    const want = preferType.toLowerCase();
+    const typed = matches.find((el) => {
+      const t = el["type"];
+      return typeof t === "string" && t.toLowerCase().includes(want);
+    });
+    if (typed) return typed;
+    // preferType was asked but didn't match — common on Android
+    // Compose where a submit "Button" is rendered as TextView instead
+    // of a typed widget. Fall back to the bottom-most match (submit
+    // buttons sit below page headers in every form pattern we've
+    // seen). Only do this when preferType was specified — otherwise
+    // bottom-most would pick validation messages over labels for
+    // cases like wait_for_text "Password" on a form.
+    if (matches.length > 1) {
+      const withY = matches.map((el) => ({ el, y: topYOf(el) ?? 0 }));
+      withY.sort((a, b) => b.y - a.y);
+      return withY[0]!.el;
+    }
+  }
+  return matches[0];
+}
+
+function topYOf(element: ScreenElement): number | undefined {
+  const candidates: Record<string, unknown>[] = [
+    element,
+    element["coordinates"] as Record<string, unknown> | undefined ?? {},
+    element["rect"] as Record<string, unknown> | undefined ?? {},
+    element["bounds"] as Record<string, unknown> | undefined ?? {},
+    element["frame"] as Record<string, unknown> | undefined ?? {},
+  ];
+  for (const c of candidates) {
+    const y = numberAt(c, "y");
+    if (y !== undefined) return y;
   }
   return undefined;
 }
@@ -205,6 +376,9 @@ function findByText(elements: readonly ScreenElement[], needle: string): ScreenE
 function centerOf(element: ScreenElement): { x: number; y: number } | undefined {
   const candidates: Record<string, unknown>[] = [
     element,
+    // mobile-mcp 0.0.54 nests under `coordinates: {x,y,width,height}`.
+    // iOS/Android variants have used `rect`, `bounds`, `frame` over time.
+    element["coordinates"] as Record<string, unknown> | undefined ?? {},
     element["rect"] as Record<string, unknown> | undefined ?? {},
     element["bounds"] as Record<string, unknown> | undefined ?? {},
     element["frame"] as Record<string, unknown> | undefined ?? {},
@@ -220,6 +394,21 @@ function centerOf(element: ScreenElement): { x: number; y: number } | undefined 
     if (x !== undefined && y !== undefined) {
       return { x, y };
     }
+  }
+  return undefined;
+}
+
+function labelHeightOf(element: ScreenElement): number | undefined {
+  const candidates: Record<string, unknown>[] = [
+    element,
+    element["coordinates"] as Record<string, unknown> | undefined ?? {},
+    element["rect"] as Record<string, unknown> | undefined ?? {},
+    element["bounds"] as Record<string, unknown> | undefined ?? {},
+    element["frame"] as Record<string, unknown> | undefined ?? {},
+  ];
+  for (const c of candidates) {
+    const h = numberAt(c, "height") ?? numberAt(c, "h");
+    if (h !== undefined) return h;
   }
   return undefined;
 }

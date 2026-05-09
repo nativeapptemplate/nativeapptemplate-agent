@@ -81,10 +81,30 @@ async function installAndLaunchIos(appPath: string, bundleId: string, timeoutMs:
 async function installAndLaunchAndroid(apkPath: string, packageName: string, timeoutMs: number): Promise<LaunchResult> {
   const adb = resolveAdbPath();
   const started = Date.now();
-  const installCmd = `${adb} install -r ${apkPath}`;
-  const launchCmd = `${adb} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
 
-  const install = await runOnce(adb, ["install", "-r", apkPath], timeoutMs);
+  // adb fails with "more than one device/emulator" when >1 device is
+  // attached unless `-s <serial>` disambiguates. Common on dev machines
+  // that have a real phone plugged in alongside an emulator. Pick the
+  // emulator (the agent's standard CI target — emulators boot reliably
+  // and are reproducible). If exactly one device, pass through with no
+  // -s. If zero, fail fast with a useful error rather than letting adb
+  // produce its terse "no devices/emulators found".
+  const targeting = await selectAdbTarget(adb, timeoutMs);
+  if (!targeting.ok) {
+    return {
+      ok: false,
+      command: `${adb} devices`,
+      durationMs: Date.now() - started,
+      error: targeting.error,
+    };
+  }
+
+  const targetArgs = targeting.serial !== undefined ? ["-s", targeting.serial] : [];
+  const targetForCmd = targeting.serial !== undefined ? ` -s ${targeting.serial}` : "";
+  const installCmd = `${adb}${targetForCmd} install -r ${apkPath}`;
+  const launchCmd = `${adb}${targetForCmd} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
+
+  const install = await runOnce(adb, [...targetArgs, "install", "-r", apkPath], timeoutMs);
   if (!install.ok) {
     return {
       ok: false,
@@ -95,7 +115,7 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
   }
   const launch = await runOnce(
     adb,
-    ["shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"],
+    [...targetArgs, "shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"],
     timeoutMs,
   );
   return {
@@ -106,7 +126,85 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
   };
 }
 
+type AdbTargeting =
+  | { ok: true; serial?: string }
+  | { ok: false; error: string };
+
+// Picks the right `adb -s <serial>` target when multiple devices are
+// attached. Preference: NATIVEAPPTEMPLATE_ADB_SERIAL env override >
+// emulator-* (reliable, reproducible) > first device. Returns
+// { ok:true, serial:undefined } when exactly one device is attached
+// (no -s needed; adb defaults work fine).
+export async function selectAdbTarget(adb: string, timeoutMs: number): Promise<AdbTargeting> {
+  const override = process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'];
+  if (override) return { ok: true, serial: override };
+
+  const list = await runCapture(adb, ["devices"], timeoutMs);
+  if (!list.ok) {
+    return { ok: false, error: list.error ?? `${adb} devices failed` };
+  }
+
+  const serials = parseAdbDevices(list.stdout);
+  if (serials.length === 0) {
+    return { ok: false, error: "no adb devices/emulators attached (boot one in Android Studio Device Manager)" };
+  }
+  if (serials.length === 1) return { ok: true };
+
+  const emulator = serials.find((s) => s.startsWith("emulator-"));
+  return { ok: true, serial: emulator ?? serials[0]! };
+}
+
+export function parseAdbDevices(stdout: string): readonly string[] {
+  // `adb devices` output:
+  //   List of devices attached
+  //   1C081FDF600CMG	device
+  //   emulator-5554	device
+  //
+  // Skip the header, accept only fully-online "device" rows (drop
+  // "offline" / "unauthorized" / "no permissions").
+  const result: string[] = [];
+  for (const line of stdout.split("\n")) {
+    const m = line.match(/^(\S+)\s+device$/);
+    const serial = m?.[1];
+    if (serial !== undefined && serial !== "List") result.push(serial);
+  }
+  return result;
+}
+
 type RunResult = { ok: boolean; error?: string };
+type CaptureResult = { ok: true; stdout: string } | { ok: false; error: string };
+
+function runCapture(cmd: string, args: readonly string[], timeoutMs: number): Promise<CaptureResult> {
+  return new Promise((resolvePromise) => {
+    let child;
+    try {
+      child = spawn(cmd, [...args], { env: scrubbedEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    } catch (err) {
+      resolvePromise({ ok: false, error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    const stderrChunks: Buffer[] = [];
+    const stdoutChunks: Buffer[] = [];
+    child.stderr.on("data", (c: Buffer) => stderrChunks.push(c));
+    child.stdout.on("data", (c: Buffer) => stdoutChunks.push(c));
+    const timer = setTimeout(() => { child.kill("SIGTERM"); }, timeoutMs);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const stderr = Buffer.concat(stderrChunks).toString("utf8").trim();
+      const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+      if (code === 0) {
+        resolvePromise({ ok: true, stdout });
+      } else {
+        resolvePromise({ ok: false, error: stderr || stdout || `${cmd} exited ${code}` });
+      }
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolvePromise({ ok: false, error: err.message });
+    });
+  });
+}
 
 function runOnce(cmd: string, args: readonly string[], timeoutMs: number): Promise<RunResult> {
   return new Promise((resolvePromise) => {

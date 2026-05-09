@@ -45,8 +45,10 @@ export type VisualJudgeConfig = {
   spec?: string;
   stage2?: {
     primaryResourceName: string;
+    fullName: string;
     email: string;
     password: string;
+    railsOutDir: string;
     rubric?: readonly Layer3Criterion[];
   };
 };
@@ -146,12 +148,28 @@ async function runStage2Phase(
 ): Promise<{ ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport }> {
   if (!config.stage2) return base;
 
-  const inputs = {
-    email: config.stage2.email,
+  // Per-platform scenarios with platform-suffixed emails so iOS and
+  // Android signups don't collide on "email already taken" — both
+  // run against the same shared Rails DB.
+  const baseInputs = {
+    fullName: config.stage2.fullName,
     password: config.stage2.password,
     primaryResourceName: config.stage2.primaryResourceName,
+    railsOutDir: config.stage2.railsOutDir,
   };
-  const scenario = buildQueueScenario(domain, inputs);
+  const splitEmail = config.stage2.email.split("@");
+  const emailLocal = splitEmail[0] ?? "stage2";
+  const emailDomain = splitEmail[1] ?? "example.com";
+  const iosScenario = buildQueueScenario(
+    domain,
+    { ...baseInputs, email: `${emailLocal}+ios@${emailDomain}` },
+    "ios",
+  );
+  const androidScenario = buildQueueScenario(
+    domain,
+    { ...baseInputs, email: `${emailLocal}+android@${emailDomain}` },
+    "android",
+  );
 
   // Only walk Stage 2 on platforms whose Stage 1 already passed — a
   // failed launch means there's no live app to drive.
@@ -168,8 +186,8 @@ async function runStage2Phase(
 
   const stage2 = await runStage2Visual({
     spec: config.spec ?? domain.displayName,
-    ...(wantIos ? { iosScenario: scenario } : {}),
-    ...(wantAndroid ? { androidScenario: scenario } : {}),
+    ...(wantIos ? { iosScenario } : {}),
+    ...(wantAndroid ? { androidScenario } : {}),
     ...(config.stage2.rubric !== undefined ? { rubric: config.stage2.rubric } : {}),
     ...(config.screenshotDir !== undefined ? { screenshotDir: config.screenshotDir } : {}),
   });
