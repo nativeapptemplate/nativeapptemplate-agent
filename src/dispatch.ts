@@ -70,6 +70,7 @@ export async function dispatch(spec: string): Promise<JudgeResult> {
           ? {
               stage2: {
                 primaryResourceName: domain.displayName,
+                fullName: "Stage Two Test",
                 email: "stage2@example.com",
                 password: "ValidPassword1!",
               },

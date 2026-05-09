@@ -301,7 +301,7 @@ test("attachMobileClient drives a fake mobile-mcp server end-to-end", async () =
   await fake.close();
 });
 
-test("buildQueueScenario uses renamed Shop label and walks sign-up → list → toggle", async () => {
+test("buildQueueScenario opens with verified welcome → start → auth choice → sign-up form flow", async () => {
   const { buildQueueScenario } = await import("../src/validation/scenarios/queue.js");
   const scenario = buildQueueScenario(
     {
@@ -314,18 +314,35 @@ test("buildQueueScenario uses renamed Shop label and walks sign-up → list → 
       ],
       jsonApiContract: {},
     },
-    { email: "x@y.z", password: "p", primaryResourceName: "Acme" },
+    { fullName: "Test User", email: "x@y.z", password: "p", primaryResourceName: "Acme" },
   );
   assert.equal(scenario.name, "queue-crud-vet-clinic");
-  // Renamed primary noun reaches the wait_for_text after auth.
+
+  // The opening sequence is verified against the live iOS sim — assert
+  // it in order so we catch any regression that drops the welcome step.
+  const opening = scenario.steps.slice(0, 6);
+  assert.deepEqual(opening, [
+    { kind: "wait_for_text", text: "Welcome to" },
+    { kind: "screenshot", label: "01-welcome" },
+    { kind: "tap_text", text: "Start" },
+    { kind: "wait_for_text", text: "Sign Up for an Account" },
+    { kind: "screenshot", label: "02-auth-choice" },
+    { kind: "tap_text", text: "Sign Up for an Account" },
+  ]);
+
+  // All four user-supplied inputs reach the type steps.
+  assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "Test User"));
+  assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "x@y.z"));
+  assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "p"));
+  assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "Acme"));
+
+  // Renamed primary noun threads through to the post-auth wait.
   assert.ok(
     scenario.steps.some((s) => s.kind === "wait_for_text" && s.text === "Clinic"),
     "expected a wait_for_text 'Clinic' step",
   );
-  // Inputs reach the type steps.
-  assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "x@y.z"));
-  assert.ok(scenario.steps.some((s) => s.kind === "type" && s.text === "Acme"));
-  // Toggle reaches the assert at the tail.
+
+  // Toggle assertion still tails the scenario.
   const tail = scenario.steps[scenario.steps.length - 1];
   assert.deepEqual(tail, { kind: "assert_text", text: "Completed" });
 });

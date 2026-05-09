@@ -45,6 +45,7 @@ export type VisualJudgeConfig = {
   spec?: string;
   stage2?: {
     primaryResourceName: string;
+    fullName: string;
     email: string;
     password: string;
     rubric?: readonly Layer3Criterion[];
@@ -147,6 +148,7 @@ async function runStage2Phase(
   if (!config.stage2) return base;
 
   const inputs = {
+    fullName: config.stage2.fullName,
     email: config.stage2.email,
     password: config.stage2.password,
     primaryResourceName: config.stage2.primaryResourceName,
