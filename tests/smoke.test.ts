@@ -767,6 +767,66 @@ test("env-bridge: syncGradleProperties sentinel block round-trips and replaces i
   }
 });
 
+test("attachMobileClient: listDevices unwraps {devices: [...]} envelope and listElements strips text prefix", async () => {
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
+
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  // mobile-mcp 0.0.54 wraps the device list inside {"devices": [...]}.
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            devices: [{ id: "B929BDBD-X", name: "iPhone 17", platform: "ios", type: "simulator" }],
+          }),
+        },
+      ],
+    }),
+  );
+  // mobile-mcp 0.0.54 prepends "Found these elements on screen: " to
+  // its JSON array, so a naïve JSON.parse of the whole text fails.
+  fake.registerTool(
+    "mobile_list_elements_on_screen",
+    { description: "fake", inputSchema: { device: z.string() } },
+    async () => ({
+      content: [
+        {
+          type: "text",
+          text:
+            'Found these elements on screen: ' +
+            JSON.stringify([
+              { type: "Button", label: "Start", coordinates: { x: 311, y: 66, width: 70, height: 36 } },
+            ]),
+        },
+      ],
+    }),
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  const devices = await mobile.listDevices();
+  assert.equal(devices.length, 1);
+  assert.equal((devices[0] as { id: string }).id, "B929BDBD-X");
+
+  mobile.useDevice("B929BDBD-X");
+  const elements = await mobile.listElements();
+  assert.equal(elements.length, 1);
+  assert.equal((elements[0] as { label: string }).label, "Start");
+
+  await mobile.close();
+  await fake.close();
+});
+
 test("attachMobileClient: useDevice injects `device` arg into every subsequent call", async () => {
   const { attachMobileClient } = await import("../src/mobile.js");
   const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");

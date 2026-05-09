@@ -193,8 +193,12 @@ export async function selectDevice(
 }
 
 function deviceNameOf(d: ScreenElement): string | undefined {
-  // mobile-mcp's response shape varies; probe the common name fields.
-  for (const key of ["name", "deviceName", "id", "udid", "serial"] as const) {
+  // mobile-mcp's response carries both `id` (canonical handle — UDID
+  // for iOS sims, serial for Android emulators/devices) and `name`
+  // (display name like "Pixel 6", "iPhone 17"). Pass the canonical id
+  // to the `device` parameter on subsequent tool calls — it's
+  // unambiguous when multiple devices share a display name.
+  for (const key of ["id", "udid", "serial", "name", "deviceName"] as const) {
     const v = d[key];
     if (typeof v === "string" && v.length > 0) return v;
   }

@@ -186,7 +186,7 @@ async function waitForText(
   );
 }
 
-const TEXT_FIELDS = ["label", "name", "text", "value", "title", "accessibilityLabel", "placeholder"] as const;
+const TEXT_FIELDS = ["label", "name", "text", "value", "title", "accessibilityLabel", "placeholder", "identifier"] as const;
 
 function findByText(elements: readonly ScreenElement[], needle: string): ScreenElement | undefined {
   const target = needle.toLowerCase();
@@ -205,6 +205,9 @@ function findByText(elements: readonly ScreenElement[], needle: string): ScreenE
 function centerOf(element: ScreenElement): { x: number; y: number } | undefined {
   const candidates: Record<string, unknown>[] = [
     element,
+    // mobile-mcp 0.0.54 nests under `coordinates: {x,y,width,height}`.
+    // iOS/Android variants have used `rect`, `bounds`, `frame` over time.
+    element["coordinates"] as Record<string, unknown> | undefined ?? {},
     element["rect"] as Record<string, unknown> | undefined ?? {},
     element["bounds"] as Record<string, unknown> | undefined ?? {},
     element["frame"] as Record<string, unknown> | undefined ?? {},

@@ -120,16 +120,6 @@ function wrapClient(client: Client): MobileClient {
     return result;
   };
 
-  const parseJsonText = <T>(result: CallToolResult, fallback: T): T => {
-    const text = textOf(result);
-    if (!text) return fallback;
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      return fallback;
-    }
-  };
-
   return {
     callTool,
     useDevice(name) {
@@ -137,13 +127,39 @@ function wrapClient(client: Client): MobileClient {
     },
     async listDevices() {
       const result = await callTool("mobile_list_available_devices");
-      const parsed = parseJsonText<readonly ScreenElement[]>(result, []);
-      return Array.isArray(parsed) ? parsed : [];
+      // mobile-mcp 0.0.54+ returns {"devices": [...]} (envelope object,
+      // not a bare array). Earlier behavior was a bare array. Accept
+      // either so the wrapper survives version drift in either direction.
+      const text = textOf(result);
+      if (!text) return [];
+      try {
+        const parsed = JSON.parse(text) as unknown;
+        if (Array.isArray(parsed)) return parsed as readonly ScreenElement[];
+        if (parsed && typeof parsed === "object" && Array.isArray((parsed as { devices?: unknown }).devices)) {
+          return (parsed as { devices: readonly ScreenElement[] }).devices;
+        }
+        return [];
+      } catch {
+        return [];
+      }
     },
     async listElements() {
       const result = await callTool("mobile_list_elements_on_screen");
-      const parsed = parseJsonText<readonly ScreenElement[]>(result, []);
-      return Array.isArray(parsed) ? parsed : [];
+      // mobile-mcp 0.0.54 returns "Found these elements on screen: [...]"
+      // — a human-readable text prefix followed by a JSON array, not
+      // pure JSON. Slice from the first '[' so JSON.parse sees just
+      // the array. Defensive against the prefix being absent in other
+      // versions too.
+      const text = textOf(result);
+      if (!text) return [];
+      const arrayStart = text.indexOf("[");
+      if (arrayStart === -1) return [];
+      try {
+        const parsed = JSON.parse(text.slice(arrayStart)) as unknown;
+        return Array.isArray(parsed) ? (parsed as readonly ScreenElement[]) : [];
+      } catch {
+        return [];
+      }
     },
     async click(x, y) {
       await callTool("mobile_click_on_screen_at_coordinates", { x, y });
