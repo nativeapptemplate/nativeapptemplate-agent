@@ -174,6 +174,13 @@ The CLI **exits non-zero when validation fails**, so a shell `&&` chain or CI st
 npx nativeapptemplate-agent "a walk-in clinic queue" && echo "validation passed"
 ```
 
+Naming flags:
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--slug=<kebab>` | planner's pick | Override the project slug. Renames the Pascal project name (`NativeAppTemplate → VetClinic`) across all three platforms, and sets the output dir `out/<slug>/`, the DB prefix, and the env-bridge token. Must be kebab-case; invalid values are reported and skipped. Example: `--slug=vet-clinic` |
+| `--rename From=To` | planner's pick | Override one of the planner's domain rename targets (repeatable). `From` is a substrate token (`Shop`, `Shopkeeper`, `ItemTag`); the planner fills in everything else. An override that matches no planned rename is reported and skipped. Example: `--rename Shopkeeper=Vet --rename Shop=Clinic` |
+
 Report flags:
 
 | Flag | Default | Effect |

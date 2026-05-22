@@ -16,7 +16,9 @@ import { runRepair } from "./agents/repair.js";
 import { runLayer1 } from "./validation/layer1.js";
 import { runLayer2, type Layer2Mode } from "./validation/layer2.js";
 import type { RepairAttempt, RunReport } from "./report/model.js";
-import type { JudgeResult, Platform, PlatformDetail, WorkerResult } from "./agents/types.js";
+import type { JudgeResult, Platform, PlatformDetail, RenamePair, WorkerResult } from "./agents/types.js";
+import { applyRenameOverrides, type OverrideOutcome } from "./rename-overrides.js";
+import { isValidSlug, slugToPascal } from "./slug.js";
 
 export type DispatchReportOptions = {
   enabled?: boolean;
@@ -27,16 +29,56 @@ export type DispatchReportOptions = {
 
 export type DispatchOptions = {
   report?: DispatchReportOptions;
+  // Manual rename overrides merged onto the planner's plan (CLI --rename).
+  // See src/rename-overrides.ts.
+  renameOverrides?: readonly RenamePair[];
+  // Manual slug override (CLI --slug). Replaces the planner's slug, which
+  // drives the output dir, DB prefix, env-bridge token, and the Pascal
+  // project name (NativeAppTemplate -> slugToPascal(slug)) across all three
+  // platforms. Ignored if not a valid kebab-case slug.
+  slug?: string;
 };
 
 export type DispatchResult = JudgeResult & {
   report: RunReport;
   reportPaths: ReportPaths;
+  renameOverrideOutcomes: readonly OverrideOutcome[];
 };
 
 export async function dispatch(spec: string, options: DispatchOptions = {}): Promise<DispatchResult> {
   const startedAt = Date.now();
-  const domain = await runPlanner(spec);
+  let domain = await runPlanner(spec);
+
+  // Manual slug override (CLI --slug). Drives output dir, DB prefix,
+  // env-bridge token, and the Pascal project name — so it must land before
+  // the env-bridge and workers read domain.slug. Invalid slugs are traced and
+  // ignored rather than corrupting paths/identifiers downstream.
+  const slugOverride = options.slug;
+  if (slugOverride !== undefined && slugOverride !== domain.slug) {
+    if (isValidSlug(slugOverride)) {
+      trace("dispatch", `slug override: ${domain.slug} -> ${slugOverride} (project name -> ${slugToPascal(slugOverride)})`);
+      domain = { ...domain, slug: slugOverride };
+    } else {
+      trace("dispatch", `slug override ignored: "${slugOverride}" is not a valid kebab-case slug`);
+    }
+  }
+
+  // Manual overrides take precedence over the planner's noun choices, but only
+  // for renames the planner actually scheduled — unmatched overrides are traced
+  // and dropped, not silently added. Apply before workers/reviewer/judge/report
+  // so every downstream consumer sees the final plan.
+  const renameOverrides = options.renameOverrides ?? [];
+  let renameOverrideOutcomes: readonly OverrideOutcome[] = [];
+  if (renameOverrides.length > 0) {
+    const merged = applyRenameOverrides(domain.renamePlan, renameOverrides);
+    renameOverrideOutcomes = merged.outcomes;
+    for (const o of merged.outcomes) {
+      if (o.kind === "changed") trace("dispatch", `rename override: ${o.from} ${o.was}->${o.to} (overrode planner's pick)`);
+      else if (o.kind === "noop") trace("dispatch", `rename override: ${o.from}=${o.to} already the planned target — no change`);
+      else trace("dispatch", `rename override ignored: no planned rename for "${o.from}" (got ${o.from}=${o.to})`);
+    }
+    domain = { ...domain, renamePlan: merged.plan };
+  }
 
   // Mirror the substrate's NATIVEAPPTEMPLATE_API_* config to the
   // renamed product equivalents (<PRODUCT>_API_*) so the agent's auto-
@@ -233,7 +275,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     if (written.length > 0) trace("dispatch", `report: wrote ${written.join(", ")}`);
   }
 
-  return { ...judge, report, reportPaths };
+  return { ...judge, report, reportPaths, renameOverrideOutcomes };
 }
 
 // NATIVEAPPTEMPLATE_REPAIR control: unset / "0" / "off" / "false" → disabled;

@@ -65,6 +65,8 @@ Features considered but deliberately deferred until after Layer 3 (vision judge)
 
 ### Optional explicit naming overrides
 
+**Status: `--rename` and `--slug` shipped.** Both overrides are implemented (`src/rename-overrides.ts` + `isValidSlug` in `src/slug.ts`; `--rename From=To` and `--slug=<kebab>` on the CLI, `renameOverrides` + `slug` on the MCP `generate_app` tool and `dispatch()`). `--rename` semantics are "change a planned target" — an override keys on the substrate token and replaces the planner's chosen target, and overrides matching no planned rename are reported and dropped rather than silently added. `--slug` replaces the planner's slug, which drives the output dir, DB prefix, env-bridge token, and the Pascal project name across all three platforms; invalid kebab-case is reported and ignored. `displayName` override remains deferred.
+
 Today the planner is the sole source of slug, displayName, and rename plan (`Shop → Clinic`, `Shopkeeper → Vet`, `ItemTag → Patient`, etc.) — derived from a one-sentence natural-language spec. Output is good but not deterministic across runs (model evolution, prompt sensitivity), and there's no escape hatch when the planner picks a less-natural noun (e.g. forced into a non-substrate-reserved alternate).
 
 Proposed shape — flag-based optional overrides on top of natural language. The planner still parses the spec and proposes a full DomainSpec; CLI flags merge in afterward, taking precedence on conflicts. Anything not specified falls through to the planner's pick.
