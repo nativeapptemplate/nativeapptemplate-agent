@@ -1,4 +1,4 @@
-import type { RenamePair } from "./agents/types.js";
+import type { Entity, RenamePair } from "./agents/types.js";
 
 // Manual rename overrides (ROADMAP §"Optional explicit naming overrides").
 // The planner is the sole source of the rename plan; these let a human veto a
@@ -53,4 +53,25 @@ export function applyRenameOverrides(
     target.to = override.to;
   }
   return { plan: merged, outcomes };
+}
+
+// Keep entity names in step with rename-plan overrides. The planner names each
+// entity after its rename target (e.g. it emits both `Shopkeeper -> Monitor`
+// and an entity `Monitor` that `replaces` Shopkeeper), so a `--rename` that
+// changes the target must also rename the entity or the report contradicts its
+// own rename plan. Only entities whose name still matches the planner's old
+// target are touched — an entity deliberately named differently is left alone.
+export function syncEntityNames(
+  entities: readonly Entity[],
+  outcomes: readonly OverrideOutcome[],
+): readonly Entity[] {
+  const changes = new Map<string, { was: string; to: string }>();
+  for (const o of outcomes) {
+    if (o.kind === "changed") changes.set(o.from, { was: o.was, to: o.to });
+  }
+  if (changes.size === 0) return entities;
+  return entities.map((e) => {
+    const change = changes.get(e.replaces);
+    return change && e.name === change.was ? { ...e, name: change.to } : e;
+  });
 }

@@ -1390,6 +1390,40 @@ test("applyRenameOverrides reports unmatched + noop overrides distinctly", async
   ]);
 });
 
+test("syncEntityNames renames an entity whose name still matches the overridden target", async () => {
+  const { syncEntityNames } = await import("../src/rename-overrides.js");
+  const entities = [
+    { name: "Household", replaces: "Shop", fields: [{ name: "address", type: "string" as const }] },
+    { name: "Monitor", replaces: "Shopkeeper", fields: [], states: ["Active", "Resolved"] as const },
+  ];
+  const synced = syncEntityNames(entities, [
+    { kind: "changed", from: "Shopkeeper", was: "Monitor", to: "Resident" },
+  ]);
+  assert.equal(synced[0]?.name, "Household"); // untouched
+  assert.equal(synced[1]?.name, "Resident"); // renamed Monitor -> Resident
+  // `replaces` and other fields are preserved.
+  assert.equal(synced[1]?.replaces, "Shopkeeper");
+  assert.deepEqual(synced[1]?.states, ["Active", "Resolved"]);
+});
+
+test("syncEntityNames leaves entities alone when name diverges, no changed outcomes, or no match", async () => {
+  const { syncEntityNames } = await import("../src/rename-overrides.js");
+  const entities = [{ name: "Watcher", replaces: "Shopkeeper", fields: [] }];
+  // Name diverges from the old target → conservative: leave it.
+  assert.equal(
+    syncEntityNames(entities, [{ kind: "changed", from: "Shopkeeper", was: "Monitor", to: "Resident" }])[0]?.name,
+    "Watcher",
+  );
+  // No changed outcomes (noop/unmatched only) → returns input untouched.
+  const noop = syncEntityNames(entities, [{ kind: "noop", from: "Shop", to: "Clinic" }]);
+  assert.equal(noop, entities);
+  // Override targets a token no entity replaces → unchanged.
+  assert.equal(
+    syncEntityNames(entities, [{ kind: "changed", from: "Shop", was: "Store", to: "Household" }])[0]?.name,
+    "Watcher",
+  );
+});
+
 test("dispatch applies a rename override end-to-end and surfaces the outcome (stub pipeline)", async () => {
   const result = await dispatch("a walk-in clinic queue for small veterinary practices", {
     renameOverrides: [{ from: "Shopkeeper", to: "Provider" }],

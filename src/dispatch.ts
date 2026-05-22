@@ -17,7 +17,7 @@ import { runLayer1 } from "./validation/layer1.js";
 import { runLayer2, type Layer2Mode } from "./validation/layer2.js";
 import type { RepairAttempt, RunReport } from "./report/model.js";
 import type { JudgeResult, Platform, PlatformDetail, RenamePair, WorkerResult } from "./agents/types.js";
-import { applyRenameOverrides, type OverrideOutcome } from "./rename-overrides.js";
+import { applyRenameOverrides, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
 import { isValidSlug, slugToPascal } from "./slug.js";
 
 export type DispatchReportOptions = {
@@ -77,7 +77,12 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
       else if (o.kind === "noop") trace("dispatch", `rename override: ${o.from}=${o.to} already the planned target — no change`);
       else trace("dispatch", `rename override ignored: no planned rename for "${o.from}" (got ${o.from}=${o.to})`);
     }
-    domain = { ...domain, renamePlan: merged.plan };
+    // Carry the override into entity names too, so the report's entity cards
+    // agree with its rename plan (the planner names entities after their
+    // targets). Code generation keys off renamePlan, not entities — this is
+    // metadata coherence, not a code-affecting change.
+    const entities = syncEntityNames(domain.entities, merged.outcomes);
+    domain = { ...domain, renamePlan: merged.plan, entities };
   }
 
   // Mirror the substrate's NATIVEAPPTEMPLATE_API_* config to the
