@@ -11,8 +11,12 @@ import { isStub } from "./stub.js";
 import { trace } from "./trace.js";
 import { buildRunReport, writeReport, type ReportFormat, type ReportPaths } from "./report/collect.js";
 import { readPackageVersion } from "./version.js";
-import type { RunReport } from "./report/model.js";
-import type { JudgeResult } from "./agents/types.js";
+import { runRepairLoop, REPAIR_ITERATION_CAP, type RepairLoopDeps } from "./repair-loop.js";
+import { runRepair } from "./agents/repair.js";
+import { runLayer1 } from "./validation/layer1.js";
+import { runLayer2, type Layer2Mode } from "./validation/layer2.js";
+import type { RepairAttempt, RunReport } from "./report/model.js";
+import type { JudgeResult, Platform, PlatformDetail, WorkerResult } from "./agents/types.js";
 
 export type DispatchReportOptions = {
   enabled?: boolean;
@@ -83,6 +87,10 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
   //       already launched after Stage 1. Off by default.
   const visualLevelRaw = process.env['NATIVEAPPTEMPLATE_VISUAL'] ?? "";
   const visualLevel = visualLevelRaw === "2" ? 2 : visualLevelRaw === "1" ? 1 : 0;
+  // Visual levels force build mode so Stage 1 has an artifact to launch;
+  // level 0 stays in the cheaper fast mode. The repair loop re-validates
+  // Layer 2 in the same mode the judge used.
+  const layer2Mode: Layer2Mode = visualLevel >= 1 ? "build" : "fast";
   const visual: VisualJudgeConfig | undefined = visualLevel >= 1
     ? {
         iosDir: resolve(process.cwd(), ios.outDir),
@@ -126,7 +134,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
       ios,
       android,
       reviewer,
-      ...(visualLevel >= 1 ? { layer2Mode: "build" as const } : {}),
+      layer2Mode,
       ...(visual ? { visual } : {}),
     });
   } finally {
@@ -135,6 +143,66 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
         trace("dispatch", `rails-lifecycle: stop() error: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
+  }
+
+  // Self-repair loop (opt-in via NATIVEAPPTEMPLATE_REPAIR). When the first
+  // judge pass fails on a code-repairable layer (Layer 1 leftover tokens or
+  // Layer 2 build errors), iterate: patch the failing platform with the
+  // repair agent, re-validate, record the attempt — bounded by the cap. Off
+  // by default; skipped in stub mode (no real judge/agent to drive).
+  let repairAttempts: readonly RepairAttempt[] = [];
+  const repairMax = parseRepairMax(process.env['NATIVEAPPTEMPLATE_REPAIR']);
+  if (repairMax > 0 && !judge.overallPass && judge.platforms && judge.platforms.length > 0 && !isStub("judge")) {
+    const workers: Record<Platform, WorkerResult> = { rails, ios, android };
+    const deps: RepairLoopDeps = {
+      repair: async (platform, layer, detail) => {
+        const w = workers[platform];
+        const outDir = resolve(process.cwd(), w.outDir);
+        const detailStr = layer === "layer1"
+          ? formatFindings(detail.layer1.findings)
+          : detail.layer2.stderrTail ?? "(no stderr captured)";
+        return runRepair(
+          {
+            platform,
+            outDir,
+            layer,
+            detail: detailStr,
+            ...(layer === "layer1" ? { forbiddenTokens: w.renamedFrom } : {}),
+          },
+          domain,
+        );
+      },
+      revalidate: async (platform) => {
+        const w = workers[platform];
+        const outDir = resolve(process.cwd(), w.outDir);
+        const [layer1, layer2] = await Promise.all([
+          runLayer1({ projectDir: outDir, forbiddenTokens: w.renamedFrom }),
+          runLayer2({ platform, outDir, mode: layer2Mode }),
+        ]);
+        return {
+          layer1: { pass: layer1.pass, findings: layer1.findings },
+          layer2: {
+            pass: layer2.pass,
+            command: layer2.command,
+            mode: layer2Mode,
+            exitCode: layer2.exitCode,
+            durationMs: layer2.durationMs,
+            ...(layer2.stderrTail !== undefined ? { stderrTail: layer2.stderrTail } : {}),
+          },
+        };
+      },
+    };
+    trace("dispatch", `self-repair: enabled (cap ${repairMax}); first pass failed — entering loop`);
+    const loop = await runRepairLoop({
+      platforms: judge.platforms,
+      reviewerPass: reviewer.contractParity === "pass",
+      maxIterations: repairMax,
+      deps,
+    });
+    repairAttempts = loop.attempts;
+    judge = { ...judge, overallPass: loop.overallPass, summary: loop.summary, platforms: loop.platforms };
+    const resolved = loop.attempts.filter((a) => a.resolved).length;
+    trace("dispatch", `self-repair: ${loop.attempts.length} attempt(s), ${resolved} resolved — overall now ${loop.overallPass ? "PASS" : "FAIL"}`);
   }
 
   const report = buildRunReport({
@@ -147,6 +215,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     visualLevel: visualLevel as 0 | 1 | 2,
     startedAt,
     finishedAt: Date.now(),
+    repairAttempts,
   });
 
   // Default off in stub mode so the test suite never writes into ./out.
@@ -165,4 +234,21 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
   }
 
   return { ...judge, report, reportPaths };
+}
+
+// NATIVEAPPTEMPLATE_REPAIR control: unset / "0" / "off" / "false" → disabled;
+// "on" / "true" → run up to the cap; a positive integer N → up to min(N, cap).
+function parseRepairMax(raw: string | undefined): number {
+  if (!raw) return 0;
+  const lowered = raw.trim().toLowerCase();
+  if (lowered === "" || lowered === "0" || lowered === "off" || lowered === "false") return 0;
+  if (lowered === "on" || lowered === "true") return REPAIR_ITERATION_CAP;
+  const n = Number.parseInt(lowered, 10);
+  if (Number.isFinite(n) && n > 0) return Math.min(n, REPAIR_ITERATION_CAP);
+  return 0;
+}
+
+function formatFindings(findings: PlatformDetail["layer1"]["findings"]): string {
+  if (findings.length === 0) return "(no findings recorded)";
+  return findings.map((f) => `${f.token} · ${f.file}:${f.line} · ${f.text}`).join("\n");
 }
