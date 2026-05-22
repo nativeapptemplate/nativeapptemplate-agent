@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-import { realpathSync, readFileSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { dispatch } from "./dispatch.js";
 import { loadDotenvIfPresent } from "./env.js";
+import { readPackageVersion } from "./version.js";
 
 // MCP surface (MONETIZATION.md §"MCP as a distribution surface"):
 // thin wrapper around dispatch() so any MCP-compatible AI assistant
@@ -44,6 +44,9 @@ export function createMcpServer(): McpServer {
           overallPass: result.overallPass,
           summary: result.summary,
           ...(result.visual ? { visual: result.visual } : {}),
+          report: result.report,
+          ...(result.reportPaths.htmlPath ? { reportHtmlPath: result.reportPaths.htmlPath } : {}),
+          ...(result.reportPaths.jsonPath ? { reportJsonPath: result.reportPaths.jsonPath } : {}),
         },
         isError: !result.overallPass,
       };
@@ -58,16 +61,6 @@ export async function main(): Promise<void> {
   const server = createMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-}
-
-function readPackageVersion(): string {
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const pkg = JSON.parse(readFileSync(resolve(here, "..", "package.json"), "utf8"));
-    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
 }
 
 if (isEntryPoint()) {
