@@ -7,15 +7,17 @@ import { loadDotenvIfPresent } from "./env.js";
 
 loadDotenvIfPresent();
 
-type ParsedArgs = { spec: string; report: DispatchReportOptions; open: boolean };
+export type ParsedArgs = { spec: string; report: DispatchReportOptions; open: boolean; exitZero: boolean };
 
-function parseArgs(argv: readonly string[]): ParsedArgs {
+export function parseArgs(argv: readonly string[]): ParsedArgs {
   const specParts: string[] = [];
   const report: DispatchReportOptions = {};
   let open = false;
+  let exitZero = false;
   for (const arg of argv) {
     if (arg === "--no-report") report.enabled = false;
     else if (arg === "--report-open") open = true;
+    else if (arg === "--exit-zero") exitZero = true;
     else if (arg.startsWith("--report-format=")) {
       const value = arg.slice("--report-format=".length);
       if (value === "html" || value === "json" || value === "both") report.format = value;
@@ -25,7 +27,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       specParts.push(arg);
     }
   }
-  return { spec: specParts.join(" ").trim(), report, open };
+  return { spec: specParts.join(" ").trim(), report, open, exitZero };
 }
 
 export async function main(spec?: string): Promise<void> {
@@ -33,7 +35,7 @@ export async function main(spec?: string): Promise<void> {
   const input = (spec ?? parsed.spec).trim();
   if (!input) {
     console.error(
-      'Usage: nativeapptemplate-agent "your spec here" [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open]',
+      'Usage: nativeapptemplate-agent "your spec here" [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]',
     );
     process.exitCode = 1;
     return;
@@ -55,6 +57,12 @@ export async function main(spec?: string): Promise<void> {
     }
   } else if (result.reportPaths.jsonPath) {
     console.log(`report: ${result.reportPaths.jsonPath}`);
+  }
+
+  // Non-zero exit on validation failure so CI / shell `&&` chains catch
+  // it. --exit-zero opts out (e.g. when you only want the report).
+  if (!result.overallPass && !parsed.exitZero) {
+    process.exitCode = 1;
   }
 }
 

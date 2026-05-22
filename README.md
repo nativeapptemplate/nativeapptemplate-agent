@@ -44,7 +44,7 @@ It will:
 3. **Rename the skeleton** — `Shop → Clinic`, `Shopkeeper → Vet`, etc. — consistently across Ruby migrations, Swift models, Kotlin data classes, policies, tests, and localized copy.
 4. **Adapt or replace the domain module** — keep `ItemTag` for walk-in queue variants; strip and insert a new resource for non-queue SaaS.
 5. **Drive the build green** — `bin/rails test`, `xcodebuild test`, `./gradlew test` must all pass before the agent exits.
-6. **Validate the output** across three layers (structural, runtime, semantic). Details in [`docs/SPEC.md`](./docs/SPEC.md) section 6.
+6. **Validate the output** across three layers (structural, runtime, semantic) and write a self-contained HTML + JSON [validation report](#validation-report). Details in [`docs/SPEC.md`](./docs/SPEC.md) section 6.
 
 ## Demo
 
@@ -107,9 +107,11 @@ npx nativeapptemplate-agent "a personal task tracker with due dates"
 
 # Generated output appears under ./out/<slug>/
 tree ./out/clinic-queue/
-# ├── rails/      ← Rails 8.1 API, git-initialized, buildable
-# ├── ios/        ← SwiftUI iOS project, buildable
-# └── android/    ← Jetpack Compose Android project, buildable
+# ├── rails/                   ← Rails 8.1 API, git-initialized, buildable
+# ├── ios/                     ← SwiftUI iOS project, buildable
+# ├── android/                 ← Jetpack Compose Android project, buildable
+# ├── report.json              ← machine-readable validation result
+# └── validation-report.html   ← self-contained visual report (open in a browser)
 ```
 
 The agent will also be available as a Claude Code plugin.
@@ -153,6 +155,29 @@ The agent doesn't just generate code and exit — it validates the output.
 3. **Semantic.** Opus 4.7 as judge — scores whether the generated code and rendered UI actually express the intended domain. Vision judges read simulator/emulator screenshots directly.
 
 See [`docs/SPEC.md`](./docs/SPEC.md) for the full design.
+
+## Validation report
+
+Every run writes a report of the validation results to the output directory:
+
+- **`out/<slug>/validation-report.html`** — a self-contained HTML report (screenshots base64-embedded, no external assets, no JavaScript) you can open in a browser, attach to a PR, or drop into a demo. It shows the overall verdict, a platform×layer matrix, Layer 1 leftover-token findings, Layer 2 build commands + `stderr`, Layer 3 home-screen screenshots with the vision judge's per-criterion rationales (plus the Stage 2 filmstrip when `NATIVEAPPTEMPLATE_VISUAL=2`), the reviewer's contract diff, and the domain rename plan.
+- **`out/<slug>/report.json`** — the same data, machine-readable, for CI gating or programmatic use. The full schema lives in [`docs/validation-report.md`](./docs/validation-report.md).
+
+The CLI **exits non-zero when validation fails**, so a shell `&&` chain or CI step catches it:
+
+```bash
+npx nativeapptemplate-agent "a walk-in clinic queue" && echo "validation passed"
+```
+
+Report flags:
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--no-report` | — | Skip writing the report |
+| `--report-format=html\|json\|both` | `both` | Which artifact(s) to write |
+| `--report-embed=true\|false` | `true` | Embed screenshots as `data:` URIs (single portable file) vs. copy to `report-assets/` |
+| `--report-open` | — | Open the HTML in your browser when the run finishes (macOS) |
+| `--exit-zero` | — | Always exit 0, even on validation failure (e.g. when you only want the report) |
 
 ## Security
 
