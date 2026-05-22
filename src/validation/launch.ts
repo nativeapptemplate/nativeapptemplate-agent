@@ -36,6 +36,7 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 //   iOS:     xcrun simctl install booted <appPath>
 //            xcrun simctl launch  booted <bundleId>
 //   Android: adb install <apkPath>
+//            adb shell pm grant <package> POST_NOTIFICATIONS  (best-effort)
 //            adb shell monkey -p <package> -c android.intent.category.LAUNCHER 1
 //
 // `monkey` on Android is used over `am start -n <pkg>/<activity>` because it
@@ -102,6 +103,7 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
   const targetArgs = targeting.serial !== undefined ? ["-s", targeting.serial] : [];
   const targetForCmd = targeting.serial !== undefined ? ` -s ${targeting.serial}` : "";
   const installCmd = `${adb}${targetForCmd} install -r ${apkPath}`;
+  const grantCmd = `${adb}${targetForCmd} shell pm grant ${packageName} android.permission.POST_NOTIFICATIONS`;
   const launchCmd = `${adb}${targetForCmd} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
 
   const install = await runOnce(adb, [...targetArgs, "install", "-r", apkPath], timeoutMs);
@@ -113,6 +115,19 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
       ...(install.error !== undefined ? { error: install.error } : {}),
     };
   }
+
+  // Pre-grant the runtime notification permission so Android 13+ (API 33+)
+  // doesn't pop the POST_NOTIFICATIONS system dialog on first launch. That
+  // dialog overlays the home screen exactly when Stage 1 captures it, which
+  // fails Layer 3's "renders-cleanly" rubric. Best-effort: on older API
+  // levels (where it isn't a runtime permission) or apps that don't declare
+  // it, `pm grant` errors — we ignore the result so it never blocks launch.
+  await runOnce(
+    adb,
+    [...targetArgs, "shell", "pm", "grant", packageName, "android.permission.POST_NOTIFICATIONS"],
+    timeoutMs,
+  );
+
   const launch = await runOnce(
     adb,
     [...targetArgs, "shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"],
@@ -120,7 +135,7 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
   );
   return {
     ok: launch.ok,
-    command: `${installCmd} && ${launchCmd}`,
+    command: `${installCmd} && ${grantCmd} && ${launchCmd}`,
     durationMs: Date.now() - started,
     ...(launch.ok || launch.error === undefined ? {} : { error: launch.error }),
   };
