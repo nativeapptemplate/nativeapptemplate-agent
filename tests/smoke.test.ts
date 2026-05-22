@@ -8,9 +8,16 @@ import { renderReport } from "../src/report/render.js";
 import { buildRunReport, writeReport, collectScreenshotPaths } from "../src/report/collect.js";
 import type { DomainSpec, JudgeResult, ReviewerResult, Platform, PlatformDetail } from "../src/agents/types.js";
 import { runRepairLoop, REPAIR_ITERATION_CAP, type RepairLoopDeps, type RevalidateResult } from "../src/repair-loop.js";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+
+// rename.rb is a Ruby subprocess; CI runs the suite in stub mode with no
+// Ruby step, so guard the one test that shells out to it.
+const RUBY_AVAILABLE = (() => {
+  try { return spawnSync("ruby", ["-v"]).status === 0; } catch { return false; }
+})();
 
 test("validation layers are exported as functions", () => {
   assert.equal(typeof runLayer1, "function");
@@ -1480,6 +1487,34 @@ test("dispatch ignores an invalid slug override and keeps the planner's slug (st
   // Stub planner's slug is clinic-queue; the invalid override must not stick.
   assert.equal(result.report.meta.slug, "clinic-queue");
 });
+
+// --- rename.rb asset-file scope (scripts/ruby/rename.rb TEXT_EXTS/BASENAMES) ---
+
+test(
+  "rename.rb rewrites brand tokens in .webmanifest / .svg / .swiftformat assets",
+  { skip: RUBY_AVAILABLE ? false : "ruby not on PATH" },
+  async () => {
+    const { runRuby } = await import("../src/ruby.js");
+    const root = mkdtempSync(join(tmpdir(), "rename-assets-"));
+    mkdirSync(join(root, "public"), { recursive: true });
+    mkdirSync(join(root, "docs"), { recursive: true });
+    writeFileSync(join(root, "public", "site.webmanifest"), '{ "name": "NativeAppTemplate", "short_name": "NativeAppTemplate" }');
+    writeFileSync(join(root, "docs", "social-preview.svg"), "<svg><text>NativeAppTemplate</text></svg>");
+    writeFileSync(join(root, ".swiftformat"), '# SwiftFormat Configuration for NativeAppTemplate\n--header "//  NativeAppTemplate"\n');
+
+    const stats = await runRuby<{ renamePlan: { from: string; to: string }[]; root: string }, { files_changed: number }>(
+      "rename.rb",
+      { renamePlan: [{ from: "NativeAppTemplate", to: "Sentova" }], root },
+    );
+    assert.equal(stats.files_changed, 3);
+
+    for (const rel of ["public/site.webmanifest", "docs/social-preview.svg", ".swiftformat"]) {
+      const content = readFileSync(join(root, rel), "utf8");
+      assert.ok(content.includes("Sentova"), `${rel} should contain Sentova`);
+      assert.ok(!content.includes("NativeAppTemplate"), `${rel} should not contain NativeAppTemplate`);
+    }
+  },
+);
 
 // --- self-repair loop (src/repair-loop.ts) ---
 
