@@ -248,6 +248,16 @@ Workflow, once a run has produced `out/<slug>/validation-report.html`:
    - `browser_take_screenshot` (use the full-page option to capture the whole report)
 3. The PNG is the visual check; `report.json` carries the structured pass/fail.
 
+**Heads-up — `@playwright/mcp` blocks the `file:` protocol by default**, so `browser_navigate` against a `file://…/validation-report.html` fails with *"Access to 'file:' protocol is blocked."* The reliable workaround is to serve the output dir over a throwaway local HTTP server and navigate to that instead:
+
+```bash
+# from the run's output dir (out/<slug>/, or wherever the report was written)
+python3 -m http.server 8765 --bind 127.0.0.1 &
+# then: browser_navigate → http://127.0.0.1:8765/validation-report.html
+```
+
+The report is self-contained (screenshots base64-embedded), so a plain static server suffices — there are no asset paths to resolve. Stop the server when done. (Some `@playwright/mcp` builds can instead be launched with `file:` access permitted via config, but that's version-dependent; the local-server route always works.) Note also that `browser_take_screenshot`'s saved PNG lands in the MCP server's working directory (the project root), not the output dir — move it out afterward.
+
 Remove it later with `claude mcp remove playwright`.
 
 ### Path B — Playwright CLI (headless, no MCP, CI-friendly)
