@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import { trace } from "../trace.js";
 import { isStub } from "../stub.js";
-import { runLayer1 } from "../validation/layer1.js";
-import { runLayer2, type Layer2Mode } from "../validation/layer2.js";
+import { runLayer1, type Layer1Result } from "../validation/layer1.js";
+import { runLayer2, type Layer2Mode, type Layer2Result } from "../validation/layer2.js";
 import { runStage1Visual } from "../validation/stage1.js";
 import { runStage2Visual } from "../validation/stage2-judge.js";
 import { buildQueueScenario } from "../validation/scenarios/queue.js";
@@ -12,6 +12,7 @@ import type {
   DomainSpec,
   JudgeResult,
   Platform,
+  PlatformDetail,
   ReviewerResult,
   Stage2PlatformReport,
   VisualJudgePlatformReport,
@@ -53,13 +54,10 @@ export type VisualJudgeConfig = {
   };
 };
 
-type PlatformReport = {
+type PlatformEval = {
   platform: Platform;
-  layer1Pass: boolean;
-  layer1Findings: number;
-  layer2Pass: boolean;
-  layer2Command: string;
-  layer2DurationMs: number;
+  layer1: Layer1Result;
+  layer2: Layer2Result;
 };
 
 export async function runJudge(input: JudgeInput): Promise<JudgeResult> {
@@ -76,9 +74,9 @@ export async function runJudge(input: JudgeInput): Promise<JudgeResult> {
   ]);
 
   for (const r of reports) {
-    const l1 = r.layer1Pass ? "PASS" : `FAIL (${r.layer1Findings} leftover tokens)`;
-    const l2 = r.layer2Pass ? `PASS (${(r.layer2DurationMs / 1000).toFixed(1)}s)` : "FAIL";
-    trace("judge", `${r.platform}: Layer 1 ${l1} · Layer 2 ${l2} [${r.layer2Command}]`);
+    const l1 = r.layer1.pass ? "PASS" : `FAIL (${r.layer1.findings.length} leftover tokens)`;
+    const l2 = r.layer2.pass ? `PASS (${(r.layer2.durationMs / 1000).toFixed(1)}s)` : "FAIL";
+    trace("judge", `${r.platform}: Layer 1 ${l1} · Layer 2 ${l2} [${r.layer2.command}]`);
   }
 
   let visualReport: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport } | undefined;
@@ -93,20 +91,40 @@ export async function runJudge(input: JudgeInput): Promise<JudgeResult> {
     trace("judge", "Layer 3 (semantic, Opus 4.7 vision judge) — visual config not provided; skipped");
   }
 
-  const layer1Layer2Pass = reports.every((r) => r.layer1Pass && r.layer2Pass);
+  const layer1Layer2Pass = reports.every((r) => r.layer1.pass && r.layer2.pass);
   const visualPass = visualReport
     ? Object.values(visualReport).every((r): r is VisualJudgePlatformReport => Boolean(r) && r!.pass)
     : true;
   const reviewerPass = input.reviewer.contractParity === "pass";
   const overallPass = layer1Layer2Pass && visualPass && reviewerPass;
-  const l1Total = reports.filter((r) => r.layer1Pass).length;
-  const l2Total = reports.filter((r) => r.layer2Pass).length;
+  const l1Total = reports.filter((r) => r.layer1.pass).length;
+  const l2Total = reports.filter((r) => r.layer2.pass).length;
   const reviewerSummary = reviewerPass ? "reviewer PASS" : "reviewer FAIL";
+
+  const platforms: PlatformDetail[] = reports.map((r) => {
+    const layer3 = r.platform === "ios" ? visualReport?.ios
+      : r.platform === "android" ? visualReport?.android
+      : undefined;
+    return {
+      platform: r.platform,
+      layer1: { pass: r.layer1.pass, findings: r.layer1.findings },
+      layer2: {
+        pass: r.layer2.pass,
+        command: r.layer2.command,
+        mode: layer2Mode,
+        exitCode: r.layer2.exitCode,
+        durationMs: r.layer2.durationMs,
+        ...(r.layer2.stderrTail !== undefined ? { stderrTail: r.layer2.stderrTail } : {}),
+      },
+      ...(layer3 !== undefined ? { layer3 } : {}),
+    };
+  });
 
   return {
     overallPass,
     summary: `Layer 1 ${l1Total}/3 pass · Layer 2 ${l2Total}/3 pass · ${layer3Summary} · ${reviewerSummary}`,
     ...(visualReport ? { visual: visualReport } : {}),
+    platforms,
   };
 }
 
@@ -244,7 +262,7 @@ async function runStubJudge(): Promise<JudgeResult> {
   return { overallPass: true, summary: "Layer 1/2/3 PASS" };
 }
 
-async function evaluate(worker: WorkerResult, layer2Mode: Layer2Mode): Promise<PlatformReport> {
+async function evaluate(worker: WorkerResult, layer2Mode: Layer2Mode): Promise<PlatformEval> {
   const outDir = resolve(process.cwd(), worker.outDir);
 
   const [layer1, layer2] = await Promise.all([
@@ -252,12 +270,5 @@ async function evaluate(worker: WorkerResult, layer2Mode: Layer2Mode): Promise<P
     runLayer2({ platform: worker.platform, outDir, mode: layer2Mode }),
   ]);
 
-  return {
-    platform: worker.platform,
-    layer1Pass: layer1.pass,
-    layer1Findings: layer1.findings.length,
-    layer2Pass: layer2.pass,
-    layer2Command: layer2.command,
-    layer2DurationMs: layer2.durationMs,
-  };
+  return { platform: worker.platform, layer1, layer2 };
 }
