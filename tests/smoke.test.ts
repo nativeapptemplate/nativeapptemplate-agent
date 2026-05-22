@@ -1325,6 +1325,128 @@ test("parseArgs ignores an invalid --report-format value", async () => {
   assert.equal(parsed.report.format, undefined);
 });
 
+// --- manual rename overrides (src/rename-overrides.ts, --rename flag) ---
+
+test("parseArgs collects repeatable --rename pairs (space form) without polluting the spec", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  const parsed = parseArgs(["a", "vet", "clinic", "--rename", "Shop=Clinic", "--rename", "Shopkeeper=Vet"]);
+  assert.equal(parsed.spec, "a vet clinic");
+  assert.deepEqual(parsed.renameOverrides, [
+    { from: "Shop", to: "Clinic" },
+    { from: "Shopkeeper", to: "Vet" },
+  ]);
+});
+
+test("parseArgs also accepts the --rename=From=To form", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  const parsed = parseArgs(["spec", "--rename=Shopkeeper=Vet"]);
+  assert.deepEqual(parsed.renameOverrides, [{ from: "Shopkeeper", to: "Vet" }]);
+});
+
+test("parseArgs skips a malformed --rename value and keeps the spec clean", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  const parsed = parseArgs(["spec", "--rename", "Shop"]);
+  assert.equal(parsed.spec, "spec");
+  assert.deepEqual(parsed.renameOverrides, []);
+});
+
+test("parseRenamePair splits on the first = and rejects empty sides", async () => {
+  const { parseRenamePair } = await import("../src/rename-overrides.js");
+  assert.deepEqual(parseRenamePair("Shop=Clinic"), { from: "Shop", to: "Clinic" });
+  assert.deepEqual(parseRenamePair(" Shop = Clinic "), { from: "Shop", to: "Clinic" });
+  assert.equal(parseRenamePair("Shop"), null);
+  assert.equal(parseRenamePair("=Clinic"), null);
+  assert.equal(parseRenamePair("Shop="), null);
+  assert.equal(parseRenamePair(undefined), null);
+});
+
+test("applyRenameOverrides changes a planned target and leaves the rest", async () => {
+  const { applyRenameOverrides } = await import("../src/rename-overrides.js");
+  const plan = [
+    { from: "Shop", to: "Clinic" },
+    { from: "Shopkeeper", to: "Vet" },
+  ];
+  const { plan: merged, outcomes } = applyRenameOverrides(plan, [{ from: "Shopkeeper", to: "Provider" }]);
+  assert.deepEqual(merged, [
+    { from: "Shop", to: "Clinic" },
+    { from: "Shopkeeper", to: "Provider" },
+  ]);
+  assert.deepEqual(outcomes, [{ kind: "changed", from: "Shopkeeper", was: "Vet", to: "Provider" }]);
+  // Original plan is not mutated.
+  assert.equal(plan[1]?.to, "Vet");
+});
+
+test("applyRenameOverrides reports unmatched + noop overrides distinctly", async () => {
+  const { applyRenameOverrides } = await import("../src/rename-overrides.js");
+  const plan = [{ from: "Shop", to: "Clinic" }];
+  const { plan: merged, outcomes } = applyRenameOverrides(plan, [
+    { from: "Shop", to: "Clinic" }, // already the target → noop
+    { from: "ItemTag", to: "Patient" }, // no planned rename → unmatched, dropped
+  ]);
+  assert.deepEqual(merged, [{ from: "Shop", to: "Clinic" }]);
+  assert.deepEqual(outcomes, [
+    { kind: "noop", from: "Shop", to: "Clinic" },
+    { kind: "unmatched", from: "ItemTag", to: "Patient" },
+  ]);
+});
+
+test("dispatch applies a rename override end-to-end and surfaces the outcome (stub pipeline)", async () => {
+  const result = await dispatch("a walk-in clinic queue for small veterinary practices", {
+    renameOverrides: [{ from: "Shopkeeper", to: "Provider" }],
+  });
+  assert.equal(result.overallPass, true);
+  assert.deepEqual(result.renameOverrideOutcomes, [
+    { kind: "changed", from: "Shopkeeper", was: "Vet", to: "Provider" },
+  ]);
+  // The override flows into the plan the report renders from.
+  assert.ok(
+    result.report.domain.renamePlan.some((p) => p.from === "Shopkeeper" && p.to === "Provider"),
+    "overridden pair present in report rename plan",
+  );
+});
+
+test("dispatch with no overrides leaves renameOverrideOutcomes empty (stub pipeline)", async () => {
+  const result = await dispatch("a walk-in clinic queue for vets");
+  assert.deepEqual(result.renameOverrideOutcomes, []);
+});
+
+// --- project-name (slug) override (--slug, src/slug.ts isValidSlug) ---
+
+test("isValidSlug accepts kebab-case and rejects everything else", async () => {
+  const { isValidSlug } = await import("../src/slug.js");
+  assert.equal(isValidSlug("vet-clinic"), true);
+  assert.equal(isValidSlug("clinic-queue-2"), true);
+  assert.equal(isValidSlug("abc"), true);
+  assert.equal(isValidSlug("VetClinic"), false); // uppercase
+  assert.equal(isValidSlug("vet clinic"), false); // space
+  assert.equal(isValidSlug("-vet"), false); // leading dash
+  assert.equal(isValidSlug("vet_clinic"), false); // underscore
+  assert.equal(isValidSlug(""), false);
+});
+
+test("parseArgs captures a valid --slug (both = and space forms) and drops invalid ones", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  assert.equal(parseArgs(["spec", "--slug=vet-clinic"]).slug, "vet-clinic");
+  assert.equal(parseArgs(["spec", "--slug", "vet-clinic"]).slug, "vet-clinic");
+  // Invalid slug → dropped (undefined), spec preserved.
+  const bad = parseArgs(["spec", "--slug=Vet Clinic"]);
+  assert.equal(bad.slug, undefined);
+  assert.equal(bad.spec, "spec");
+});
+
+test("dispatch applies a valid --slug override and rewrites the project name (stub pipeline)", async () => {
+  const result = await dispatch("a walk-in clinic queue for vets", { slug: "vet-clinic" });
+  assert.equal(result.overallPass, true);
+  // The override drives the report meta.slug (output dir + Pascal name follow).
+  assert.equal(result.report.meta.slug, "vet-clinic");
+});
+
+test("dispatch ignores an invalid slug override and keeps the planner's slug (stub pipeline)", async () => {
+  const result = await dispatch("a walk-in clinic queue for vets", { slug: "Not A Slug" });
+  // Stub planner's slug is clinic-queue; the invalid override must not stick.
+  assert.equal(result.report.meta.slug, "clinic-queue");
+});
+
 // --- self-repair loop (src/repair-loop.ts) ---
 
 function platDetail(platform: Platform, l1: boolean, l2: boolean, l3?: boolean): PlatformDetail {

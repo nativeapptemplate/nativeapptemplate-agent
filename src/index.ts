@@ -4,17 +4,31 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { dispatch, type DispatchReportOptions } from "./dispatch.js";
 import { loadDotenvIfPresent } from "./env.js";
+import { parseRenamePair } from "./rename-overrides.js";
+import { isValidSlug, slugToPascal } from "./slug.js";
+import type { RenamePair } from "./agents/types.js";
 
 loadDotenvIfPresent();
 
-export type ParsedArgs = { spec: string; report: DispatchReportOptions; open: boolean; exitZero: boolean };
+export type ParsedArgs = {
+  spec: string;
+  report: DispatchReportOptions;
+  open: boolean;
+  exitZero: boolean;
+  renameOverrides: RenamePair[];
+  slug?: string;
+};
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
   const specParts: string[] = [];
   const report: DispatchReportOptions = {};
+  const renameOverrides: RenamePair[] = [];
   let open = false;
   let exitZero = false;
-  for (const arg of argv) {
+  let slug: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === undefined) continue;
     if (arg === "--no-report") report.enabled = false;
     else if (arg === "--report-open") open = true;
     else if (arg === "--exit-zero") exitZero = true;
@@ -23,11 +37,21 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       if (value === "html" || value === "json" || value === "both") report.format = value;
     } else if (arg.startsWith("--report-embed=")) {
       report.embed = arg.slice("--report-embed=".length) !== "false";
+    } else if (arg === "--rename" || arg.startsWith("--rename=")) {
+      // Accept both `--rename From=To` (per ROADMAP) and `--rename=From=To`.
+      const raw = arg === "--rename" ? argv[++i] : arg.slice("--rename=".length);
+      const pair = parseRenamePair(raw);
+      if (pair) renameOverrides.push(pair);
+      else console.error(`warning: ignoring malformed --rename "${raw ?? ""}" (expected From=To, e.g. --rename Shop=Clinic)`);
+    } else if (arg === "--slug" || arg.startsWith("--slug=")) {
+      const raw = (arg === "--slug" ? argv[++i] : arg.slice("--slug=".length))?.trim();
+      if (raw && isValidSlug(raw)) slug = raw;
+      else console.error(`warning: ignoring invalid --slug "${raw ?? ""}" (expected kebab-case, e.g. --slug=vet-clinic)`);
     } else {
       specParts.push(arg);
     }
   }
-  return { spec: specParts.join(" ").trim(), report, open, exitZero };
+  return { spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, ...(slug !== undefined ? { slug } : {}) };
 }
 
 export async function main(spec?: string): Promise<void> {
@@ -35,7 +59,7 @@ export async function main(spec?: string): Promise<void> {
   const input = (spec ?? parsed.spec).trim();
   if (!input) {
     console.error(
-      'Usage: nativeapptemplate-agent "your spec here" [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]',
+      'Usage: nativeapptemplate-agent "your spec here" [--slug=kebab-name] [--rename From=To]... [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]',
     );
     process.exitCode = 1;
     return;
@@ -44,7 +68,25 @@ export async function main(spec?: string): Promise<void> {
   console.log(`nativeapptemplate-agent: received spec: ${input}`);
   console.log('(tail tmp/trace/*.log in a tiled view via scripts/demo-tmux.sh)');
 
-  const result = await dispatch(input, { report: parsed.report });
+  const result = await dispatch(input, {
+    report: parsed.report,
+    renameOverrides: parsed.renameOverrides,
+    ...(parsed.slug !== undefined ? { slug: parsed.slug } : {}),
+  });
+
+  if (parsed.slug !== undefined) {
+    const finalSlug = result.report.meta.slug;
+    console.log(`project: ${slugToPascal(finalSlug)} (slug ${finalSlug}, output out/${finalSlug}/)`);
+  }
+
+  for (const o of result.renameOverrideOutcomes) {
+    if (o.kind === "changed") console.log(`override: ${o.from} → ${o.to} (overrode planner's "${o.was}")`);
+    else if (o.kind === "noop") console.log(`override: ${o.from} → ${o.to} (already the planner's pick)`);
+    else {
+      const sources = result.report.domain.renamePlan.map((p) => p.from).join(", ");
+      console.error(`warning: --rename ${o.from}=${o.to} matched no planned rename — skipped (renamable: ${sources || "none"})`);
+    }
+  }
 
   console.log('');
   console.log('=== run complete ===');

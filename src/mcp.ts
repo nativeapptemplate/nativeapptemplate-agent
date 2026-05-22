@@ -34,10 +34,25 @@ export function createMcpServer(): McpServer {
           .describe(
             'Natural-language SaaS spec, e.g. "a walk-in queue for a barbershop"',
           ),
+        renameOverrides: z
+          .array(z.object({ from: z.string().min(1), to: z.string().min(1) }))
+          .optional()
+          .describe(
+            'Optional manual rename overrides keyed on the substrate token (from = "Shop" | "Shopkeeper" | "ItemTag"), each replacing the planner\'s chosen target. Overrides that match no planned rename are ignored.',
+          ),
+        slug: z
+          .string()
+          .optional()
+          .describe(
+            'Optional kebab-case slug override (e.g. "vet-clinic"). Replaces the planner\'s slug, which sets the output directory, DB prefix, and the Pascal project name across all three platforms. Ignored if not valid kebab-case.',
+          ),
       },
     },
-    async ({ spec }) => {
-      const result = await dispatch(spec);
+    async ({ spec, renameOverrides, slug }) => {
+      const result = await dispatch(spec, {
+        ...(renameOverrides ? { renameOverrides } : {}),
+        ...(slug !== undefined ? { slug } : {}),
+      });
       return {
         content: [{ type: "text", text: result.summary }],
         structuredContent: {
