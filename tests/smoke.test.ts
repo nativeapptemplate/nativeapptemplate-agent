@@ -1296,3 +1296,30 @@ test("writeReport with embed=false externalizes screenshots to report-assets/", 
   // The copied asset exists on disk.
   assert.ok(readFileSync(join(dir, "report-assets", "ios-home.png")).length > 0);
 });
+
+test("parseArgs splits the spec from report + exit flags", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  const parsed = parseArgs(["a", "walk-in", "queue", "--no-report", "--report-format=json", "--report-embed=false", "--report-open", "--exit-zero"]);
+  assert.equal(parsed.spec, "a walk-in queue");
+  assert.equal(parsed.report.enabled, false);
+  assert.equal(parsed.report.format, "json");
+  assert.equal(parsed.report.embed, false);
+  assert.equal(parsed.open, true);
+  assert.equal(parsed.exitZero, true);
+});
+
+test("parseArgs defaults: a bare spec leaves report options unset", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  const parsed = parseArgs(["just", "a", "spec"]);
+  assert.equal(parsed.spec, "just a spec");
+  assert.deepEqual(parsed.report, {});
+  assert.equal(parsed.open, false);
+  assert.equal(parsed.exitZero, false);
+});
+
+test("parseArgs ignores an invalid --report-format value", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  const parsed = parseArgs(["spec", "--report-format=xml"]);
+  assert.equal(parsed.spec, "spec");
+  assert.equal(parsed.report.format, undefined);
+});
