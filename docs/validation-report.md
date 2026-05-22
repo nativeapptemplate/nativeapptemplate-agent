@@ -214,3 +214,52 @@ Flags:
 7. `src/mcp.ts` — return `report.json` + HTML path.
 
 Steps 1–4 land the machine-readable artifact and the HTML for the common case; 5–7 are polish and surface integration.
+
+> **Status: shipped.** Steps 1–2 in #73, steps 3–7 in #74, and the CI exit-code + README docs in #75. The forward-looking `repairAttempts` section renders only once the self-repair loop is wired (separate work).
+
+---
+
+## 10. Rendering & visually verifying the report
+
+`validation-report.html` is self-contained (screenshots base64-embedded, no external assets), so the zero-tooling path is just to open it:
+
+```bash
+open out/<slug>/validation-report.html        # macOS
+```
+
+For *agent-driven* visual verification — having Claude open the report and capture a screenshot — use the **Playwright MCP**. This is a maintainer convenience for eyeballing the rendered output; it is **not** part of the agent's pipeline (device screenshots in Layer 2/3 come from [`mobile-mcp`](https://github.com/mobile-next/mobile-mcp), not Playwright).
+
+### Path A — Playwright MCP (interactive, inside Claude Code)
+
+One-time setup (local scope — this project only, not committed):
+
+```bash
+claude mcp add playwright -- npx -y @playwright/mcp@latest
+# then restart the Claude Code session so the browser_* tools load
+# (mid-session adds register the server but don't inject tools into the running session)
+npx playwright install chromium   # only if the first run reports a missing browser
+```
+
+Workflow, once a run has produced `out/<slug>/validation-report.html`:
+
+1. Ask Claude to open and screenshot the report.
+2. Under the hood it calls `browser_navigate` with a `file://` URL, then `browser_take_screenshot`:
+   - `browser_navigate` → `file://<abs-path>/out/<slug>/validation-report.html`
+   - `browser_take_screenshot` (use the full-page option to capture the whole report)
+3. The PNG is the visual check; `report.json` carries the structured pass/fail.
+
+Remove it later with `claude mcp remove playwright`.
+
+### Path B — Playwright CLI (headless, no MCP, CI-friendly)
+
+No session restart and no MCP registration — a one-off that's also suitable for capturing a CI artifact:
+
+```bash
+npx -y playwright@latest screenshot --full-page \
+  "file://$(pwd)/out/<slug>/validation-report.html" \
+  report.png
+# if it errors on a missing browser:
+npx -y playwright@latest install chromium
+```
+
+This needs no project dependency — `npx` fetches Playwright transiently. Don't add Playwright to `package.json`; the report itself has no runtime browser dependency, and keeping it out preserves the lean install.
