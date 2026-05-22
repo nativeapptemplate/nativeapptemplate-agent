@@ -1,15 +1,40 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dispatch } from "./dispatch.js";
+import { spawn } from "node:child_process";
+import { dispatch, type DispatchReportOptions } from "./dispatch.js";
 import { loadDotenvIfPresent } from "./env.js";
 
 loadDotenvIfPresent();
 
+type ParsedArgs = { spec: string; report: DispatchReportOptions; open: boolean };
+
+function parseArgs(argv: readonly string[]): ParsedArgs {
+  const specParts: string[] = [];
+  const report: DispatchReportOptions = {};
+  let open = false;
+  for (const arg of argv) {
+    if (arg === "--no-report") report.enabled = false;
+    else if (arg === "--report-open") open = true;
+    else if (arg.startsWith("--report-format=")) {
+      const value = arg.slice("--report-format=".length);
+      if (value === "html" || value === "json" || value === "both") report.format = value;
+    } else if (arg.startsWith("--report-embed=")) {
+      report.embed = arg.slice("--report-embed=".length) !== "false";
+    } else {
+      specParts.push(arg);
+    }
+  }
+  return { spec: specParts.join(" ").trim(), report, open };
+}
+
 export async function main(spec?: string): Promise<void> {
-  const input = spec ?? process.argv.slice(2).join(" ").trim();
+  const parsed = parseArgs(process.argv.slice(2));
+  const input = (spec ?? parsed.spec).trim();
   if (!input) {
-    console.error('Usage: nativeapptemplate-agent "your spec here"');
+    console.error(
+      'Usage: nativeapptemplate-agent "your spec here" [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open]',
+    );
     process.exitCode = 1;
     return;
   }
@@ -17,12 +42,20 @@ export async function main(spec?: string): Promise<void> {
   console.log(`nativeapptemplate-agent: received spec: ${input}`);
   console.log('(tail tmp/trace/*.log in a tiled view via scripts/demo-tmux.sh)');
 
-  const result = await dispatch(input);
+  const result = await dispatch(input, { report: parsed.report });
 
   console.log('');
   console.log('=== run complete ===');
   console.log(`result: ${result.summary}`);
   console.log(`overall: ${result.overallPass ? 'PASS' : 'FAIL'}`);
+  if (result.reportPaths.htmlPath) {
+    console.log(`report: file://${result.reportPaths.htmlPath}`);
+    if (parsed.open && process.platform === 'darwin') {
+      spawn('open', [result.reportPaths.htmlPath], { stdio: 'ignore', detached: true }).unref();
+    }
+  } else if (result.reportPaths.jsonPath) {
+    console.log(`report: ${result.reportPaths.jsonPath}`);
+  }
 }
 
 // Entry guard: run main() when this file is the program entry point. Resolve

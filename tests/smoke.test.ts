@@ -4,6 +4,12 @@ import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, r
 import { dispatch } from "../src/dispatch.js";
 import { runReviewer } from "../src/agents/reviewer.js";
 import { canonicalizeEndpoint, diffContracts } from "../src/agents/contract-extract.js";
+import { renderReport } from "../src/report/render.js";
+import { buildRunReport, writeReport, collectScreenshotPaths } from "../src/report/collect.js";
+import type { DomainSpec, JudgeResult, ReviewerResult } from "../src/agents/types.js";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 test("validation layers are exported as functions", () => {
   assert.equal(typeof runLayer1, "function");
@@ -1095,10 +1101,198 @@ test("createMcpServer registers generate_app and routes through dispatch", async
     arguments: { spec: "a walk-in clinic queue for small veterinary practices" },
   });
   assert.equal(call.isError, false);
-  const sc = call.structuredContent as { overallPass?: boolean; summary?: string };
+  const sc = call.structuredContent as { overallPass?: boolean; summary?: string; report?: { meta?: { slug?: string } } };
   assert.equal(sc.overallPass, true);
   assert.match(sc.summary ?? "", /PASS/);
+  // Step 7: the RunReport is surfaced in structuredContent.
+  assert.ok(sc.report, "expected report in structuredContent");
+  assert.equal(typeof sc.report?.meta?.slug, "string");
 
   await client.close();
   await server.close();
+});
+
+// --- HTML validation report (docs/validation-report.md) ---
+
+const reportDomain: DomainSpec = {
+  slug: "vet-clinic",
+  displayName: "Vet Clinic",
+  entities: [
+    { name: "Patient", replaces: "ItemTag", fields: [{ name: "name", type: "string" }], states: ["Idled", "Completed"] },
+  ],
+  renamePlan: [
+    { from: "Shop", to: "Clinic" },
+    { from: "Shopkeeper", to: "Vet" },
+  ],
+  jsonApiContract: {},
+};
+
+function mixedJudge(iosScreenshot?: string): JudgeResult {
+  return {
+    overallPass: false,
+    summary: "Layer 1 2/3 pass · Layer 2 2/3 pass · Layer 3 1/2 pass · reviewer FAIL",
+    platforms: [
+      {
+        platform: "rails",
+        layer1: { pass: true, findings: [] },
+        layer2: { pass: true, command: "bin/rails runner", mode: "build", exitCode: 0, durationMs: 4200 },
+      },
+      {
+        platform: "ios",
+        layer1: { pass: false, findings: [{ token: "Shop", file: "ios/Foo.swift", line: 12, text: "var s: Shop<Tag>" }] },
+        layer2: { pass: true, command: "xcodebuild build", mode: "build", exitCode: 0, durationMs: 61000 },
+        layer3: {
+          pass: true,
+          ...(iosScreenshot !== undefined ? { screenshotPath: iosScreenshot } : {}),
+          scores: [{ criterionId: "no-substrate-leak", pass: true, rationale: "No Shop tokens visible." }],
+        },
+      },
+      {
+        platform: "android",
+        layer1: { pass: true, findings: [] },
+        layer2: { pass: false, command: "./gradlew assembleDebug", mode: "build", exitCode: 1, durationMs: 30000, stderrTail: "e: Unresolved reference: Shopkeeper" },
+        layer3: { pass: false, error: "launch failed" },
+      },
+    ],
+  };
+}
+
+const failReviewer: ReviewerResult = { contractParity: "fail", diffs: ["iOS calls DELETE /clinics/{id}/reset not in Rails"] };
+
+test("buildRunReport assembles meta + platforms + domain from the run pieces", () => {
+  const report = buildRunReport({
+    spec: "a vet clinic queue",
+    domain: reportDomain,
+    judge: mixedJudge(),
+    reviewer: failReviewer,
+    agentVersion: "9.9.9",
+    judgeModel: "claude-opus-4-7",
+    visualLevel: 1,
+    startedAt: 1000,
+    finishedAt: 4000,
+  });
+  assert.equal(report.meta.slug, "vet-clinic");
+  assert.equal(report.meta.durationMs, 3000);
+  assert.equal(report.meta.agentVersion, "9.9.9");
+  assert.equal(report.platforms.length, 3);
+  assert.equal(report.reviewer.contractParity, "fail");
+  assert.deepEqual(report.domain.renamePlan, [
+    { from: "Shop", to: "Clinic" },
+    { from: "Shopkeeper", to: "Vet" },
+  ]);
+});
+
+test("renderReport surfaces findings, stderr, reviewer diff, rename plan, and overall verdict", () => {
+  const report = buildRunReport({
+    spec: "a vet clinic queue",
+    domain: reportDomain,
+    // A screenshot path the (empty) asset map can't resolve → exercises
+    // the "screenshot unavailable" placeholder branch.
+    judge: mixedJudge("/tmp/nonexistent/ios-home.png"),
+    reviewer: failReviewer,
+    agentVersion: "9.9.9",
+    judgeModel: "claude-opus-4-7",
+    visualLevel: 1,
+    startedAt: 1000,
+    finishedAt: 4000,
+  });
+  const html = renderReport(report);
+
+  assert.match(html, /<!doctype html>/i);
+  assert.ok(html.includes("Vet Clinic"));
+  assert.ok(html.includes("✗ Fail"), "overall fail badge");
+  assert.ok(html.includes("2/3 pass"), "layer 1 gate count");
+  // Layer 1 finding details, HTML-escaped (the fixture text has angle brackets).
+  assert.ok(html.includes("ios/Foo.swift:12"));
+  assert.ok(html.includes("Shop&lt;Tag&gt;"), "finding text is HTML-escaped");
+  assert.ok(!html.includes("Shop<Tag>"), "no unescaped angle brackets leak through");
+  // Layer 2 stderr tail.
+  assert.ok(html.includes("Unresolved reference: Shopkeeper"));
+  // Reviewer diff.
+  assert.ok(html.includes("DELETE /clinics/{id}/reset"));
+  // Domain rename plan.
+  assert.ok(html.includes("Clinic") && html.includes("Vet"));
+  // No screenshot provided in assets → placeholder, not a broken image.
+  assert.ok(html.includes("screenshot unavailable"));
+});
+
+test("renderReport falls back to the summary line when platforms are empty (stub run)", () => {
+  const report = buildRunReport({
+    spec: "x",
+    domain: reportDomain,
+    judge: { overallPass: true, summary: "Layer 1/2/3 PASS" },
+    reviewer: { contractParity: "pass", diffs: [] },
+    agentVersion: "1.0.0",
+    judgeModel: "claude-opus-4-7",
+    visualLevel: 0,
+    startedAt: 0,
+    finishedAt: 10,
+  });
+  const html = renderReport(report);
+  assert.ok(html.includes("Layer 1/2/3 PASS"));
+  assert.ok(html.includes("✓ Pass"));
+});
+
+test("writeReport emits a self-contained report.json + HTML with embedded screenshot", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "report-test-"));
+  const shotPath = join(tmp, "ios-home.png");
+  // Minimal valid-ish PNG header bytes — enough to base64-embed.
+  writeFileSync(shotPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+  const report = buildRunReport({
+    spec: "a vet clinic queue",
+    domain: reportDomain,
+    judge: mixedJudge(shotPath),
+    reviewer: failReviewer,
+    agentVersion: "1.0.0",
+    judgeModel: "claude-opus-4-7",
+    visualLevel: 1,
+    startedAt: 0,
+    finishedAt: 1000,
+  });
+
+  assert.ok(collectScreenshotPaths(report).includes(shotPath));
+
+  const dir = join(tmp, "out");
+  const paths = await writeReport(report, { dir, embed: true });
+
+  assert.ok(paths.jsonPath, "json path");
+  assert.ok(paths.htmlPath, "html path");
+
+  const json = JSON.parse(readFileSync(paths.jsonPath!, "utf8")) as { overallPass: boolean; meta: { slug: string } };
+  assert.equal(json.overallPass, false);
+  assert.equal(json.meta.slug, "vet-clinic");
+
+  const html = readFileSync(paths.htmlPath!, "utf8");
+  assert.ok(html.includes("data:image/png;base64,"), "screenshot embedded as data URI");
+  // Portability guarantees: no ephemeral tmp paths, no network/asset URLs.
+  assert.ok(!html.includes(shotPath), "must not leak the raw tmp/ screenshot path");
+  assert.ok(!/https?:\/\//.test(html), "must not reference any external URL");
+});
+
+test("writeReport with embed=false externalizes screenshots to report-assets/", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "report-ext-"));
+  const shotPath = join(tmp, "ios-home.png");
+  writeFileSync(shotPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+  const report = buildRunReport({
+    spec: "x",
+    domain: reportDomain,
+    judge: mixedJudge(shotPath),
+    reviewer: { contractParity: "pass", diffs: [] },
+    agentVersion: "1.0.0",
+    judgeModel: "claude-opus-4-7",
+    visualLevel: 1,
+    startedAt: 0,
+    finishedAt: 1,
+  });
+
+  const dir = join(tmp, "out");
+  const paths = await writeReport(report, { dir, embed: false, format: "html" });
+  assert.equal(paths.jsonPath, undefined, "format=html skips json");
+  const html = readFileSync(paths.htmlPath!, "utf8");
+  assert.ok(html.includes("report-assets/ios-home.png"), "relative asset reference");
+  assert.ok(!html.includes("data:image/png"), "no embedded data URI when embed=false");
+  // The copied asset exists on disk.
+  assert.ok(readFileSync(join(dir, "report-assets", "ios-home.png")).length > 0);
 });

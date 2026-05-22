@@ -9,9 +9,29 @@ import { applyBridgeToProcessEnv, buildBridgeValues, syncGradleProperties } from
 import { startRails, type RailsHandle } from "./rails-lifecycle.js";
 import { isStub } from "./stub.js";
 import { trace } from "./trace.js";
+import { buildRunReport, writeReport, type ReportFormat, type ReportPaths } from "./report/collect.js";
+import { readPackageVersion } from "./version.js";
+import type { RunReport } from "./report/model.js";
 import type { JudgeResult } from "./agents/types.js";
 
-export async function dispatch(spec: string): Promise<JudgeResult> {
+export type DispatchReportOptions = {
+  enabled?: boolean;
+  format?: ReportFormat;
+  embed?: boolean;
+  dir?: string;
+};
+
+export type DispatchOptions = {
+  report?: DispatchReportOptions;
+};
+
+export type DispatchResult = JudgeResult & {
+  report: RunReport;
+  reportPaths: ReportPaths;
+};
+
+export async function dispatch(spec: string, options: DispatchOptions = {}): Promise<DispatchResult> {
+  const startedAt = Date.now();
   const domain = await runPlanner(spec);
 
   // Mirror the substrate's NATIVEAPPTEMPLATE_API_* config to the
@@ -98,8 +118,9 @@ export async function dispatch(spec: string): Promise<JudgeResult> {
     trace("dispatch", `rails-lifecycle: live at ${railsServer.url} for Stage 2`);
   }
 
+  let judge: JudgeResult;
   try {
-    return await runJudge({
+    judge = await runJudge({
       domain,
       rails,
       ios,
@@ -115,4 +136,33 @@ export async function dispatch(spec: string): Promise<JudgeResult> {
       });
     }
   }
+
+  const report = buildRunReport({
+    spec,
+    domain,
+    judge,
+    reviewer,
+    agentVersion: readPackageVersion(),
+    judgeModel: "claude-opus-4-7",
+    visualLevel: visualLevel as 0 | 1 | 2,
+    startedAt,
+    finishedAt: Date.now(),
+  });
+
+  // Default off in stub mode so the test suite never writes into ./out.
+  const reportOpts = options.report ?? {};
+  const reportEnabled = reportOpts.enabled ?? !isStub("dispatch");
+  let reportPaths: ReportPaths = {};
+  if (reportEnabled) {
+    const dir = reportOpts.dir ?? resolve(process.cwd(), "out", domain.slug);
+    reportPaths = await writeReport(report, {
+      dir,
+      ...(reportOpts.format !== undefined ? { format: reportOpts.format } : {}),
+      ...(reportOpts.embed !== undefined ? { embed: reportOpts.embed } : {}),
+    });
+    const written = Object.values(reportPaths).filter(Boolean);
+    if (written.length > 0) trace("dispatch", `report: wrote ${written.join(", ")}`);
+  }
+
+  return { ...judge, report, reportPaths };
 }
