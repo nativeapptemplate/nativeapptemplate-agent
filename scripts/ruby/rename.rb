@@ -25,6 +25,7 @@ TEXT_EXTS         = %w[
   .swift .plist .strings .xcconfig .entitlements .pbxproj .xcworkspacedata .modulemap .xcscheme
   .kt .kts .xml .gradle .pro .toml .properties .cfg
   .proto
+  .svg .webmanifest
 ].freeze
 TEXT_BASENAMES    = %w[
   Gemfile Gemfile.lock Rakefile Procfile Procfile.dev
@@ -32,7 +33,7 @@ TEXT_BASENAMES    = %w[
   config.ru Dockerfile
   Podfile Podfile.lock Package.swift Cartfile Makefile
   gradlew gradlew.bat gradle.properties local.properties
-  brakeman.ignore
+  brakeman.ignore .swiftformat
 ].freeze
 
 def pluralize(word)
