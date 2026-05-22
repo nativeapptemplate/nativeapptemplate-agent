@@ -91,7 +91,7 @@ Three clean operations on the substrate (details in `docs/SPEC.md` section 4):
 
 ## Guardrails
 
-- **Self-repair loop hard-capped at 5 iterations** per generated project. On exceed, surface residuals and exit.
+- **Self-repair loop hard-capped at 5 iterations** per generated project, opt-in via `NATIVEAPPTEMPLATE_REPAIR` (targets Layer 1/2 only; Layer 3 + reviewer are surfaced, not auto-repaired). On exceed, surface residuals and exit. Code: `src/repair-loop.ts` + `src/agents/repair.ts`.
 - Known-cryptic failure modes: Jetpack Compose compilation, Hilt DI. Slow down and verify rather than pattern-match on those.
 - **Do not invent tests for the generated code.** The substrate already has tests; use them.
 - **Never modify the substrate repos** — clone them fresh into `./out/<slug>/{rails,ios,android}` before editing.

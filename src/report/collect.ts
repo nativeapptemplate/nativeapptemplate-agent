@@ -2,7 +2,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import type { DomainSpec, JudgeResult, ReviewerResult } from "../agents/types.js";
 import { renderReport } from "./render.js";
-import type { AssetMap, RunReport } from "./model.js";
+import type { AssetMap, RepairAttempt, RunReport } from "./model.js";
 
 export type ReportFormat = "html" | "json" | "both";
 
@@ -16,6 +16,7 @@ export type BuildRunReportInput = {
   visualLevel: 0 | 1 | 2;
   startedAt: number;
   finishedAt: number;
+  repairAttempts?: readonly RepairAttempt[];
 };
 
 // Pure assembly: fold the run's pieces into the single RunReport
@@ -53,6 +54,9 @@ export function buildRunReport(input: BuildRunReportInput): RunReport {
         ...(e.states !== undefined ? { states: e.states } : {}),
       })),
     },
+    ...(input.repairAttempts && input.repairAttempts.length > 0
+      ? { repairAttempts: input.repairAttempts }
+      : {}),
   };
 }
 

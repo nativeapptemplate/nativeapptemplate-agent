@@ -6,7 +6,8 @@ import { runReviewer } from "../src/agents/reviewer.js";
 import { canonicalizeEndpoint, diffContracts } from "../src/agents/contract-extract.js";
 import { renderReport } from "../src/report/render.js";
 import { buildRunReport, writeReport, collectScreenshotPaths } from "../src/report/collect.js";
-import type { DomainSpec, JudgeResult, ReviewerResult } from "../src/agents/types.js";
+import type { DomainSpec, JudgeResult, ReviewerResult, Platform, PlatformDetail } from "../src/agents/types.js";
+import { runRepairLoop, REPAIR_ITERATION_CAP, type RepairLoopDeps, type RevalidateResult } from "../src/repair-loop.js";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1322,4 +1323,172 @@ test("parseArgs ignores an invalid --report-format value", async () => {
   const parsed = parseArgs(["spec", "--report-format=xml"]);
   assert.equal(parsed.spec, "spec");
   assert.equal(parsed.report.format, undefined);
+});
+
+// --- self-repair loop (src/repair-loop.ts) ---
+
+function platDetail(platform: Platform, l1: boolean, l2: boolean, l3?: boolean): PlatformDetail {
+  return {
+    platform,
+    layer1: { pass: l1, findings: l1 ? [] : [{ token: "Shop", file: "X.kt", line: 1, text: "class Shop" }] },
+    layer2: {
+      pass: l2,
+      command: "build",
+      mode: "build",
+      exitCode: l2 ? 0 : 1,
+      durationMs: 10,
+      ...(l2 ? {} : { stderrTail: "Unresolved reference: Shop" }),
+    },
+    ...(l3 !== undefined ? { layer3: { pass: l3 } } : {}),
+  };
+}
+
+function passLayers(platform: Platform): RevalidateResult {
+  return platDetail(platform, true, true);
+}
+
+test("runRepairLoop resolves a Layer 2 failure after one repair pass", async () => {
+  const repaired: string[] = [];
+  const deps: RepairLoopDeps = {
+    repair: async (platform, layer) => {
+      repaired.push(`${platform}/${layer}`);
+      return { action: `patched ${platform}` };
+    },
+    revalidate: async (platform) => passLayers(platform),
+  };
+  const result = await runRepairLoop({
+    platforms: [platDetail("rails", true, false)],
+    reviewerPass: true,
+    maxIterations: 5,
+    deps,
+  });
+  assert.equal(result.attempts.length, 1);
+  assert.deepEqual(result.attempts[0], {
+    iteration: 1,
+    failingLayer: "layer2",
+    platform: "rails",
+    action: "patched rails",
+    resolved: true,
+  });
+  assert.equal(result.overallPass, true);
+  assert.match(result.summary, /Layer 2 1\/1 pass/);
+  assert.deepEqual(repaired, ["rails/layer2"]);
+});
+
+test("runRepairLoop gives up after the cap when repair never resolves", async () => {
+  let repairCalls = 0;
+  const deps: RepairLoopDeps = {
+    repair: async () => {
+      repairCalls += 1;
+      return { action: "tried" };
+    },
+    // Never fixes anything — layer1 stays failing.
+    revalidate: async (platform) => platDetail(platform, false, true),
+  };
+  const result = await runRepairLoop({
+    platforms: [platDetail("android", false, true)],
+    reviewerPass: true,
+    maxIterations: 5,
+    deps,
+  });
+  assert.equal(result.attempts.length, 5);
+  assert.equal(repairCalls, 5);
+  assert.ok(result.attempts.every((a) => a.failingLayer === "layer1" && a.resolved === false));
+  assert.equal(result.overallPass, false);
+});
+
+test("runRepairLoop clamps maxIterations to the CLAUDE.md cap of 5", async () => {
+  const deps: RepairLoopDeps = {
+    repair: async () => ({ action: "x" }),
+    revalidate: async (platform) => platDetail(platform, false, true),
+  };
+  const result = await runRepairLoop({
+    platforms: [platDetail("ios", false, true)],
+    reviewerPass: true,
+    maxIterations: 99,
+    deps,
+  });
+  assert.equal(result.attempts.length, REPAIR_ITERATION_CAP);
+});
+
+test("runRepairLoop fixes Layer 1 before Layer 2 on a platform failing both", async () => {
+  let call = 0;
+  const deps: RepairLoopDeps = {
+    repair: async (_platform, _layer, detail) => ({ action: `saw ${detail.platform}` }),
+    revalidate: async (platform) => {
+      call += 1;
+      // First revalidate: layer1 now clean, layer2 still broken.
+      // Second revalidate: both clean.
+      return call === 1 ? platDetail(platform, true, false) : platDetail(platform, true, true);
+    },
+  };
+  const result = await runRepairLoop({
+    platforms: [platDetail("android", false, false)],
+    reviewerPass: true,
+    maxIterations: 5,
+    deps,
+  });
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.attempts[0]?.failingLayer, "layer1");
+  assert.equal(result.attempts[1]?.failingLayer, "layer2");
+  assert.equal(result.overallPass, true);
+});
+
+test("runRepairLoop with a Layer 3 failure it can't repair surfaces FAIL and makes no attempts", async () => {
+  let repairCalls = 0;
+  const deps: RepairLoopDeps = {
+    repair: async () => {
+      repairCalls += 1;
+      return { action: "should not run" };
+    },
+    revalidate: async (platform) => passLayers(platform),
+  };
+  // Layers 1 + 2 pass; only Layer 3 fails — not code-repairable here.
+  const result = await runRepairLoop({
+    platforms: [platDetail("rails", true, true), platDetail("ios", true, true, false)],
+    reviewerPass: true,
+    maxIterations: 5,
+    deps,
+  });
+  assert.equal(repairCalls, 0);
+  assert.equal(result.attempts.length, 0);
+  assert.equal(result.overallPass, false);
+});
+
+test("buildRunReport carries repairAttempts and renderReport shows the self-repair section", () => {
+  const report = buildRunReport({
+    spec: "a vet clinic queue",
+    domain: reportDomain,
+    judge: mixedJudge(),
+    reviewer: failReviewer,
+    agentVersion: "9.9.9",
+    judgeModel: "claude-opus-4-7",
+    visualLevel: 1,
+    startedAt: 1000,
+    finishedAt: 4000,
+    repairAttempts: [
+      { iteration: 1, failingLayer: "layer2", platform: "android", action: "added missing Hilt @Provides", resolved: true },
+    ],
+  });
+  assert.equal(report.repairAttempts?.length, 1);
+  const html = renderReport(report);
+  assert.ok(html.includes("Self-repair"), "repair section heading present");
+  assert.ok(html.includes("added missing Hilt @Provides"), "repair action rendered");
+});
+
+test("buildRunReport omits repairAttempts when none were made", () => {
+  const report = buildRunReport({
+    spec: "x",
+    domain: reportDomain,
+    judge: mixedJudge(),
+    reviewer: failReviewer,
+    agentVersion: "1.0.0",
+    judgeModel: "claude-opus-4-7",
+    visualLevel: 0,
+    startedAt: 0,
+    finishedAt: 1,
+    repairAttempts: [],
+  });
+  assert.equal(report.repairAttempts, undefined);
+  assert.ok(!renderReport(report).includes("Self-repair"));
 });
