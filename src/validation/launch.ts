@@ -32,12 +32,20 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 // / package name from the slug) is the caller's concern — this function takes
 // already-resolved inputs and runs the install + launch chain.
 //
-// Two-step chain per platform:
-//   iOS:     xcrun simctl install booted <appPath>
-//            xcrun simctl launch  booted <bundleId>
-//   Android: adb install <apkPath>
-//            adb shell pm grant <package> POST_NOTIFICATIONS  (best-effort)
+// Chain per platform (a best-effort uninstall runs first — see below):
+//   iOS:     xcrun simctl uninstall booted <bundleId>          (best-effort)
+//            xcrun simctl install   booted <appPath>
+//            xcrun simctl launch    booted <bundleId>
+//   Android: adb uninstall <package>                           (best-effort)
+//            adb install -r <apkPath>
+//            adb shell pm grant <package> POST_NOTIFICATIONS   (best-effort)
 //            adb shell monkey -p <package> -c android.intent.category.LAUNCHER 1
+//
+// The leading uninstall clears prior per-run state — notably a Keychain/app
+// auth token persisted by an earlier run, which (against a since-recreated DB)
+// makes the app error to a "Back to Start Screen" launch state and fail Stage
+// 1. It's best-effort: on the first run (app not installed) it errors and is
+// ignored. This gives each run a clean install.
 //
 // `monkey` on Android is used over `am start -n <pkg>/<activity>` because it
 // only needs the package name — the caller doesn't have to know which activity
@@ -58,14 +66,19 @@ export async function installAndLaunch(input: LaunchInput): Promise<LaunchResult
 
 async function installAndLaunchIos(appPath: string, bundleId: string, timeoutMs: number): Promise<LaunchResult> {
   const started = Date.now();
+  const uninstallCmd = `xcrun simctl uninstall booted ${bundleId}`;
   const installCmd = `xcrun simctl install booted ${appPath}`;
   const launchCmd = `xcrun simctl launch booted ${bundleId}`;
+
+  // Best-effort clean: drop any prior install (and its stale auth/Keychain
+  // state) so this run starts fresh. Ignore errors (e.g. not installed yet).
+  await runOnce("xcrun", ["simctl", "uninstall", "booted", bundleId], timeoutMs);
 
   const install = await runOnce("xcrun", ["simctl", "install", "booted", appPath], timeoutMs);
   if (!install.ok) {
     return {
       ok: false,
-      command: installCmd,
+      command: `${uninstallCmd} ; ${installCmd}`,
       durationMs: Date.now() - started,
       ...(install.error !== undefined ? { error: install.error } : {}),
     };
@@ -73,7 +86,7 @@ async function installAndLaunchIos(appPath: string, bundleId: string, timeoutMs:
   const launch = await runOnce("xcrun", ["simctl", "launch", "booted", bundleId], timeoutMs);
   return {
     ok: launch.ok,
-    command: `${installCmd} && ${launchCmd}`,
+    command: `${uninstallCmd} ; ${installCmd} && ${launchCmd}`,
     durationMs: Date.now() - started,
     ...(launch.ok || launch.error === undefined ? {} : { error: launch.error }),
   };
@@ -102,15 +115,21 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
 
   const targetArgs = targeting.serial !== undefined ? ["-s", targeting.serial] : [];
   const targetForCmd = targeting.serial !== undefined ? ` -s ${targeting.serial}` : "";
+  const uninstallCmd = `${adb}${targetForCmd} uninstall ${packageName}`;
   const installCmd = `${adb}${targetForCmd} install -r ${apkPath}`;
   const grantCmd = `${adb}${targetForCmd} shell pm grant ${packageName} android.permission.POST_NOTIFICATIONS`;
   const launchCmd = `${adb}${targetForCmd} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
+
+  // Best-effort clean: clear prior app data (incl. stale auth) before
+  // reinstalling. Ignore errors — `uninstall` fails when the package isn't
+  // present (first run).
+  await runOnce(adb, [...targetArgs, "uninstall", packageName], timeoutMs);
 
   const install = await runOnce(adb, [...targetArgs, "install", "-r", apkPath], timeoutMs);
   if (!install.ok) {
     return {
       ok: false,
-      command: installCmd,
+      command: `${uninstallCmd} ; ${installCmd}`,
       durationMs: Date.now() - started,
       ...(install.error !== undefined ? { error: install.error } : {}),
     };
@@ -135,7 +154,7 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
   );
   return {
     ok: launch.ok,
-    command: `${installCmd} && ${grantCmd} && ${launchCmd}`,
+    command: `${uninstallCmd} ; ${installCmd} && ${grantCmd} && ${launchCmd}`,
     durationMs: Date.now() - started,
     ...(launch.ok || launch.error === undefined ? {} : { error: launch.error }),
   };

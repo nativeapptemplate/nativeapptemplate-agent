@@ -182,6 +182,9 @@ test("installAndLaunch returns a structured failure when no sim is booted (iOS)"
   assert.equal(typeof result.command, "string");
   assert.equal(typeof result.durationMs, "number");
   assert.ok(result.command.includes("xcrun simctl install"));
+  // Clean-install: a best-effort uninstall runs before install so stale
+  // per-run app/Keychain state can't error the app on launch.
+  assert.ok(result.command.includes("xcrun simctl uninstall booted com.example.app"));
   if (!result.ok) {
     assert.equal(typeof result.error, "string");
   }
