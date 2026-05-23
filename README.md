@@ -178,7 +178,7 @@ Naming flags:
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--slug=<kebab>` | planner's pick | Override the project slug. Renames the Pascal project name (`NativeAppTemplate → VetClinic`) across all three platforms, and sets the output dir `out/<slug>/`, the DB prefix, and the env-bridge token. Must be kebab-case; invalid values are reported and skipped. Example: `--slug=vet-clinic` |
+| `--project-name="Vet Clinic"` | planner's pick | Name the project. Accepts a human name (`"Vet Clinic"`), PascalCase (`VetClinic`), or kebab (`vet-clinic`); from it the agent derives the Pascal project name (`NativeAppTemplate → VetClinic` across all three platforms), the slug/output dir (`out/vet-clinic/`), the DB prefix + env-bridge token, and the display name. Invalid (no derivable slug) is reported and skipped. |
 | `--rename From=To` | planner's pick | Override one of the planner's domain rename targets (repeatable). `From` is a substrate token (`Shop`, `Shopkeeper`, `ItemTag`); the planner fills in everything else. An override that matches no planned rename is reported and skipped. Example: `--rename Shopkeeper=Vet --rename Shop=Clinic` |
 
 Report flags:

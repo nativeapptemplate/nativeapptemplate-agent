@@ -18,7 +18,7 @@ import { runLayer2, type Layer2Mode } from "./validation/layer2.js";
 import type { RepairAttempt, RunReport } from "./report/model.js";
 import type { JudgeResult, Platform, PlatformDetail, RenamePair, WorkerResult } from "./agents/types.js";
 import { applyRenameOverrides, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
-import { isValidSlug, slugToPascal } from "./slug.js";
+import { isValidSlug, slugToPascal, projectNameToSlug, projectNameToDisplayName } from "./slug.js";
 
 export type DispatchReportOptions = {
   enabled?: boolean;
@@ -32,11 +32,11 @@ export type DispatchOptions = {
   // Manual rename overrides merged onto the planner's plan (CLI --rename).
   // See src/rename-overrides.ts.
   renameOverrides?: readonly RenamePair[];
-  // Manual slug override (CLI --slug). Replaces the planner's slug, which
-  // drives the output dir, DB prefix, env-bridge token, and the Pascal
-  // project name (NativeAppTemplate -> slugToPascal(slug)) across all three
-  // platforms. Ignored if not a valid kebab-case slug.
-  slug?: string;
+  // Manual project name (CLI --project-name). A human/Pascal name like
+  // "Vet Clinic" or "VetClinic" from which the slug (output dir, DB prefix,
+  // env-bridge token, Pascal project name across all three platforms) and the
+  // display name are derived. Ignored if it yields no valid slug.
+  projectName?: string;
 };
 
 export type DispatchResult = JudgeResult & {
@@ -49,17 +49,20 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
   const startedAt = Date.now();
   let domain = await runPlanner(spec);
 
-  // Manual slug override (CLI --slug). Drives output dir, DB prefix,
-  // env-bridge token, and the Pascal project name — so it must land before
-  // the env-bridge and workers read domain.slug. Invalid slugs are traced and
-  // ignored rather than corrupting paths/identifiers downstream.
-  const slugOverride = options.slug;
-  if (slugOverride !== undefined && slugOverride !== domain.slug) {
-    if (isValidSlug(slugOverride)) {
-      trace("dispatch", `slug override: ${domain.slug} -> ${slugOverride} (project name -> ${slugToPascal(slugOverride)})`);
-      domain = { ...domain, slug: slugOverride };
+  // Manual project name (CLI --project-name). Derive the slug + display name
+  // from it and override the planner's. The slug drives the output dir, DB
+  // prefix, env-bridge token, and the Pascal project name — so it must land
+  // before the env-bridge and workers read domain.slug. A name that yields no
+  // valid slug is traced and ignored rather than corrupting paths downstream.
+  const projectName = options.projectName;
+  if (projectName !== undefined) {
+    const slug = projectNameToSlug(projectName);
+    if (isValidSlug(slug)) {
+      const displayName = projectNameToDisplayName(projectName);
+      trace("dispatch", `project name: "${projectName}" -> ${slugToPascal(slug)} (slug ${slug}, display "${displayName}")`);
+      domain = { ...domain, slug, displayName };
     } else {
-      trace("dispatch", `slug override ignored: "${slugOverride}" is not a valid kebab-case slug`);
+      trace("dispatch", `project name ignored: "${projectName}" yields no valid slug`);
     }
   }
 
