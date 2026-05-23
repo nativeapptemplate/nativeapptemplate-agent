@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from "node:fs/promises";
-import { extname, join, relative, basename } from "node:path";
+import { extname, join, relative, basename, sep } from "node:path";
 
 export type Layer1Input = {
   projectDir: string;
@@ -41,6 +41,12 @@ const SKIP_SEGMENTS = new Set([
   "build", ".gradle", ".idea", ".kotlin", "captures",
 ]);
 
+// Compiled build output, mirrored from rename.rb's SKIP_SUBPATHS. rename.rb
+// deliberately does NOT rewrite these (they're regenerated from un-renamed
+// source by the bundler — e.g. Turbo's `visitCompleted` in application.js), so
+// Layer 1 must not scan them either, or it flags tokens we intentionally left.
+const SKIP_SUBPATHS = ["app/assets/builds", "public/assets"];
+
 export async function runLayer1(input: Layer1Input): Promise<Layer1Result> {
   if (input.forbiddenTokens.length === 0) {
     return { pass: true, findings: [] };
@@ -54,7 +60,7 @@ export async function runLayer1(input: Layer1Input): Promise<Layer1Result> {
   const regex = buildRegex(input.forbiddenTokens);
   const findings: Layer1Finding[] = [];
 
-  for await (const filePath of walk(root)) {
+  for await (const filePath of walk(root, root)) {
     const content = await safeRead(filePath);
     if (!content) continue;
     const lines = content.split("\n");
@@ -94,13 +100,15 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function* walk(dir: string): AsyncGenerator<string> {
+async function* walk(dir: string, root: string): AsyncGenerator<string> {
   const entries = await readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
     if (SKIP_SEGMENTS.has(entry.name)) continue;
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      yield* walk(full);
+      const rel = relative(root, full).split(sep).join("/");
+      if (SKIP_SUBPATHS.includes(rel)) continue;
+      yield* walk(full, root);
     } else if (entry.isFile() && isTextFile(full)) {
       yield full;
     }
