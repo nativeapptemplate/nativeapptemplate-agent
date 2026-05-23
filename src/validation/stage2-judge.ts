@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 import { runStage2Scenario, type Stage2Result, type Stage2Scenario } from "./stage2.js";
 import { runLayer3, type Layer3Criterion } from "./layer3.js";
 import { createMobileClient, type MobileClient, type ScreenElement } from "../mobile.js";
@@ -34,6 +35,12 @@ export type Stage2VisualInput = {
   screenshotDir?: string;
   spec: string;
   rubric?: readonly Layer3Criterion[];
+  // App ids to foreground before each platform's walk (iOS bundle id /
+  // Android package). Between Stage 1 and Stage 2 the app can drop to
+  // springboard; launching it first keeps the scenario from starting on the
+  // home screen. Optional — omit to skip the foreground step.
+  iosAppId?: string;
+  androidAppId?: string;
   // Test seam — let tests pass a pre-wired client (e.g. against an
   // in-memory fake mobile-mcp) instead of spawning npx mobile-mcp.
   iosClient?: MobileClient;
@@ -75,6 +82,7 @@ export async function runStage2Visual(input: Stage2VisualInput): Promise<Stage2V
       screenshotDir,
       spec: input.spec,
       rubric,
+      ...(input.iosAppId !== undefined ? { appId: input.iosAppId } : {}),
       ...(input.iosClient !== undefined ? { client: input.iosClient } : {}),
     });
   }
@@ -85,6 +93,7 @@ export async function runStage2Visual(input: Stage2VisualInput): Promise<Stage2V
       screenshotDir,
       spec: input.spec,
       rubric,
+      ...(input.androidAppId !== undefined ? { appId: input.androidAppId } : {}),
       ...(input.androidClient !== undefined ? { client: input.androidClient } : {}),
     });
   }
@@ -97,6 +106,7 @@ type RunOneArgs = {
   screenshotDir: string;
   spec: string;
   rubric: readonly Layer3Criterion[];
+  appId?: string;
   client?: MobileClient;
 };
 
@@ -118,6 +128,20 @@ async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
         screenshots: [],
         error: targetingErr,
       };
+    }
+
+    // Foreground the app before the walk. Between Stage 1 and Stage 2 the app
+    // can drop to springboard (observed: iOS Stage 2 step 0 saw home-screen
+    // icons, not "Welcome to"), so launch it explicitly first. Best-effort —
+    // a launch hiccup shouldn't abort Stage 2; the scenario's polling will
+    // surface a clear error if the app still isn't up.
+    if (args.appId) {
+      try {
+        await client.launchApp(args.appId);
+        await sleep(2_000); // let it come to front + render before the first poll
+      } catch {
+        // ignore — scenario steps below report if the app isn't foregrounded
+      }
     }
 
     const scenario = await runStage2Scenario({
