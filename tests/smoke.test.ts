@@ -1516,6 +1516,37 @@ test(
   },
 );
 
+test(
+  "rename.rb skips compiled build output so generic tokens in bundles aren't clobbered",
+  { skip: RUBY_AVAILABLE ? false : "ruby not on PATH" },
+  async () => {
+    const { runRuby } = await import("../src/ruby.js");
+    const root = mkdtempSync(join(tmpdir(), "rename-skip-"));
+    mkdirSync(join(root, "app", "assets", "builds"), { recursive: true });
+    mkdirSync(join(root, "public", "assets"), { recursive: true });
+    mkdirSync(join(root, "app", "models"), { recursive: true });
+    // Build artifacts: a compiled bundle (Turbo's unrelated VisitState.completed)
+    // and a fingerprinted Sprockets file — must be left untouched.
+    writeFileSync(join(root, "app", "assets", "builds", "application.js"), "this.state = VisitState.completed; // NativeAppTemplate");
+    writeFileSync(join(root, "public", "assets", "application-abc123.js"), "VisitState.completed");
+    // Real source: the legit ItemTag state — must be renamed.
+    writeFileSync(join(root, "app", "models", "item_tag.rb"), "enum :state, {idled: 1, completed: 2} # NativeAppTemplate");
+
+    await runRuby<{ renamePlan: { from: string; to: string }[]; root: string }, unknown>(
+      "rename.rb",
+      { renamePlan: [{ from: "Completed", to: "Resolved" }, { from: "NativeAppTemplate", to: "Sentova" }], root },
+    );
+
+    // Build outputs untouched (still the original tokens).
+    assert.equal(readFileSync(join(root, "app/assets/builds/application.js"), "utf8"), "this.state = VisitState.completed; // NativeAppTemplate");
+    assert.equal(readFileSync(join(root, "public/assets/application-abc123.js"), "utf8"), "VisitState.completed");
+    // Real source renamed (control): proves the skip is targeted, not global.
+    const model = readFileSync(join(root, "app/models/item_tag.rb"), "utf8");
+    assert.ok(model.includes("resolved: 2"), "source state renamed completed -> resolved");
+    assert.ok(model.includes("Sentova") && !model.includes("NativeAppTemplate"), "source brand token renamed");
+  },
+);
+
 // --- self-repair loop (src/repair-loop.ts) ---
 
 function platDetail(platform: Platform, l1: boolean, l2: boolean, l3?: boolean): PlatformDetail {
