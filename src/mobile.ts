@@ -47,6 +47,10 @@ export type MobileClient = {
   // so per-call control stays opt-in.
   typeKeys(text: string, submit?: boolean): Promise<void>;
   pressButton(button: string): Promise<void>;
+  // Launch (foreground) an app by its package id — bundle id on iOS, package
+  // name on Android. Used to bring the app to front before a scenario walk in
+  // case it was backgrounded to springboard between stages.
+  launchApp(packageName: string): Promise<void>;
   takeScreenshot(): Promise<Screenshot>;
   saveScreenshot(absolutePath: string): Promise<void>;
   close(): Promise<void>;
@@ -194,6 +198,11 @@ function wrapClient(client: Client): MobileClient {
     async pressButton(button) {
       await callTool("mobile_press_button", { button });
     },
+    async launchApp(packageName) {
+      // mobile-mcp uses `packageName` for the app id on both platforms (the
+      // bundle id on iOS). `device` is injected by callTool.
+      await callTool("mobile_launch_app", { packageName });
+    },
     async takeScreenshot() {
       const result = await callTool("mobile_take_screenshot");
       const image = (result.content ?? []).find((c) => c.type === "image");
@@ -231,6 +240,7 @@ function createStubMobileClient(): MobileClient {
     click: async () => {},
     typeKeys: async (_text: string, _submit?: boolean) => {},
     pressButton: async () => {},
+    launchApp: async (_packageName: string) => {},
     takeScreenshot: async () => ({ data: Buffer.alloc(0), mimeType: "image/png" }),
     saveScreenshot: async () => {},
     close: async () => {},

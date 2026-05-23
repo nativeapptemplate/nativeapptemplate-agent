@@ -240,6 +240,13 @@ export function buildQueueScenario(
     { kind: "tap_text", text: "許可", exact: true, optional: true, timeoutMs: 5_000 },
     { kind: "tap_text", text: "Allow", exact: true, optional: true, timeoutMs: 3_000 },
 
+    // The iOS Keychain "Save password?" dialog also re-appears here — after a
+    // successful Sign In, once the list loads — covering "Sample Household"
+    // (observed: poll saw only the 5 dialog elements). Dismiss it again right
+    // before the Sample wait. Optional; Android no-op.
+    { kind: "tap_text", text: "今はしない", optional: true, timeoutMs: 5_000 },
+    { kind: "tap_text", text: "Not Now", optional: true, timeoutMs: 3_000 },
+
     // The substrate's seed name "Sample" doesn't get renamed (it's
     // a value, not a domain identifier). On every edition the list
     // shows an entry containing "Sample" — wait for it.

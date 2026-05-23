@@ -5,6 +5,7 @@ import { runLayer1, type Layer1Result } from "../validation/layer1.js";
 import { runLayer2, type Layer2Mode, type Layer2Result } from "../validation/layer2.js";
 import { runStage1Visual } from "../validation/stage1.js";
 import { runStage2Visual } from "../validation/stage2-judge.js";
+import { discoverIosArtifact, discoverAndroidArtifact } from "../validation/discover.js";
 import { buildQueueScenario } from "../validation/scenarios/queue.js";
 import type { Layer3Criterion } from "../validation/layer3.js";
 import type { VisualJudgeResult } from "../validation/visual-judge.js";
@@ -202,6 +203,12 @@ async function runStage2Phase(
   const platforms = [wantIos && "ios", wantAndroid && "android"].filter(Boolean).join(" + ");
   trace("judge", `Stage 2 — scripted-CRUD walk via mobile-mcp on ${platforms}`);
 
+  // Resolve the app ids so Stage 2 can foreground the app before walking (it
+  // can drop to springboard between stages). Best-effort: a discovery miss
+  // just skips the foreground step.
+  const iosArtifact = wantIos && config.iosDir !== undefined ? await discoverIosArtifact(config.iosDir) : null;
+  const androidArtifact = wantAndroid && config.androidDir !== undefined ? await discoverAndroidArtifact(config.androidDir) : null;
+
   const merged: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport } = { ...base };
 
   // Guard the whole Stage 2 walk: mobile-mcp runs in a child process, and if
@@ -213,6 +220,8 @@ async function runStage2Phase(
       spec: config.spec ?? domain.displayName,
       ...(wantIos ? { iosScenario } : {}),
       ...(wantAndroid ? { androidScenario } : {}),
+      ...(iosArtifact ? { iosAppId: iosArtifact.bundleId } : {}),
+      ...(androidArtifact ? { androidAppId: androidArtifact.packageName } : {}),
       ...(config.stage2.rubric !== undefined ? { rubric: config.stage2.rubric } : {}),
       ...(config.screenshotDir !== undefined ? { screenshotDir: config.screenshotDir } : {}),
     });

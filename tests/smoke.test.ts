@@ -687,6 +687,13 @@ test("runStage2Visual walks scenario + Layer 3 against a fake mobile-mcp", async
     { description: "fake", inputSchema: { saveTo: z.string() } },
     async () => ({ content: [] }),
   );
+  // #4: Stage 2 foregrounds the app before walking — record the launch call.
+  let launchedWith: { packageName?: unknown } | null = null;
+  fake.registerTool(
+    "mobile_launch_app",
+    { description: "fake", inputSchema: { device: z.string(), packageName: z.string() } },
+    async (args) => { launchedWith = args; return { content: [] }; },
+  );
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "smoke", version: "0.0.0" });
@@ -710,6 +717,7 @@ test("runStage2Visual walks scenario + Layer 3 against a fake mobile-mcp", async
     },
     rubric: DEFAULT_STAGE2_RUBRIC,
     screenshotDir,
+    iosAppId: "com.example.app",
     iosClient: mobile,
   });
 
@@ -723,6 +731,8 @@ test("runStage2Visual walks scenario + Layer 3 against a fake mobile-mcp", async
   assert.equal(result.ios?.screenshots.length, 1);
   assert.ok(result.ios?.representativeScreenshot?.endsWith("smoke-01-post-toggle.png"));
   assert.equal(result.ios?.layer3Scores?.length, DEFAULT_STAGE2_RUBRIC.length);
+  // #4: the app was foregrounded (launched) before the walk, with the app id.
+  assert.equal((launchedWith as { packageName?: unknown } | null)?.packageName, "com.example.app");
 
   await mobile.close();
   await fake.close();
