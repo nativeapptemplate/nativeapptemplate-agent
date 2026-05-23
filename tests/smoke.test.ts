@@ -1095,22 +1095,27 @@ test("selectDevice surfaces a useful error when no platform match found", async 
   await fake.close();
 });
 
-test("selectDevice honors NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE override (no listDevices call)", async () => {
+test("selectDevice resolves the IOS override (display name -> canonical id) and errors on no match", async () => {
   const { attachMobileClient } = await import("../src/mobile.js");
   const { selectDevice } = await import("../src/validation/stage2-judge.js");
   const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
   const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
 
-  let listCalled = false;
   const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
   fake.registerTool(
     "mobile_list_available_devices",
     { description: "fake", inputSchema: {} },
-    async () => {
-      listCalled = true;
-      return { content: [{ type: "text", text: "[]" }] };
-    },
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify({ devices: [{ id: "UDID-123", name: "iPhone 17", platform: "ios", type: "simulator" }] }) }],
+    }),
+  );
+  const calls: { device?: unknown }[] = [];
+  fake.registerTool(
+    "mobile_take_screenshot",
+    { description: "fake", inputSchema: { device: z.string() } },
+    async (args) => { calls.push(args); return { content: [{ type: "image", data: "AAAA", mimeType: "image/png" }] }; },
   );
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -1118,11 +1123,23 @@ test("selectDevice honors NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE override (no listD
   await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
   const mobile = attachMobileClient(client);
 
-  process.env['NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE'] = "MyExplicitDevice";
+  // Override given as the DISPLAY NAME must resolve to the canonical id so
+  // subsequent per-device tool calls carry the UDID (not the name, which
+  // mobile-mcp's tools reject).
+  process.env['NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE'] = "iPhone 17";
+  try {
+    assert.equal(await selectDevice(mobile, "ios"), undefined);
+    await mobile.takeScreenshot();
+    assert.equal(calls[0]?.device, "UDID-123", "override name resolved to the device id");
+  } finally {
+    delete process.env['NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE'];
+  }
+
+  // An override matching no booted device returns an informative error.
+  process.env['NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE'] = "Nonexistent Device";
   try {
     const err = await selectDevice(mobile, "ios");
-    assert.equal(err, undefined);
-    assert.equal(listCalled, false, "override should skip listDevices entirely");
+    assert.match(err ?? "", /matched no booted device/);
   } finally {
     delete process.env['NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE'];
   }
