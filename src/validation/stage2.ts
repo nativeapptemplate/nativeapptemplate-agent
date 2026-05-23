@@ -303,6 +303,20 @@ async function waitForText(
   );
 }
 
+// Recover from the app's intermittent "Something went wrong" error screen.
+// Its "Back to Start Screen" button logs out, resets login info, and returns to
+// the welcome screen — a clean state to (re)start the walk from. Returns true
+// if it tapped the recovery button, false if no error screen was up.
+export async function recoverFromErrorScreen(client: MobileClient): Promise<boolean> {
+  const elements = await client.listElements();
+  const button = findByText(elements, "Back to Start Screen");
+  if (!button) return false;
+  const center = centerOf(button);
+  if (!center) return false;
+  await client.click(center.x, center.y);
+  return true;
+}
+
 const TEXT_FIELDS = ["label", "name", "text", "value", "title", "accessibilityLabel", "placeholder", "identifier"] as const;
 
 function findByText(

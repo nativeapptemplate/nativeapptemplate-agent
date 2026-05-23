@@ -247,6 +247,13 @@ export function buildQueueScenario(
     { kind: "tap_text", text: "今はしない", optional: true, timeoutMs: 5_000 },
     { kind: "tap_text", text: "Not Now", optional: true, timeoutMs: 3_000 },
 
+    // Paid-only "You are in personal organization" multi-tenancy modal ALSO
+    // surfaces here — late, once the list loads, covering "Sample Household".
+    // Tap OK (and Cancel for the 2nd phase) to dismiss to the list. Optional;
+    // free edition / Android no-op.
+    { kind: "tap_text", text: "OK", exact: true, optional: true, timeoutMs: 5_000 },
+    { kind: "tap_text", text: "Cancel", exact: true, optional: true, timeoutMs: 3_000 },
+
     // The substrate's seed name "Sample" doesn't get renamed (it's
     // a value, not a domain identifier). On every edition the list
     // shows an entry containing "Sample" — wait for it.

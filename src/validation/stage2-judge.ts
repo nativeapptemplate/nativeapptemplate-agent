@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
-import { runStage2Scenario, type Stage2Result, type Stage2Scenario } from "./stage2.js";
+import { runStage2Scenario, recoverFromErrorScreen, type Stage2Result, type Stage2Scenario } from "./stage2.js";
 import { runLayer3, type Layer3Criterion } from "./layer3.js";
 import { createMobileClient, type MobileClient, type ScreenElement } from "../mobile.js";
 import type { Stage2PlatformReport } from "../agents/types.js";
@@ -139,6 +139,9 @@ async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
       try {
         await client.launchApp(args.appId);
         await sleep(2_000); // let it come to front + render before the first poll
+        // If the launch hit the intermittent "Something went wrong" error
+        // screen, tap "Back to Start Screen" (logs out → welcome) before walking.
+        if (await recoverFromErrorScreen(client)) await sleep(1_500);
       } catch {
         // ignore — scenario steps below report if the app isn't foregrounded
       }

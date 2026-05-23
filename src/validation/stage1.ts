@@ -14,6 +14,11 @@ export type Stage1VisualInput = {
   rubric?: readonly Layer3Criterion[];
   renderWaitMs?: number;
   samplesPerCriterion?: number;
+  // Optional per-platform recovery run before a judge retry (e.g. tap "Back to
+  // Start Screen" to clear an intermittent error screen). Wired by the caller
+  // when a mobile client is available (VISUAL=2).
+  iosRecover?: () => Promise<void>;
+  androidRecover?: () => Promise<void>;
 };
 
 export type Stage1VisualResult = {
@@ -51,6 +56,7 @@ export async function runStage1Visual(input: Stage1VisualInput): Promise<Stage1V
         rubric,
         ...(input.renderWaitMs !== undefined ? { renderWaitMs: input.renderWaitMs } : {}),
         ...(input.samplesPerCriterion !== undefined ? { samplesPerCriterion: input.samplesPerCriterion } : {}),
+        ...(input.iosRecover !== undefined ? { recover: input.iosRecover } : {}),
       });
     } else {
       result.ios = stubFailure("ios", "iOS artifact not discovered (run Layer 2 build mode first)");
@@ -69,6 +75,7 @@ export async function runStage1Visual(input: Stage1VisualInput): Promise<Stage1V
         rubric,
         ...(input.renderWaitMs !== undefined ? { renderWaitMs: input.renderWaitMs } : {}),
         ...(input.samplesPerCriterion !== undefined ? { samplesPerCriterion: input.samplesPerCriterion } : {}),
+        ...(input.androidRecover !== undefined ? { recover: input.androidRecover } : {}),
       });
     } else {
       result.android = stubFailure("android", "Android artifact not discovered (run Layer 2 build mode first)");
