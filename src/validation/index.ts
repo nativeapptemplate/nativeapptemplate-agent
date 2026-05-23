@@ -13,8 +13,8 @@ export type { CapturePlatform, CaptureInput, CaptureResult } from "./capture.js"
 export { installAndLaunch } from "./launch.js";
 export type { LaunchInput, IosLaunchInput, AndroidLaunchInput, LaunchResult } from "./launch.js";
 
-export { runVisualJudge, DEFAULT_STAGE1_RUBRIC } from "./visual-judge.js";
-export type { VisualJudgeInput, VisualJudgeResult } from "./visual-judge.js";
+export { runVisualJudge, DEFAULT_STAGE1_RUBRIC, waitForStableCapture } from "./visual-judge.js";
+export type { VisualJudgeInput, VisualJudgeResult, StableCaptureDeps } from "./visual-judge.js";
 
 export { discoverIosArtifact, discoverAndroidArtifact } from "./discover.js";
 export type { IosArtifact, AndroidArtifact } from "./discover.js";

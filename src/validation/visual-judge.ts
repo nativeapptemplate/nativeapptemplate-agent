@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { readFile } from "node:fs/promises";
 import { runLayer3, type Layer3Criterion, type Layer3Result } from "./layer3.js";
 import { captureScreenshot, type CapturePlatform } from "./capture.js";
 import { installAndLaunch, type LaunchResult } from "./launch.js";
@@ -15,9 +16,14 @@ export type VisualJudgeInput = {
   screenshotPath: string;
   spec: string;
   rubric: readonly Layer3Criterion[];
-  // How long to sleep between launch and screenshot to let the home screen
-  // render. 3s works for most apps; bump for cold-start-heavy ones.
+  // Initial sleep after launch before the first capture, to let the app get
+  // past cold start. 3s works for most apps; bump for cold-start-heavy ones.
   renderWaitMs?: number;
+  // After the initial wait, poll the screen until two consecutive captures are
+  // byte-identical (settled) — so the judged frame isn't a mid-transition one.
+  // Cap the extra wait at stabilityTimeoutMs; on cap the last frame is used.
+  stabilityIntervalMs?: number;
+  stabilityTimeoutMs?: number;
   // Forwarded to runLayer3.
   samplesPerCriterion?: number;
   model?: string;
@@ -32,6 +38,8 @@ export type VisualJudgeResult = {
 };
 
 const DEFAULT_RENDER_WAIT_MS = 3_000;
+const DEFAULT_STABILITY_INTERVAL_MS = 700;
+const DEFAULT_STABILITY_TIMEOUT_MS = 8_000;
 
 // End-to-end Stage 1 visual judge for one platform:
 //   1. install + launch the built app on the booted sim/emulator
@@ -67,20 +75,39 @@ export async function runVisualJudge(input: VisualJudgeInput): Promise<VisualJud
 
   await sleep(input.renderWaitMs ?? DEFAULT_RENDER_WAIT_MS);
 
-  const capture = await captureScreenshot({
-    platform: input.platform,
-    outPath: input.screenshotPath,
-  });
-  if (!capture.ok) {
+  // Capture until the screen settles (two consecutive frames byte-identical),
+  // so the judged frame isn't caught mid-launch / mid-transition — the main
+  // source of Stage 1 "renders-cleanly" flakiness. Each capture overwrites
+  // screenshotPath, so on success it holds the settled (or last) frame.
+  const stable = await waitForStableCapture(
+    {
+      captureOnce: async () => {
+        const c = await captureScreenshot({ platform: input.platform, outPath: input.screenshotPath });
+        if (!c.ok) return { ok: false, ...(c.error !== undefined ? { error: c.error } : {}) };
+        try {
+          return { ok: true, bytes: await readFile(input.screenshotPath) };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      },
+      sleep: (ms) => sleep(ms),
+      now: () => Date.now(),
+    },
+    {
+      intervalMs: input.stabilityIntervalMs ?? DEFAULT_STABILITY_INTERVAL_MS,
+      maxWaitMs: input.stabilityTimeoutMs ?? DEFAULT_STABILITY_TIMEOUT_MS,
+    },
+  );
+  if (!stable.ok) {
     return {
       ok: false,
       launch,
-      error: `screenshot capture failed: ${capture.error ?? "unknown"}`,
+      error: `screenshot capture failed: ${stable.error ?? "unknown"}`,
     };
   }
 
   const layer3 = await runLayer3({
-    screenshotPath: capture.path,
+    screenshotPath: input.screenshotPath,
     rubric: input.rubric,
     spec: input.spec,
     ...(input.samplesPerCriterion !== undefined ? { samplesPerCriterion: input.samplesPerCriterion } : {}),
@@ -90,9 +117,40 @@ export async function runVisualJudge(input: VisualJudgeInput): Promise<VisualJud
   return {
     ok: layer3.pass,
     launch,
-    screenshotPath: capture.path,
+    screenshotPath: input.screenshotPath,
     layer3,
   };
+}
+
+// Poll captures until two consecutive frames are byte-identical (the screen
+// has settled), or until maxWaitMs elapses (then accept the last frame). DI'd
+// (captureOnce / sleep / now) so the loop is unit-testable without a sim.
+export type StableCaptureDeps = {
+  captureOnce: () => Promise<{ ok: boolean; bytes?: Buffer; error?: string }>;
+  sleep: (ms: number) => Promise<void>;
+  now: () => number;
+};
+
+export async function waitForStableCapture(
+  deps: StableCaptureDeps,
+  opts: { intervalMs: number; maxWaitMs: number },
+): Promise<{ ok: boolean; settled: boolean; error?: string }> {
+  const deadline = deps.now() + opts.maxWaitMs;
+  let prev: Buffer | undefined;
+  for (;;) {
+    const cap = await deps.captureOnce();
+    if (!cap.ok) {
+      return { ok: false, settled: false, ...(cap.error !== undefined ? { error: cap.error } : {}) };
+    }
+    if (prev !== undefined && cap.bytes !== undefined && cap.bytes.equals(prev)) {
+      return { ok: true, settled: true };
+    }
+    prev = cap.bytes;
+    if (deps.now() >= deadline) {
+      return { ok: true, settled: false }; // cap hit — accept the last frame
+    }
+    await deps.sleep(opts.intervalMs);
+  }
 }
 
 // Default Stage 1 rubric — two Yes/No criteria covering substrate-leak

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC, discoverIosArtifact, discoverAndroidArtifact, runStage1Visual } from "../src/validation/index.js";
+import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC, discoverIosArtifact, discoverAndroidArtifact, runStage1Visual, waitForStableCapture } from "../src/validation/index.js";
 import { dispatch } from "../src/dispatch.js";
 import { runReviewer } from "../src/agents/reviewer.js";
 import { canonicalizeEndpoint, diffContracts } from "../src/agents/contract-extract.js";
@@ -82,6 +82,43 @@ test("runVisualJudge short-circuits on launch failure (no sim booted)", async ()
     assert.equal(result.layer3, undefined);
     assert.equal(typeof result.error, "string");
   }
+});
+
+test("waitForStableCapture settles once two consecutive frames match (waits through a transition)", async () => {
+  const frames = [Buffer.from("frame-A"), Buffer.from("frame-B"), Buffer.from("frame-B")];
+  let i = 0;
+  const res = await waitForStableCapture(
+    {
+      captureOnce: async () => ({ ok: true, bytes: frames[Math.min(i++, frames.length - 1)]! }),
+      sleep: async () => {},
+      now: () => 0,
+    },
+    { intervalMs: 1, maxWaitMs: 10_000 },
+  );
+  assert.deepEqual(res, { ok: true, settled: true });
+  assert.equal(i, 3); // A → B (transition) → B (settled)
+});
+
+test("waitForStableCapture caps out on a never-settling screen, and surfaces capture failure", async () => {
+  // Never-settling: every frame differs; clock advances past the deadline.
+  let n = 0, t = 0;
+  const capped = await waitForStableCapture(
+    {
+      captureOnce: async () => ({ ok: true, bytes: Buffer.from("f" + n++) }),
+      sleep: async () => {},
+      now: () => { const v = t; t += 600; return v; },
+    },
+    { intervalMs: 1, maxWaitMs: 1_000 },
+  );
+  assert.deepEqual(capped, { ok: true, settled: false }); // accepted last frame
+
+  // Capture failure short-circuits.
+  const failed = await waitForStableCapture(
+    { captureOnce: async () => ({ ok: false, error: "no sim booted" }), sleep: async () => {}, now: () => 0 },
+    { intervalMs: 1, maxWaitMs: 1_000 },
+  );
+  assert.equal(failed.ok, false);
+  assert.equal(failed.error, "no sim booted");
 });
 
 test("runLayer1 returns pass when forbiddenTokens is empty", async () => {
