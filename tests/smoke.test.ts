@@ -90,6 +90,24 @@ test("runLayer1 returns pass when forbiddenTokens is empty", async () => {
   assert.deepEqual(result.findings, []);
 });
 
+test("runLayer1 skips compiled build output so un-renamed bundle tokens aren't flagged", async () => {
+  // Mirrors rename.rb's SKIP_SUBPATHS (#84): the build bundle is intentionally
+  // left un-renamed (Turbo's visitCompleted), so Layer 1 must not flag it.
+  const root = mkdtempSync(join(tmpdir(), "layer1-skip-"));
+  mkdirSync(join(root, "app", "assets", "builds"), { recursive: true });
+  mkdirSync(join(root, "public", "assets"), { recursive: true });
+  mkdirSync(join(root, "app", "models"), { recursive: true });
+  writeFileSync(join(root, "app", "assets", "builds", "application.js"), "this.state = VisitState.completed; // visitCompleted");
+  writeFileSync(join(root, "public", "assets", "app-abc123.js"), "VisitState.visitCompleted");
+  // A genuine leftover in real source MUST still be flagged.
+  writeFileSync(join(root, "app", "models", "item.rb"), "# Completed state stays here\n");
+
+  const result = await runLayer1({ projectDir: root, forbiddenTokens: ["Completed"] });
+  assert.equal(result.findings.length, 1, "only the real-source leftover is flagged, not the build bundles");
+  assert.match(result.findings[0]?.file ?? "", /app\/models\/item\.rb/);
+  assert.equal(result.pass, false);
+});
+
 test("runLayer2 returns a failed result for a non-Rails directory", async () => {
   const result = await runLayer2({ platform: "rails", outDir: "/tmp", timeoutMs: 10_000 });
   assert.equal(result.pass, false);
