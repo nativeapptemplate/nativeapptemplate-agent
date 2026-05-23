@@ -64,7 +64,7 @@ npm run dev -- "your spec here"
 
 # Substrate commands — run from the matching generated project dir in ./out/<slug>/
 bin/dev                                        # Rails API
-xcodebuild -scheme NativeAppTemplate -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' build   # iOS
+xcodebuild -scheme NativeAppTemplate -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' build   # iOS
 ./gradlew assembleDebug && ./gradlew installDebug                                                          # Android
 
 # Validation (run from this repo root)
