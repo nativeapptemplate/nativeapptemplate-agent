@@ -24,6 +24,11 @@ export type VisualJudgeInput = {
   // Cap the extra wait at stabilityTimeoutMs; on cap the last frame is used.
   stabilityIntervalMs?: number;
   stabilityTimeoutMs?: number;
+  // If the judge fails *only* on transient render quality (renders-cleanly),
+  // re-settle + re-judge up to this many times — a fresh frame may render
+  // clean. Content failures (e.g. substrate-leak) are deterministic and not
+  // retried. Each retry is a full vision-judge pass, so keep it small.
+  maxJudgeRetries?: number;
   // Forwarded to runLayer3.
   samplesPerCriterion?: number;
   model?: string;
@@ -40,6 +45,12 @@ export type VisualJudgeResult = {
 const DEFAULT_RENDER_WAIT_MS = 3_000;
 const DEFAULT_STABILITY_INTERVAL_MS = 700;
 const DEFAULT_STABILITY_TIMEOUT_MS = 8_000;
+const DEFAULT_MAX_JUDGE_RETRIES = 1;
+
+// Criteria whose failure is plausibly a transient bad capture (mid-transition
+// frame) rather than a deterministic content problem — safe to retry with a
+// fresh capture. Substrate-leak is content-based and NOT in here.
+const RETRYABLE_CRITERIA = new Set<string>(["renders-cleanly"]);
 
 // End-to-end Stage 1 visual judge for one platform:
 //   1. install + launch the built app on the booted sim/emulator
@@ -75,50 +86,61 @@ export async function runVisualJudge(input: VisualJudgeInput): Promise<VisualJud
 
   await sleep(input.renderWaitMs ?? DEFAULT_RENDER_WAIT_MS);
 
-  // Capture until the screen settles (two consecutive frames byte-identical),
-  // so the judged frame isn't caught mid-launch / mid-transition — the main
-  // source of Stage 1 "renders-cleanly" flakiness. Each capture overwrites
-  // screenshotPath, so on success it holds the settled (or last) frame.
-  const stable = await waitForStableCapture(
+  const stabilityOpts = {
+    intervalMs: input.stabilityIntervalMs ?? DEFAULT_STABILITY_INTERVAL_MS,
+    maxWaitMs: input.stabilityTimeoutMs ?? DEFAULT_STABILITY_TIMEOUT_MS,
+  };
+
+  // Settle the screen (two consecutive byte-identical frames) before judging,
+  // and retry the settle+judge if the judge fails *only* on transient render
+  // quality — a fresh frame may render clean. See judgeWithRetry.
+  const result = await judgeWithRetry(
     {
-      captureOnce: async () => {
-        const c = await captureScreenshot({ platform: input.platform, outPath: input.screenshotPath });
-        if (!c.ok) return { ok: false, ...(c.error !== undefined ? { error: c.error } : {}) };
-        try {
-          return { ok: true, bytes: await readFile(input.screenshotPath) };
-        } catch (err) {
-          return { ok: false, error: err instanceof Error ? err.message : String(err) };
-        }
+      settleCapture: async () => {
+        // Each capture overwrites screenshotPath, so on success it holds the
+        // settled (or last) frame the judge then reads.
+        const stable = await waitForStableCapture(
+          {
+            captureOnce: async () => {
+              const c = await captureScreenshot({ platform: input.platform, outPath: input.screenshotPath });
+              if (!c.ok) return { ok: false, ...(c.error !== undefined ? { error: c.error } : {}) };
+              try {
+                return { ok: true, bytes: await readFile(input.screenshotPath) };
+              } catch (err) {
+                return { ok: false, error: err instanceof Error ? err.message : String(err) };
+              }
+            },
+            sleep: (ms) => sleep(ms),
+            now: () => Date.now(),
+          },
+          stabilityOpts,
+        );
+        return stable.ok ? { ok: true } : { ok: false, ...(stable.error !== undefined ? { error: stable.error } : {}) };
       },
-      sleep: (ms) => sleep(ms),
-      now: () => Date.now(),
+      judge: () =>
+        runLayer3({
+          screenshotPath: input.screenshotPath,
+          rubric: input.rubric,
+          spec: input.spec,
+          ...(input.samplesPerCriterion !== undefined ? { samplesPerCriterion: input.samplesPerCriterion } : {}),
+          ...(input.model !== undefined ? { model: input.model } : {}),
+        }),
     },
-    {
-      intervalMs: input.stabilityIntervalMs ?? DEFAULT_STABILITY_INTERVAL_MS,
-      maxWaitMs: input.stabilityTimeoutMs ?? DEFAULT_STABILITY_TIMEOUT_MS,
-    },
+    { maxRetries: input.maxJudgeRetries ?? DEFAULT_MAX_JUDGE_RETRIES },
   );
-  if (!stable.ok) {
+  if (!result.ok || result.layer3 === undefined) {
     return {
       ok: false,
       launch,
-      error: `screenshot capture failed: ${stable.error ?? "unknown"}`,
+      error: `screenshot capture failed: ${result.error ?? "unknown"}`,
     };
   }
 
-  const layer3 = await runLayer3({
-    screenshotPath: input.screenshotPath,
-    rubric: input.rubric,
-    spec: input.spec,
-    ...(input.samplesPerCriterion !== undefined ? { samplesPerCriterion: input.samplesPerCriterion } : {}),
-    ...(input.model !== undefined ? { model: input.model } : {}),
-  });
-
   return {
-    ok: layer3.pass,
+    ok: result.layer3.pass,
     launch,
     screenshotPath: input.screenshotPath,
-    layer3,
+    layer3: result.layer3,
   };
 }
 
@@ -151,6 +173,45 @@ export async function waitForStableCapture(
     }
     await deps.sleep(opts.intervalMs);
   }
+}
+
+// True when the judge failed and *every* failing criterion is retry-safe
+// (transient render quality), so a fresh capture might pass. A content failure
+// (e.g. substrate-leak) is deterministic — re-capturing the same screen won't
+// change it — so this returns false and the caller won't waste a judge pass.
+export function isTransientRenderFail(layer3: Layer3Result): boolean {
+  if (layer3.pass) return false;
+  const failing = layer3.scores.filter((s) => !s.pass);
+  return failing.length > 0 && failing.every((s) => RETRYABLE_CRITERIA.has(s.criterionId));
+}
+
+// Settle + capture + judge, retrying the whole thing when the judge fails only
+// on transient render quality. DI'd (settleCapture / judge) so it's unit-tested
+// without a sim or the real vision judge. ok=false only when the *initial*
+// capture fails (nothing to judge); a capture failure on a retry keeps the
+// prior judgement.
+export type JudgeRetryDeps = {
+  settleCapture: () => Promise<{ ok: boolean; error?: string }>;
+  judge: () => Promise<Layer3Result>;
+};
+
+export async function judgeWithRetry(
+  deps: JudgeRetryDeps,
+  opts: { maxRetries: number },
+): Promise<{ ok: boolean; layer3?: Layer3Result; error?: string }> {
+  const first = await deps.settleCapture();
+  if (!first.ok) {
+    return { ok: false, ...(first.error !== undefined ? { error: first.error } : {}) };
+  }
+  let layer3 = await deps.judge();
+  let retries = 0;
+  while (!layer3.pass && retries < opts.maxRetries && isTransientRenderFail(layer3)) {
+    retries++;
+    const re = await deps.settleCapture();
+    if (!re.ok) break; // capture failed on retry — keep the prior judgement
+    layer3 = await deps.judge();
+  }
+  return { ok: true, layer3 };
 }
 
 // Default Stage 1 rubric — two Yes/No criteria covering substrate-leak
