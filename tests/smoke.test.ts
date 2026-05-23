@@ -387,6 +387,30 @@ test("buildQueueScenario opens with verified welcome → start → auth choice �
   assert.deepEqual(tail, { kind: "screenshot", label: "06-queue-entry-list" });
 });
 
+test("buildQueueScenario dismisses iOS system dialogs (Keychain + notification) before the gated steps", async () => {
+  const { buildQueueScenario } = await import("../src/validation/scenarios/queue.js");
+  const scenario = buildQueueScenario(
+    { slug: "vet-clinic", displayName: "Vet Clinic", entities: [], renamePlan: [{ from: "Shop", to: "Clinic" }, { from: "Shopkeeper", to: "Vet" }], jsonApiContract: {} },
+    { fullName: "T", email: "x@y.z", password: "p", primaryResourceName: "Acme", railsOutDir: "/tmp/r" },
+    "ios",
+  );
+  const idx = (pred: (s: { kind: string; text?: string }) => boolean) => scenario.steps.findIndex(pred as never);
+
+  // Keychain "Save password?" dismiss must exist BEFORE the Sign-In tap
+  // (the dialog can surface late and cover the auth screen).
+  const keychainBeforeSignIn = idx((s) => s.kind === "tap_text" && s.text === "今はしない");
+  const signInTap = idx((s) => s.kind === "tap_text" && s.text === "Sign In to Your Account");
+  assert.ok(keychainBeforeSignIn !== -1 && signInTap !== -1, "keychain dismiss + sign-in tap present");
+  assert.ok(keychainBeforeSignIn < signInTap, "keychain dismiss precedes the Sign-In tap");
+
+  // Notification-permission dismiss (paid-only, optional) must precede the
+  // "Sample" wait, which a system alert would otherwise hide.
+  const notifDismiss = idx((s) => s.kind === "tap_text" && s.text === "許可");
+  const sampleWait = idx((s) => s.kind === "wait_for_text" && s.text === "Sample");
+  assert.ok(notifDismiss !== -1 && sampleWait !== -1, "notification dismiss + Sample wait present");
+  assert.ok(notifDismiss < sampleWait, "notification dismiss precedes the Sample wait");
+});
+
 test("runStage2Scenario walks a simple step list against a fake mobile-mcp", async () => {
   const { tmpdir } = await import("node:os");
   const { mkdtempSync } = await import("node:fs");

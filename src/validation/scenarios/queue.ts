@@ -57,7 +57,6 @@ export function buildQueueScenario(
   inputs: QueueScenarioInputs,
   platform: Platform = "ios",
 ): Stage2Scenario {
-  const primaryName = renamedTo(domain, "Shop") ?? "Shop";
   const queueEntryName = renamedTo(domain, "ItemTag") ?? "ItemTag";
   // Renamed Shopkeeper class (Vet for clinic, Host for restaurant,
   // Curator for journal, etc.). Used by the rails_runner confirm
@@ -167,6 +166,13 @@ export function buildQueueScenario(
     // platform; the other no-ops.
     { kind: "tap_text", text: "Close", optional: true, timeoutMs: 3_000 },
     { kind: "tap_text", text: "Dismiss", optional: true, timeoutMs: 3_000 },
+    // The iOS Keychain "Save password?" dialog can surface LATE — after the
+    // rails_runner confirm above, not right at signup — so it re-covers the
+    // auth screen here and intercepts the Sign-In tap (observed: poll saw only
+    // the 5 dialog elements). Dismiss it again immediately before tapping Sign
+    // In; optional, so it no-ops on Android / when already gone.
+    { kind: "tap_text", text: "今はしない", optional: true, timeoutMs: 3_000 },
+    { kind: "tap_text", text: "Not Now", optional: true, timeoutMs: 3_000 },
     { kind: "tap_text", text: "Sign In to Your Account" },
     { kind: "wait_for_text", text: "Email", timeoutMs: 10_000 },
     // Sign In form-fill is platform-specific (built above). iOS uses
@@ -225,6 +231,15 @@ export function buildQueueScenario(
     // demonstrate the rubric (renamed domain content with visible
     // state badge).
     //
+    // iOS requests notification permission at runtime when the list first
+    // loads. A system alert makes the accessibility tree return ONLY the
+    // alert's elements, hiding the list — so wait_for_text "Sample" below sees
+    // just the dialog (observed: "5 elements") and times out. Dismiss it
+    // (Allow; JP + EN labels, exact so "許可" doesn't match "許可しない").
+    // Optional + Android no-op: Android pre-grants POST_NOTIFICATIONS (#78).
+    { kind: "tap_text", text: "許可", exact: true, optional: true, timeoutMs: 5_000 },
+    { kind: "tap_text", text: "Allow", exact: true, optional: true, timeoutMs: 3_000 },
+
     // The substrate's seed name "Sample" doesn't get renamed (it's
     // a value, not a domain identifier). On every edition the list
     // shows an entry containing "Sample" — wait for it.
