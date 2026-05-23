@@ -169,17 +169,39 @@ export async function selectDevice(
   const overrideKey =
     platform === "ios" ? "NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE" : "NATIVEAPPTEMPLATE_MOBILE_ANDROID_DEVICE";
   const override = process.env[overrideKey];
-  if (override) {
-    client.useDevice(override);
-    return undefined;
-  }
 
   let devices: readonly ScreenElement[];
   try {
     devices = await client.listDevices();
   } catch (err) {
+    // Discovery failed. If an override is set, fall back to using it raw as a
+    // best-effort escape hatch; otherwise surface the failure.
+    if (override) {
+      client.useDevice(override);
+      return undefined;
+    }
     return `mobile-mcp listDevices failed: ${err instanceof Error ? err.message : String(err)}`;
   }
+
+  if (override) {
+    // Resolve the override against the device list, matching either the
+    // canonical id or the display name, and pass the id onward. mobile-mcp's
+    // per-device tools require the id (UDID for iOS sims, serial for Android);
+    // a display name like "iPhone 17" passed raw fails every call with
+    // "Device not found" (and the wrapper reads that as 0 elements). Map
+    // name -> id here instead of trusting the override string blindly.
+    const hit = devices.find((d) => deviceMatchesHandle(d, override));
+    if (hit) {
+      const id = deviceNameOf(hit);
+      if (id) {
+        client.useDevice(id);
+        return undefined;
+      }
+    }
+    const seen = devices.map((d) => deviceNameOf(d) ?? "<unnamed>").join(", ");
+    return `${overrideKey}="${override}" matched no booted device (saw: ${seen}). Pass the device id or its exact name.`;
+  }
+
   if (devices.length === 0) {
     return `no mobile-mcp devices available (boot the ${platform} sim/emulator first)`;
   }
@@ -187,7 +209,7 @@ export async function selectDevice(
   const match = devices.find((d) => devicePlatformMatches(d, platform));
   if (!match) {
     const names = devices.map((d) => deviceNameOf(d) ?? "<unnamed>").join(", ");
-    return `no mobile-mcp device matched platform=${platform} (saw: ${names}). Override with ${overrideKey}=<device-name>.`;
+    return `no mobile-mcp device matched platform=${platform} (saw: ${names}). Override with ${overrideKey}=<device-name-or-id>.`;
   }
   const name = deviceNameOf(match);
   if (!name) {
@@ -195,6 +217,16 @@ export async function selectDevice(
   }
   client.useDevice(name);
   return undefined;
+}
+
+// True if `handle` equals any of the device's identifying fields — used to
+// resolve a user-supplied override (which may be a display name OR an id)
+// against mobile-mcp's device list.
+function deviceMatchesHandle(d: ScreenElement, handle: string): boolean {
+  for (const key of ["id", "udid", "serial", "name", "deviceName"] as const) {
+    if (d[key] === handle) return true;
+  }
+  return false;
 }
 
 function deviceNameOf(d: ScreenElement): string | undefined {
