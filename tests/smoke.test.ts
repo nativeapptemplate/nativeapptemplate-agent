@@ -139,15 +139,21 @@ test("judgeWithRetry retries a transient render fail, but not a content fail, an
   const contentFail = { pass: false, scores: [score("no-substrate-leak", false), score("renders-cleanly", true)] };
   const ok = { pass: true, scores: [score("no-substrate-leak", true), score("renders-cleanly", true)] };
 
-  // transient fail then pass → 1 retry, returns the pass
-  let judged = 0, settled = 0;
+  // transient fail then pass → 1 retry, returns the pass; recover runs before
+  // the retry's re-capture (e.g. tap "Back to Start Screen").
+  let judged = 0, settled = 0, recovered = 0;
   const seq = [renderFail, ok];
   const r1 = await judgeWithRetry(
-    { settleCapture: async () => { settled++; return { ok: true }; }, judge: async () => seq[judged++]! },
+    {
+      settleCapture: async () => { settled++; return { ok: true }; },
+      judge: async () => seq[judged++]!,
+      recover: async () => { recovered++; },
+    },
     { maxRetries: 1 },
   );
   assert.equal(r1.ok, true); assert.equal(r1.layer3?.pass, true);
   assert.equal(judged, 2); assert.equal(settled, 2);
+  assert.equal(recovered, 1); // recover fired once, before the single retry
 
   // content fail → no retry
   let j2 = 0;
@@ -172,6 +178,26 @@ test("judgeWithRetry retries a transient render fail, but not a content fail, an
     { maxRetries: 2 },
   );
   assert.equal(r4.ok, false); assert.equal(r4.error, "no sim"); assert.equal(j4, 0);
+});
+
+test("recoverFromErrorScreen taps Back to Start Screen when present, no-ops otherwise", async () => {
+  const { recoverFromErrorScreen } = await import("../src/validation/stage2.js");
+  type Client = Parameters<typeof recoverFromErrorScreen>[0];
+  const clicks: { x: number; y: number }[] = [];
+  const make = (elements: unknown[]): Client =>
+    ({ listElements: async () => elements, click: async (x: number, y: number) => { clicks.push({ x, y }); } } as unknown as Client);
+
+  // error screen present → taps the button's center (x+w/2, y+h/2)
+  assert.equal(
+    await recoverFromErrorScreen(make([{ label: "Back to Start Screen", coordinates: { x: 10, y: 20, width: 100, height: 40 } }])),
+    true,
+  );
+  assert.deepEqual(clicks, [{ x: 60, y: 40 }]);
+
+  // no error screen → false, no tap
+  clicks.length = 0;
+  assert.equal(await recoverFromErrorScreen(make([{ label: "Welcome to Sentova" }])), false);
+  assert.equal(clicks.length, 0);
 });
 
 test("runLayer1 returns pass when forbiddenTokens is empty", async () => {

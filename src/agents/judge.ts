@@ -1,10 +1,13 @@
 import { resolve } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { trace } from "../trace.js";
 import { isStub } from "../stub.js";
+import { createMobileClient, type MobileClient } from "../mobile.js";
 import { runLayer1, type Layer1Result } from "../validation/layer1.js";
 import { runLayer2, type Layer2Mode, type Layer2Result } from "../validation/layer2.js";
 import { runStage1Visual } from "../validation/stage1.js";
-import { runStage2Visual } from "../validation/stage2-judge.js";
+import { runStage2Visual, selectDevice } from "../validation/stage2-judge.js";
+import { recoverFromErrorScreen } from "../validation/stage2.js";
 import { discoverIosArtifact, discoverAndroidArtifact } from "../validation/discover.js";
 import { buildQueueScenario } from "../validation/scenarios/queue.js";
 import type { Layer3Criterion } from "../validation/layer3.js";
@@ -140,24 +143,56 @@ async function runVisualPhase(
   const rubric = config.rubric;
   trace("judge", `Layer 3 (semantic) — judging ${platforms.join(" + ")} home screen against rubric`);
 
-  const stage1 = await runStage1Visual({
-    ...(config.iosDir !== undefined ? { iosDir: config.iosDir } : {}),
-    ...(config.androidDir !== undefined ? { androidDir: config.androidDir } : {}),
-    spec: config.spec ?? domain.displayName,
-    ...(rubric !== undefined ? { rubric } : {}),
-    ...(config.screenshotDir !== undefined ? { screenshotDir: config.screenshotDir } : {}),
-  });
+  // iOS recovery for Stage 1: the paid app intermittently lands on a "Something
+  // went wrong" error screen at launch. On a renders-cleanly retry, tap its
+  // "Back to Start Screen" button (logs out + returns to welcome) so the
+  // re-capture sees a clean screen. Only when WDA is available (VISUAL=2, i.e.
+  // stage2 configured) and not in stub mode; the mobile client is created
+  // lazily on first retry and closed in the finally below.
+  let recoverClient: MobileClient | undefined;
+  let recoverUnavailable = false;
+  const canRecover = config.stage2 !== undefined && config.iosDir !== undefined && !isStub("judge");
+  const iosRecover = canRecover
+    ? async (): Promise<void> => {
+        if (recoverUnavailable) return;
+        if (!recoverClient) {
+          try {
+            recoverClient = await createMobileClient();
+            const err = await selectDevice(recoverClient, "ios");
+            if (err) { recoverUnavailable = true; return; }
+          } catch { recoverUnavailable = true; return; }
+        }
+        const tapped = await recoverFromErrorScreen(recoverClient);
+        if (tapped) {
+          trace("judge", "Layer 3 ios: tapped 'Back to Start Screen' to clear error screen, re-capturing");
+          await sleep(2_000); // let the welcome screen render before re-capture
+        }
+      }
+    : undefined;
 
-  const report: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport } = {};
-  if (stage1.ios) {
-    report.ios = toPlatformReport(stage1.ios);
-    trace("judge", `Layer 3 ios: ${stage1.ios.ok ? "PASS" : "FAIL"}` + (stage1.ios.error ? ` — ${stage1.ios.error}` : ""));
+  try {
+    const stage1 = await runStage1Visual({
+      ...(config.iosDir !== undefined ? { iosDir: config.iosDir } : {}),
+      ...(config.androidDir !== undefined ? { androidDir: config.androidDir } : {}),
+      spec: config.spec ?? domain.displayName,
+      ...(rubric !== undefined ? { rubric } : {}),
+      ...(config.screenshotDir !== undefined ? { screenshotDir: config.screenshotDir } : {}),
+      ...(iosRecover ? { iosRecover } : {}),
+    });
+
+    const report: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport } = {};
+    if (stage1.ios) {
+      report.ios = toPlatformReport(stage1.ios);
+      trace("judge", `Layer 3 ios: ${stage1.ios.ok ? "PASS" : "FAIL"}` + (stage1.ios.error ? ` — ${stage1.ios.error}` : ""));
+    }
+    if (stage1.android) {
+      report.android = toPlatformReport(stage1.android);
+      trace("judge", `Layer 3 android: ${stage1.android.ok ? "PASS" : "FAIL"}` + (stage1.android.error ? ` — ${stage1.android.error}` : ""));
+    }
+    return report;
+  } finally {
+    if (recoverClient) await recoverClient.close().catch(() => {});
   }
-  if (stage1.android) {
-    report.android = toPlatformReport(stage1.android);
-    trace("judge", `Layer 3 android: ${stage1.android.ok ? "PASS" : "FAIL"}` + (stage1.android.error ? ` — ${stage1.android.error}` : ""));
-  }
-  return report;
 }
 
 async function runStage2Phase(

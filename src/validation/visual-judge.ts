@@ -29,6 +29,10 @@ export type VisualJudgeInput = {
   // clean. Content failures (e.g. substrate-leak) are deterministic and not
   // retried. Each retry is a full vision-judge pass, so keep it small.
   maxJudgeRetries?: number;
+  // Optional recovery run before each judge retry (e.g. tap "Back to Start
+  // Screen" to clear an intermittent error screen). Passed through to
+  // judgeWithRetry; only fires on a transient-render-quality retry.
+  recover?: () => Promise<void>;
   // Forwarded to runLayer3.
   samplesPerCriterion?: number;
   model?: string;
@@ -125,6 +129,7 @@ export async function runVisualJudge(input: VisualJudgeInput): Promise<VisualJud
           ...(input.samplesPerCriterion !== undefined ? { samplesPerCriterion: input.samplesPerCriterion } : {}),
           ...(input.model !== undefined ? { model: input.model } : {}),
         }),
+      ...(input.recover !== undefined ? { recover: input.recover } : {}),
     },
     { maxRetries: input.maxJudgeRetries ?? DEFAULT_MAX_JUDGE_RETRIES },
   );
@@ -193,6 +198,10 @@ export function isTransientRenderFail(layer3: Layer3Result): boolean {
 export type JudgeRetryDeps = {
   settleCapture: () => Promise<{ ok: boolean; error?: string }>;
   judge: () => Promise<Layer3Result>;
+  // Optional recovery run before each retry's re-capture — e.g. tap the app's
+  // "Back to Start Screen" button to clear an intermittent error screen and
+  // return to a clean welcome state. Best-effort; failures are swallowed.
+  recover?: () => Promise<void>;
 };
 
 export async function judgeWithRetry(
@@ -207,6 +216,9 @@ export async function judgeWithRetry(
   let retries = 0;
   while (!layer3.pass && retries < opts.maxRetries && isTransientRenderFail(layer3)) {
     retries++;
+    if (deps.recover) {
+      try { await deps.recover(); } catch { /* best-effort recovery */ }
+    }
     const re = await deps.settleCapture();
     if (!re.ok) break; // capture failed on retry — keep the prior judgement
     layer3 = await deps.judge();
