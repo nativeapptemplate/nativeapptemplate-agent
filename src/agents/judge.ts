@@ -202,24 +202,39 @@ async function runStage2Phase(
   const platforms = [wantIos && "ios", wantAndroid && "android"].filter(Boolean).join(" + ");
   trace("judge", `Stage 2 — scripted-CRUD walk via mobile-mcp on ${platforms}`);
 
-  const stage2 = await runStage2Visual({
-    spec: config.spec ?? domain.displayName,
-    ...(wantIos ? { iosScenario } : {}),
-    ...(wantAndroid ? { androidScenario } : {}),
-    ...(config.stage2.rubric !== undefined ? { rubric: config.stage2.rubric } : {}),
-    ...(config.screenshotDir !== undefined ? { screenshotDir: config.screenshotDir } : {}),
-  });
-
   const merged: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport } = { ...base };
-  if (stage2.ios && merged.ios) {
-    merged.ios = mergeStage2(merged.ios, stage2.ios);
-    trace("judge", `Stage 2 ios: ${stage2.ios.pass ? "PASS" : "FAIL"}` + (stage2.ios.error ? ` — ${stage2.ios.error}` : ""));
-  }
-  if (stage2.android && merged.android) {
-    merged.android = mergeStage2(merged.android, stage2.android);
-    trace("judge", `Stage 2 android: ${stage2.android.pass ? "PASS" : "FAIL"}` + (stage2.android.error ? ` — ${stage2.android.error}` : ""));
+
+  // Guard the whole Stage 2 walk: mobile-mcp runs in a child process, and if
+  // it exits mid-walk the SDK rejects with `McpError: Connection closed`. That
+  // must degrade to a recorded Stage 2 failure — not an unhandled throw that
+  // aborts dispatch before the report is written.
+  try {
+    const stage2 = await runStage2Visual({
+      spec: config.spec ?? domain.displayName,
+      ...(wantIos ? { iosScenario } : {}),
+      ...(wantAndroid ? { androidScenario } : {}),
+      ...(config.stage2.rubric !== undefined ? { rubric: config.stage2.rubric } : {}),
+      ...(config.screenshotDir !== undefined ? { screenshotDir: config.screenshotDir } : {}),
+    });
+    if (stage2.ios && merged.ios) {
+      merged.ios = mergeStage2(merged.ios, stage2.ios);
+      trace("judge", `Stage 2 ios: ${stage2.ios.pass ? "PASS" : "FAIL"}` + (stage2.ios.error ? ` — ${stage2.ios.error}` : ""));
+    }
+    if (stage2.android && merged.android) {
+      merged.android = mergeStage2(merged.android, stage2.android);
+      trace("judge", `Stage 2 android: ${stage2.android.pass ? "PASS" : "FAIL"}` + (stage2.android.error ? ` — ${stage2.android.error}` : ""));
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    trace("judge", `Stage 2 — aborted: ${message}; recorded as Stage 2 failure so the run still produces a report`);
+    if (wantIos && merged.ios) merged.ios = mergeStage2(merged.ios, stage2Failure(iosScenario.name, message));
+    if (wantAndroid && merged.android) merged.android = mergeStage2(merged.android, stage2Failure(androidScenario.name, message));
   }
   return merged;
+}
+
+function stage2Failure(scenarioName: string, error: string): Stage2PlatformReport {
+  return { pass: false, scenarioName, stepCount: 0, stepsPassed: 0, screenshots: [], error };
 }
 
 function mergeStage2(base: VisualJudgePlatformReport, stage2: Stage2PlatformReport): VisualJudgePlatformReport {
