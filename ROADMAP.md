@@ -65,7 +65,7 @@ Features considered but deliberately deferred until after Layer 3 (vision judge)
 
 ### Optional explicit naming overrides
 
-**Status: `--rename` and `--slug` shipped.** Both overrides are implemented (`src/rename-overrides.ts` + `isValidSlug` in `src/slug.ts`; `--rename From=To` and `--slug=<kebab>` on the CLI, `renameOverrides` + `slug` on the MCP `generate_app` tool and `dispatch()`). `--rename` semantics are "change a planned target" — an override keys on the substrate token and replaces the planner's chosen target, and overrides matching no planned rename are reported and dropped rather than silently added. `--slug` replaces the planner's slug, which drives the output dir, DB prefix, env-bridge token, and the Pascal project name across all three platforms; invalid kebab-case is reported and ignored. `displayName` override remains deferred.
+**Status: `--rename` and `--project-name` shipped.** Both overrides are implemented (`src/rename-overrides.ts` + name/slug helpers in `src/slug.ts`; `--rename From=To` and `--project-name="Vet Clinic"` on the CLI, `renameOverrides` + `projectName` on the MCP `generate_app` tool and `dispatch()`). `--rename` semantics are "change a planned target" — an override keys on the substrate token and replaces the planner's chosen target, and overrides matching no planned rename are reported and dropped rather than silently added. `--project-name` accepts a human/Pascal/kebab name and derives the slug (output dir, DB prefix, env-bridge token, Pascal project name across all three platforms) **and** the display name from it — closing the earlier `displayName`-override gap; a name yielding no valid slug is reported and ignored.
 
 Today the planner is the sole source of slug, displayName, and rename plan (`Shop → Clinic`, `Shopkeeper → Vet`, `ItemTag → Patient`, etc.) — derived from a one-sentence natural-language spec. Output is good but not deterministic across runs (model evolution, prompt sensitivity), and there's no escape hatch when the planner picks a less-natural noun (e.g. forced into a non-substrate-reserved alternate).
 
@@ -73,7 +73,7 @@ Proposed shape — flag-based optional overrides on top of natural language. The
 
 ```bash
 npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices" \
-  --slug=clinic-queue \
+  --project-name="Clinic Queue" \
   --rename Shopkeeper=Vet \
   --rename ItemTag=Patient
 ```

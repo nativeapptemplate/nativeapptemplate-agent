@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { dispatch, type DispatchReportOptions } from "./dispatch.js";
 import { loadDotenvIfPresent } from "./env.js";
 import { parseRenamePair } from "./rename-overrides.js";
-import { isValidSlug, slugToPascal } from "./slug.js";
+import { projectNameToSlug, slugToPascal, isValidSlug } from "./slug.js";
 import type { RenamePair } from "./agents/types.js";
 
 loadDotenvIfPresent();
@@ -16,7 +16,7 @@ export type ParsedArgs = {
   open: boolean;
   exitZero: boolean;
   renameOverrides: RenamePair[];
-  slug?: string;
+  projectName?: string;
 };
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -25,7 +25,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   const renameOverrides: RenamePair[] = [];
   let open = false;
   let exitZero = false;
-  let slug: string | undefined;
+  let projectName: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
@@ -43,15 +43,17 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       const pair = parseRenamePair(raw);
       if (pair) renameOverrides.push(pair);
       else console.error(`warning: ignoring malformed --rename "${raw ?? ""}" (expected From=To, e.g. --rename Shop=Clinic)`);
-    } else if (arg === "--slug" || arg.startsWith("--slug=")) {
-      const raw = (arg === "--slug" ? argv[++i] : arg.slice("--slug=".length))?.trim();
-      if (raw && isValidSlug(raw)) slug = raw;
-      else console.error(`warning: ignoring invalid --slug "${raw ?? ""}" (expected kebab-case, e.g. --slug=vet-clinic)`);
+    } else if (arg === "--project-name" || arg.startsWith("--project-name=")) {
+      const raw = (arg === "--project-name" ? argv[++i] : arg.slice("--project-name=".length))?.trim();
+      // Accept any of "Vet Clinic" / "VetClinic" / "vet-clinic" — the slug is
+      // derived in dispatch. Reject only if it yields no valid slug at all.
+      if (raw && isValidSlug(projectNameToSlug(raw))) projectName = raw;
+      else console.error(`warning: ignoring invalid --project-name "${raw ?? ""}" (e.g. --project-name="Vet Clinic")`);
     } else {
       specParts.push(arg);
     }
   }
-  return { spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, ...(slug !== undefined ? { slug } : {}) };
+  return { spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, ...(projectName !== undefined ? { projectName } : {}) };
 }
 
 export async function main(spec?: string): Promise<void> {
@@ -59,7 +61,7 @@ export async function main(spec?: string): Promise<void> {
   const input = (spec ?? parsed.spec).trim();
   if (!input) {
     console.error(
-      'Usage: nativeapptemplate-agent "your spec here" [--slug=kebab-name] [--rename From=To]... [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]',
+      'Usage: nativeapptemplate-agent "your spec here" [--project-name="Vet Clinic"] [--rename From=To]... [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]',
     );
     process.exitCode = 1;
     return;
@@ -71,12 +73,12 @@ export async function main(spec?: string): Promise<void> {
   const result = await dispatch(input, {
     report: parsed.report,
     renameOverrides: parsed.renameOverrides,
-    ...(parsed.slug !== undefined ? { slug: parsed.slug } : {}),
+    ...(parsed.projectName !== undefined ? { projectName: parsed.projectName } : {}),
   });
 
-  if (parsed.slug !== undefined) {
+  if (parsed.projectName !== undefined) {
     const finalSlug = result.report.meta.slug;
-    console.log(`project: ${slugToPascal(finalSlug)} (slug ${finalSlug}, output out/${finalSlug}/)`);
+    console.log(`project: ${slugToPascal(finalSlug)} (output out/${finalSlug}/)`);
   }
 
   for (const o of result.renameOverrideOutcomes) {

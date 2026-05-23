@@ -1510,7 +1510,7 @@ test("dispatch with no overrides leaves renameOverrideOutcomes empty (stub pipel
   assert.deepEqual(result.renameOverrideOutcomes, []);
 });
 
-// --- project-name (slug) override (--slug, src/slug.ts isValidSlug) ---
+// --- project-name override (--project-name, src/slug.ts) ---
 
 test("isValidSlug accepts kebab-case and rejects everything else", async () => {
   const { isValidSlug } = await import("../src/slug.js");
@@ -1524,26 +1524,38 @@ test("isValidSlug accepts kebab-case and rejects everything else", async () => {
   assert.equal(isValidSlug(""), false);
 });
 
-test("parseArgs captures a valid --slug (both = and space forms) and drops invalid ones", async () => {
+test("projectName helpers derive slug + display name from any input form", async () => {
+  const { projectNameToSlug, projectNameToDisplayName } = await import("../src/slug.js");
+  for (const input of ["Vet Clinic", "VetClinic", "vet-clinic", "vet_clinic", "vet clinic"]) {
+    assert.equal(projectNameToSlug(input), "vet-clinic", `slug from "${input}"`);
+    assert.equal(projectNameToDisplayName(input), "Vet Clinic", `display from "${input}"`);
+  }
+  assert.equal(projectNameToSlug("Vet Clinic Queue"), "vet-clinic-queue");
+  assert.equal(projectNameToDisplayName("vet-clinic-queue"), "Vet Clinic Queue");
+});
+
+test("parseArgs captures --project-name (both = and space forms) and drops empty ones", async () => {
   const { parseArgs } = await import("../src/index.js");
-  assert.equal(parseArgs(["spec", "--slug=vet-clinic"]).slug, "vet-clinic");
-  assert.equal(parseArgs(["spec", "--slug", "vet-clinic"]).slug, "vet-clinic");
-  // Invalid slug → dropped (undefined), spec preserved.
-  const bad = parseArgs(["spec", "--slug=Vet Clinic"]);
-  assert.equal(bad.slug, undefined);
+  assert.equal(parseArgs(["spec", "--project-name=Vet Clinic"]).projectName, "Vet Clinic");
+  assert.equal(parseArgs(["spec", "--project-name", "VetClinic"]).projectName, "VetClinic");
+  // Empty/whitespace or punctuation-only (no valid slug) → dropped, spec kept.
+  assert.equal(parseArgs(["spec", "--project-name=   "]).projectName, undefined);
+  const bad = parseArgs(["spec", "--project-name=!!!"]);
+  assert.equal(bad.projectName, undefined);
   assert.equal(bad.spec, "spec");
 });
 
-test("dispatch applies a valid --slug override and rewrites the project name (stub pipeline)", async () => {
-  const result = await dispatch("a walk-in clinic queue for vets", { slug: "vet-clinic" });
+test("dispatch applies --project-name: derives slug + display name (stub pipeline)", async () => {
+  const result = await dispatch("a walk-in clinic queue for vets", { projectName: "Vet Clinic" });
   assert.equal(result.overallPass, true);
-  // The override drives the report meta.slug (output dir + Pascal name follow).
+  // The name drives the report meta.slug (output dir + Pascal name follow).
   assert.equal(result.report.meta.slug, "vet-clinic");
+  assert.equal(result.report.meta.displayName, "Vet Clinic");
 });
 
-test("dispatch ignores an invalid slug override and keeps the planner's slug (stub pipeline)", async () => {
-  const result = await dispatch("a walk-in clinic queue for vets", { slug: "Not A Slug" });
-  // Stub planner's slug is clinic-queue; the invalid override must not stick.
+test("dispatch ignores a project name that yields no valid slug (stub pipeline)", async () => {
+  const result = await dispatch("a walk-in clinic queue for vets", { projectName: "!!!" });
+  // Stub planner's slug is clinic-queue; an unusable name must not stick.
   assert.equal(result.report.meta.slug, "clinic-queue");
 });
 

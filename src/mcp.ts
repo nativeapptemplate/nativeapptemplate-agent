@@ -40,18 +40,18 @@ export function createMcpServer(): McpServer {
           .describe(
             'Optional manual rename overrides keyed on the substrate token (from = "Shop" | "Shopkeeper" | "ItemTag"), each replacing the planner\'s chosen target. Overrides that match no planned rename are ignored.',
           ),
-        slug: z
+        projectName: z
           .string()
           .optional()
           .describe(
-            'Optional kebab-case slug override (e.g. "vet-clinic"). Replaces the planner\'s slug, which sets the output directory, DB prefix, and the Pascal project name across all three platforms. Ignored if not valid kebab-case.',
+            'Optional project name (e.g. "Vet Clinic" or "VetClinic"). Overrides the planner\'s name; the slug — which sets the output directory, DB prefix, and the Pascal project name across all three platforms — and the display name are derived from it. Ignored if it yields no valid slug.',
           ),
       },
     },
-    async ({ spec, renameOverrides, slug }) => {
+    async ({ spec, renameOverrides, projectName }) => {
       const result = await dispatch(spec, {
         ...(renameOverrides ? { renameOverrides } : {}),
-        ...(slug !== undefined ? { slug } : {}),
+        ...(projectName !== undefined ? { projectName } : {}),
       });
       return {
         content: [{ type: "text", text: result.summary }],
