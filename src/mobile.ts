@@ -60,7 +60,15 @@ export type MobileClientOptions = {
 };
 
 const DEFAULT_COMMAND = "npx";
-const DEFAULT_ARGS = ["-y", "@mobilenext/mobile-mcp@latest"] as const;
+// Pinned to 0.0.54 (was @latest). mobile-mcp 0.0.55+ closes the stdio
+// connection during the MCP `initialize` handshake with our pinned
+// @modelcontextprotocol/sdk — reproduced 2026-05-23: 0.0.54 connects and
+// lists tools; 0.0.55 and 0.0.56 both fail with "MCP error -32000:
+// Connection closed" before any tool call. The wrapper's tool-shape parsing
+// (envelope/prefix handling, `submit`/`device` args) is also written against
+// 0.0.54. Re-validate the handshake + tool schemas (and likely bump the SDK)
+// before moving this version forward.
+const DEFAULT_ARGS = ["-y", "@mobilenext/mobile-mcp@0.0.54"] as const;
 
 // Lazy: spawns mobile-mcp on call, returns a typed client. close() shuts
 // the subprocess down cleanly.
