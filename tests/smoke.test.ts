@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC, discoverIosArtifact, discoverAndroidArtifact, runStage1Visual, waitForStableCapture } from "../src/validation/index.js";
+import { runLayer1, runLayer2, runLayer3, captureScreenshot, installAndLaunch, runVisualJudge, DEFAULT_STAGE1_RUBRIC, discoverIosArtifact, discoverAndroidArtifact, runStage1Visual, waitForStableCapture, judgeWithRetry, isTransientRenderFail } from "../src/validation/index.js";
 import { dispatch } from "../src/dispatch.js";
 import { runReviewer } from "../src/agents/reviewer.js";
 import { canonicalizeEndpoint, diffContracts } from "../src/agents/contract-extract.js";
@@ -119,6 +119,59 @@ test("waitForStableCapture caps out on a never-settling screen, and surfaces cap
   );
   assert.equal(failed.ok, false);
   assert.equal(failed.error, "no sim booted");
+});
+
+test("isTransientRenderFail: true only when all failing criteria are retry-safe", () => {
+  const score = (id: string, pass: boolean) => ({ criterionId: id, pass, rationale: "" });
+  // pass → never retry
+  assert.equal(isTransientRenderFail({ pass: true, scores: [score("renders-cleanly", true)] }), false);
+  // only renders-cleanly failing → retry
+  assert.equal(isTransientRenderFail({ pass: false, scores: [score("no-substrate-leak", true), score("renders-cleanly", false)] }), true);
+  // a content criterion failing → do NOT retry (deterministic)
+  assert.equal(isTransientRenderFail({ pass: false, scores: [score("no-substrate-leak", false), score("renders-cleanly", true)] }), false);
+  // both failing → not retry-safe (content failure present)
+  assert.equal(isTransientRenderFail({ pass: false, scores: [score("no-substrate-leak", false), score("renders-cleanly", false)] }), false);
+});
+
+test("judgeWithRetry retries a transient render fail, but not a content fail, and caps retries", async () => {
+  const score = (id: string, pass: boolean) => ({ criterionId: id, pass, rationale: "" });
+  const renderFail = { pass: false, scores: [score("no-substrate-leak", true), score("renders-cleanly", false)] };
+  const contentFail = { pass: false, scores: [score("no-substrate-leak", false), score("renders-cleanly", true)] };
+  const ok = { pass: true, scores: [score("no-substrate-leak", true), score("renders-cleanly", true)] };
+
+  // transient fail then pass → 1 retry, returns the pass
+  let judged = 0, settled = 0;
+  const seq = [renderFail, ok];
+  const r1 = await judgeWithRetry(
+    { settleCapture: async () => { settled++; return { ok: true }; }, judge: async () => seq[judged++]! },
+    { maxRetries: 1 },
+  );
+  assert.equal(r1.ok, true); assert.equal(r1.layer3?.pass, true);
+  assert.equal(judged, 2); assert.equal(settled, 2);
+
+  // content fail → no retry
+  let j2 = 0;
+  const r2 = await judgeWithRetry(
+    { settleCapture: async () => ({ ok: true }), judge: async () => { j2++; return contentFail; } },
+    { maxRetries: 3 },
+  );
+  assert.equal(r2.layer3?.pass, false); assert.equal(j2, 1);
+
+  // persistent transient fail → exhausts maxRetries (initial + 2)
+  let j3 = 0;
+  const r3 = await judgeWithRetry(
+    { settleCapture: async () => ({ ok: true }), judge: async () => { j3++; return renderFail; } },
+    { maxRetries: 2 },
+  );
+  assert.equal(r3.layer3?.pass, false); assert.equal(j3, 3);
+
+  // initial capture failure → ok:false, no judging
+  let j4 = 0;
+  const r4 = await judgeWithRetry(
+    { settleCapture: async () => ({ ok: false, error: "no sim" }), judge: async () => { j4++; return ok; } },
+    { maxRetries: 2 },
+  );
+  assert.equal(r4.ok, false); assert.equal(r4.error, "no sim"); assert.equal(j4, 0);
 });
 
 test("runLayer1 returns pass when forbiddenTokens is empty", async () => {
