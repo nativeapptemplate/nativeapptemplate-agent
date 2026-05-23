@@ -7,7 +7,10 @@
 # Rewrites file content AND renames files/directories for every
 # PascalCase / snake_case / plural variant of each rename pair.
 # Word-boundary matching via Regexp; crude-but-sufficient English
-# pluralization. Skips .git, node_modules, tmp/, log/, vendor/bundle/.
+# pluralization. Skips .git, node_modules, tmp/, log/, vendor/bundle/,
+# and compiled build output (app/assets/builds, public/assets) — those
+# are regenerated from source by the bundler, so renaming them desyncs
+# them from their (un-renamed) sources, e.g. Turbo's VisitState.completed.
 
 require "json"
 
@@ -18,7 +21,7 @@ root  = input.fetch("root")
 stats = { files_scanned: 0, files_changed: 0, substitutions: 0, files_renamed: 0 }
 
 SKIP_DIR_SEGMENTS = %w[.git node_modules tmp log DerivedData Pods Carthage xcuserdata .build build .gradle .idea .kotlin captures].freeze
-SKIP_SUBPATHS     = %w[vendor/bundle].freeze
+SKIP_SUBPATHS     = %w[vendor/bundle app/assets/builds public/assets].freeze
 TEXT_EXTS         = %w[
   .rb .erb .yml .yaml .json .md .gemspec .rake .ru .txt .sample .example .conf
   .html .css .scss .js .mjs .tt .lock
