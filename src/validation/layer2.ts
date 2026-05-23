@@ -24,7 +24,7 @@ export type Layer2Result = {
 const DEFAULT_TIMEOUT_FAST_MS = 300_000;
 const DEFAULT_TIMEOUT_BUILD_MS = 900_000;
 
-const IOS_DESTINATION = "platform=iOS Simulator,name=iPhone 17,OS=26.2";
+const IOS_DESTINATION = "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2";
 
 export async function runLayer2(input: Layer2Input): Promise<Layer2Result> {
   const mode: Layer2Mode = input.mode ?? "fast";

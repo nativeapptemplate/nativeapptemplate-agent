@@ -8,7 +8,7 @@ export type AndroidArtifact = { apkPath: string; packageName: string };
 
 // Matches Layer 2 build mode's IOS_DESTINATION so showBuildSettings sees the
 // same SDK/configuration that `xcodebuild build` produced.
-const IOS_DESTINATION = "platform=iOS Simulator,name=iPhone 17,OS=26.2";
+const IOS_DESTINATION = "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2";
 
 // After Layer 2 build mode has built the iOS .app, ask xcodebuild where it
 // landed and read the bundle identifier from the built Info.plist (so any
