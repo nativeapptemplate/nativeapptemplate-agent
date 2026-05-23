@@ -1,6 +1,6 @@
 {
   "name": "nativeapptemplate-agent",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A Claude Code agent that turns a natural-language SaaS spec into a working three-platform implementation (Rails API + SwiftUI iOS + Jetpack Compose Android).",
   "type": "module",
   "main": "dist/index.js",
