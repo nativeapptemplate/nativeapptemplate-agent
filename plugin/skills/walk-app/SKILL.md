@@ -56,9 +56,19 @@ Device readiness:
   Device Manager** — don't start it with the CLI `emulator -avd` on this machine
   (Android Studio owns adb here). Confirm with `adb devices`.
 
-If the app needs live data past the welcome screen, the generated Rails API must
-be running: in `out/<slug>/rails/`, `mise exec -- bin/dev` (after `bundle install`
-+ `db:prepare` + `db:seed_fu`).
+If the app needs live data past the welcome screen, two things must both be true —
+Rails must be **running** and the app must be **pointed at it**:
+
+- **Rails up:** in `out/<slug>/rails/`, `mise exec -- bin/dev` (after `bundle
+  install` + `db:prepare` + `db:seed_fu`). It binds to the HOST in
+  `out/<slug>/rails/.env` (a LAN/Wi-Fi IP, not localhost). Seeded login for these
+  specs is `barber1@example.com` / `password` (renamed per spec).
+- **App → that Rails:** Android bakes the API host in at build time (`<PRODUCT>_API_*`
+  gradle properties), so a normal launch reaches it. **iOS does not** — the DEBUG
+  build reads its host from process env at launch and otherwise falls back to the
+  nonexistent `https://api.<product>.com`, so a plain `mobile-mcp` launch renders
+  screens but every network call silently fails. On iOS you must relaunch with the
+  env passthrough — see §3.
 
 ## 3. Connect mobile-mcp to the device
 
@@ -66,6 +76,24 @@ Use mobile-mcp to list available devices and select the booted simulator/emulato
 Then list installed apps and launch the generated one (match on the project's
 display name / PascalCase name) — launching by name via mobile-mcp avoids hunting
 for the bundle id / package name.
+
+**iOS + live API:** mobile-mcp's plain launch can't inject the API host, so to reach
+a local Rails you must relaunch the app via simctl with the `SIMCTL_CHILD_`
+passthrough (the same env-bridge the generator's visual mode uses — see
+`src/env-bridge.ts`):
+
+```bash
+xcrun simctl terminate booted <bundleId>
+SIMCTL_CHILD_<PRODUCT>_API_SCHEME=http \
+SIMCTL_CHILD_<PRODUCT>_API_DOMAIN=<HOST from out/<slug>/rails/.env> \
+SIMCTL_CHILD_<PRODUCT>_API_PORT=<PORT from out/<slug>/rails/.env> \
+xcrun simctl launch booted <bundleId>
+```
+
+`<PRODUCT>` is the PascalCase project name upper-cased (e.g. `BARBERSHOPQUEUE`).
+`SCHEME` is `http` for LAN dev. mobile-mcp still drives the app via WDA regardless
+of how it was launched, so do this relaunch *before* you start tapping into
+data-backed screens. Android needs none of this (host baked in at build time).
 
 ## 4. Capture and walk
 
@@ -95,9 +123,11 @@ The device layer fails in known ways; diagnose, don't just retry:
   (Android) Studio isn't running and adb sees no device. Point the user at §2.
 - **App not installed** → the build/install step didn't run or failed; fall back to
   the recommended `NATIVEAPPTEMPLATE_VISUAL=1` route.
-- **App launches but screens are blank / error** → the Rails API likely isn't
-  running or the app can't reach it; start it (§2) and check the
-  `NATIVEAPPTEMPLATE_API_*` env the app was built against.
+- **App launches but data screens are blank / error (sign-in fails, lists empty)**
+  → Rails isn't running, or the app isn't pointed at it. Start Rails (§2); on **iOS**
+  confirm you relaunched with the `SIMCTL_CHILD_<PRODUCT>_API_*` passthrough (§3) —
+  a plain mobile-mcp launch hits the nonexistent default host and every call fails
+  while screens still render.
 - **Build fails** → surface the compiler output; Jetpack Compose + Hilt are the
   known-cryptic ones. Offer a repair re-run of `generate-app` with
   `NATIVEAPPTEMPLATE_REPAIR=on`.
