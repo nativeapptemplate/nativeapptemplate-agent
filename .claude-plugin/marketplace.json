@@ -1,6 +1,6 @@
 {
   "name": "nativeapptemplate",
-  "owner": { "name": "Daisuke" },
+  "owner": { "name": "Daisuke Adachi" },
   "description": "NativeAppTemplate Agent — generate validated three-platform SaaS apps (Rails 8.1 API + SwiftUI iOS + Jetpack Compose Android) from a natural-language spec.",
   "plugins": [
     {
