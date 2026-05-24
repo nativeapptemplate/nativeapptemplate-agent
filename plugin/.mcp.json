@@ -2,7 +2,7 @@
   "mcpServers": {
     "nativeapptemplate-agent": {
       "command": "npx",
-      "args": ["-y", "-p", "nativeapptemplate-agent", "nativeapptemplate-agent-mcp"]
+      "args": ["-y", "-p", "nativeapptemplate-agent@latest", "nativeapptemplate-agent-mcp"]
     },
     "mobile-mcp": {
       "command": "npx",

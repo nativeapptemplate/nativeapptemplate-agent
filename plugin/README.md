@@ -32,9 +32,15 @@ plugin/
   `NATIVEAPPTEMPLATE_VISUAL=1` generate run — see the skill for details).
 - **Bundled MCP servers** (`/mcp` to check): the generator server
   (`nativeapptemplate-agent`, wired as
-  `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` — the MCP entry
-  point is a **bin** of the package, not its own package, hence `-p`) and
+  `npx -y -p nativeapptemplate-agent@latest nativeapptemplate-agent-mcp`) and
   `mobile-mcp` (`@mobilenext/mobile-mcp`) for device automation.
+
+  Two non-obvious bits in that generator command: the MCP entry point is a **bin**
+  of the `nativeapptemplate-agent` package, not its own package, so `-p` is
+  required; and the **`@latest`** is load-bearing — without a version spec, `npx`
+  resolves the *local* package when the server is spawned from inside the agent's
+  own repo (cwd shadowing) and fails with `command not found`. `@latest` forces
+  registry resolution regardless of cwd.
 
 ## Requirements
 
