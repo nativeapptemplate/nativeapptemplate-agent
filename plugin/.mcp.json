@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "nativeapptemplate-agent": {
+      "command": "npx",
+      "args": ["-y", "-p", "nativeapptemplate-agent@latest", "nativeapptemplate-agent-mcp"]
+    },
+    "mobile-mcp": {
+      "command": "npx",
+      "args": ["-y", "@mobilenext/mobile-mcp@0.0.54"]
+    }
+  }
+}

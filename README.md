@@ -126,7 +126,7 @@ tree ./out/clinic-queue/
 # └── validation-report.html   ← self-contained visual report (open in a browser)
 ```
 
-The same generator also ships as an MCP server — `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` exposes a `generate_app` tool, so any MCP-capable assistant (Claude Code, Cursor, Cline, Goose) can invoke it without leaving the editor. A Claude Code plugin (a discoverable slash command plus an orchestration skill that chains validation and a `mobile-mcp` walkthrough) is planned post-v0.1 — see the [roadmap](./ROADMAP.md#post-v01-backlog).
+The same generator also ships as an MCP server — `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` exposes a `generate_app` tool, so any MCP-capable assistant (Claude Code, Cursor, Cline, Goose) can invoke it without leaving the editor. And a **Claude Code plugin** ships in [`plugin/`](./plugin/) — `claude --plugin-dir ./plugin` loads two skills: `/nativeapptemplate-agent:generate-app` (generate → validate → explain) and `/nativeapptemplate-agent:walk-app` (launch the app on a simulator/emulator and walk its UI via `mobile-mcp`, screenshots inline). See [`plugin/README.md`](./plugin/README.md).
 
 ## Requirements
 
