@@ -31,7 +31,7 @@ The strategy is two-track.
 
 ### Track 1 — Open source (this repository)
 
-`npx nativeapptemplate-agent "your spec"` — the CLI form of the agent, and the primary surface. A second surface ships alongside it: `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp`, a stdio MCP server exposing a `generate_app` tool so any MCP-capable assistant (Claude Code, Cursor, Cline, Goose) can invoke the agent without a terminal — the distribution multiplier. Both target the free-edition substrate and require an Anthropic API key; every generation run reproduces end-to-end on the reviewer's machine. A Claude Code plugin is a planned third surface — see Post-v0.1 backlog.
+`npx nativeapptemplate-agent "your spec"` — the CLI form of the agent, and the primary surface. A second surface ships alongside it: `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp`, a stdio MCP server exposing a `generate_app` tool so any MCP-capable assistant (Claude Code, Cursor, Cline, Goose) can invoke the agent without a terminal — the distribution multiplier. Both target the free-edition substrate and require an Anthropic API key; every generation run reproduces end-to-end on the reviewer's machine. A **Claude Code plugin** is the third surface (in [`plugin/`](plugin/)) — `claude --plugin-dir ./plugin` loads the `generate-app` and `walk-app` skills; see [Claude Code plugin](#claude-code-plugin) below.
 
 This track is permanent. It is not a free trial of a commercial product — it is how we believe a generator like this should ship by default in 2026.
 
@@ -86,15 +86,14 @@ No interactive prompts — keeps the CLI scriptable and CI-friendly, no TTY assu
 
 ### Claude Code plugin
 
-**Status: deferred.** Long named as a packaging surface, not yet built. The shipped MCP server (`nativeapptemplate-agent-mcp`) already covers in-assistant invocation across *every* MCP-capable client — strictly wider reach than a Claude-Code-only plugin. Against today's MCP, which wraps `dispatch()` as a single `generate_app` tool, a plugin would be a thin wrapper: a discoverable slash command plus a one-step install, and little else.
+**Status: shipped.** Lives in [`plugin/`](plugin/); load it locally with `claude --plugin-dir ./plugin`. Two skills, bundling two MCP servers (the generator + `mobile-mcp`):
 
-The plugin earns its place once there is depth for it to add — work that doesn't exist yet and that the bare MCP tool can't carry cleanly:
+1. **`/nativeapptemplate-agent:generate-app <spec>`** — runs the generator, parses `out/<slug>/report.json`, and explains per-platform / per-layer results, the domain mapping, and any failures with the specific evidence and the next move.
+2. **`/nativeapptemplate-agent:walk-app <slug> ios|android`** — launches a generated app on a booted simulator/emulator and drives `mobile-mcp` to capture the home screen and walk the UI conversationally, screenshots inline.
 
-1. **Streaming progress out of `dispatch()`** so a 3–5 min build-mode run isn't a frozen wait. (Flagged non-negotiable for the MCP surface in the monetization notes; the plugin inherits the same need.)
-2. **An orchestration skill** that owns the *post*-generation story — chaining a `mobile-mcp` home-screen walkthrough, running the validation layers, and surfacing the report. This is genuinely plugin-shaped (a skill plus bundled MCP wiring), and it's the piece a single `generate_app` tool can't express.
-3. **Bundling the generator MCP + `mobile-mcp` pre-wired** so "generate a clinic queue, then walk its home screen" works out of the box.
+The original plan gated this on `dispatch()` streaming + an orchestration skill. In practice the skill carries the value without streaming: `generate-app` drives the CLI and narrates around it, delivering the post-generation story (validate → explain; generate → walk) with no streaming needed. Streaming remains a nice-to-have for the single-tool MCP surface, not a blocker for the plugin.
 
-Gate building the plugin on (1) and (2) landing first; until then it adds slash-command discoverability over the MCP and not much more.
+Verified end-to-end 2026-05-24: `generate-app` (barbershop-queue, all layers green) and `walk-app` (Android launch + interactive tap-through with inline screenshots on the Pixel emulator).
 
 ## What stays out of scope
 

@@ -18,7 +18,7 @@ Project-wide Claude Code instructions. Keep this file short — it's loaded into
 
 - **Host language:** TypeScript (Claude Agent SDK `@anthropic-ai/claude-agent-sdk`)
 - **Ruby subprocesses** for Rails AST / ERB / migration work (called from TypeScript)
-- **External MCP:** [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp) for iOS Simulator + Android Emulator UI automation (`npx -y @mobilenext/mobile-mcp@latest`)
+- **External MCP:** [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp) for iOS Simulator + Android Emulator UI automation. **Pin `npx -y @mobilenext/mobile-mcp@0.0.54`** — 0.0.55+ closes the stdio connection on startup (the pin lives in `src/mobile.ts` and the plugin's `.mcp.json`).
 - **Node 22+ required.**
 
 ## Coding conventions
@@ -110,11 +110,12 @@ Each is an independent, buildable git repo.
 
 ## Packaging
 
-Ships as two surfaces today:
+Ships as three surfaces today:
 - `npx nativeapptemplate-agent "your spec"` — standalone CLI (primary)
 - `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` — stdio MCP server wrapping `dispatch()` as a `generate_app` tool, for any MCP-capable assistant (Claude Code, Cursor, Cline, Goose). The distribution multiplier. (The `-mcp` entry point is a *bin* of the `nativeapptemplate-agent` package, not its own package — hence `-p`; `npx -y nativeapptemplate-agent-mcp` 404s.)
+- **Claude Code plugin** in `plugin/` — `claude --plugin-dir ./plugin` loads two skills: `/nativeapptemplate-agent:generate-app` (generate → validate → explain) and `/nativeapptemplate-agent:walk-app` (drive the running app via `mobile-mcp`). Bundles the generator MCP server + mobile-mcp. See `plugin/README.md`.
 
-A Claude Code plugin (slash command + orchestration skill) is **post-v0.1 backlog**, gated on streaming progress out of `dispatch()` and a skill that chains validation + a `mobile-mcp` walkthrough — against today's single-tool MCP a plugin would be a thin wrapper. See `ROADMAP.md` → Post-v0.1 backlog.
+Plugin `.mcp.json` pins are load-bearing: `nativeapptemplate-agent@latest` (MCP servers spawn with cwd = repo root; without `@latest`, `npx -p` resolves the *local* package and fails) and `@mobilenext/mobile-mcp@0.0.54` (0.0.55+ closes stdio).
 
 ## Hackathon success criteria (quick reminder — details in docs/SPEC.md section 11)
 
