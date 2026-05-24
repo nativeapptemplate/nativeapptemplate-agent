@@ -6,30 +6,35 @@ generates a validated three-platform implementation (Rails 8.1 API + SwiftUI iOS
 + Jetpack Compose Android), then reads the validation report back to you in plain
 language.
 
-This is the **first cut** — generate → validate → explain. A live home-screen
-walk-through via `mobile-mcp` is planned as a second phase (see the repo
-[roadmap](../ROADMAP.md#post-v01-backlog)).
+Two skills: **generate → validate → explain**, and an interactive **walk the
+running app** layer over `mobile-mcp`.
 
 ## What's in here
 
 ```
 plugin/
 ├── .claude-plugin/plugin.json   # manifest
-├── .mcp.json                    # bundles the nativeapptemplate-agent MCP server
+├── .mcp.json                    # bundles the generator MCP server + mobile-mcp
 ├── skills/
-│   └── generate-app/SKILL.md    # the orchestration skill
+│   ├── generate-app/SKILL.md    # generate → validate → explain
+│   └── walk-app/SKILL.md        # launch on a device, walk the UI with mobile-mcp
 └── README.md
 ```
 
-- **`/nativeapptemplate-agent:generate-app <spec>`** — the skill. Runs the
-  generator on your spec, parses `out/<slug>/report.json`, and summarizes
-  per-platform / per-layer results, the domain mapping, and any failures with
-  the specific evidence and the next move.
-- **Bundled MCP server** (`nativeapptemplate-agent`) — exposes `generate_app` as
-  a tool for direct/tool-call use; check it with `/mcp`. Wired as
-  `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` (the MCP entry
-  point is a **bin** of the `nativeapptemplate-agent` package, not its own
-  package — hence `-p`).
+- **`/nativeapptemplate-agent:generate-app <spec>`** — runs the generator on your
+  spec, parses `out/<slug>/report.json`, and summarizes per-platform / per-layer
+  results, the domain mapping, and any failures with the specific evidence and the
+  next move.
+- **`/nativeapptemplate-agent:walk-app <slug> ios|android`** — launches a generated
+  app on a **booted simulator/emulator** and drives `mobile-mcp` to capture the
+  home screen and walk the UI conversationally, surfacing screenshots inline.
+  Needs a booted device + an installed build (easiest via a
+  `NATIVEAPPTEMPLATE_VISUAL=1` generate run — see the skill for details).
+- **Bundled MCP servers** (`/mcp` to check): the generator server
+  (`nativeapptemplate-agent`, wired as
+  `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` — the MCP entry
+  point is a **bin** of the package, not its own package, hence `-p`) and
+  `mobile-mcp` (`@mobilenext/mobile-mcp`) for device automation.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 {
   "name": "nativeapptemplate-agent",
-  "version": "0.1.0",
-  "description": "Generate a validated three-platform SaaS app (Rails 8.1 API + SwiftUI iOS + Jetpack Compose Android) from a one-sentence spec, then read the validation report and explain what passed and failed — without leaving Claude Code.",
+  "version": "0.2.0",
+  "description": "Generate a validated three-platform SaaS app (Rails 8.1 API + SwiftUI iOS + Jetpack Compose Android) from a one-sentence spec, explain the validation report, and walk the running app on a simulator/emulator via mobile-mcp — without leaving Claude Code.",
   "author": { "name": "Daisuke" },
   "homepage": "https://github.com/nativeapptemplate/nativeapptemplate-agent",
   "repository": "https://github.com/nativeapptemplate/nativeapptemplate-agent",

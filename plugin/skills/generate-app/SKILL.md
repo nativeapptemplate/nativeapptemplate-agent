@@ -122,5 +122,7 @@ Don't just say "it failed." Pull the exact evidence and propose a fix:
 
 The generated projects are real, git-initialized, and buildable. Offer concrete
 follow-ups: open the report, tweak generated code, commit a project, or re-run
-with overrides. (A live home-screen walk-through via `mobile-mcp` is planned as a
-second phase of this skill — not wired yet.)
+with overrides. If the user wants to **see the app running** — capture the home
+screen, walk the UI, screenshots inline — hand off to the `walk-app` skill
+(`/nativeapptemplate-agent:walk-app <slug> ios|android`), which drives `mobile-mcp`
+against a booted simulator/emulator.
