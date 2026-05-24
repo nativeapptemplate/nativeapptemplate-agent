@@ -3,6 +3,10 @@
     "nativeapptemplate-agent": {
       "command": "npx",
       "args": ["-y", "-p", "nativeapptemplate-agent", "nativeapptemplate-agent-mcp"]
+    },
+    "mobile-mcp": {
+      "command": "npx",
+      "args": ["-y", "@mobilenext/mobile-mcp@latest"]
     }
   }
 }
