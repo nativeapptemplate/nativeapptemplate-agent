@@ -31,7 +31,7 @@ The strategy is two-track.
 
 ### Track 1 — Open source (this repository)
 
-`npx nativeapptemplate-agent "your spec"` — the CLI form of the agent. Also ships as a Claude Code plugin. Targets the free-edition substrate. Requires an Anthropic API key; every generation run reproduces end-to-end on the reviewer's machine.
+`npx nativeapptemplate-agent "your spec"` — the CLI form of the agent, and the primary surface. A second surface ships alongside it: `npx -y nativeapptemplate-agent-mcp`, a stdio MCP server exposing a `generate_app` tool so any MCP-capable assistant (Claude Code, Cursor, Cline, Goose) can invoke the agent without a terminal — the distribution multiplier. Both target the free-edition substrate and require an Anthropic API key; every generation run reproduces end-to-end on the reviewer's machine. A Claude Code plugin is a planned third surface — see Post-v0.1 backlog.
 
 This track is permanent. It is not a free trial of a commercial product — it is how we believe a generator like this should ship by default in 2026.
 
@@ -83,6 +83,18 @@ Why optional and not required: the project's pitch is "natural-language → work
 Use cases the override solves: reproducible runs (demo videos, automated tests, docs examples), manual veto when the planner's noun choice doesn't match the user's mental model, escape hatch when the substrate-reserved-token list pushes the planner into less-natural alternates.
 
 No interactive prompts — keeps the CLI scriptable and CI-friendly, no TTY assumptions.
+
+### Claude Code plugin
+
+**Status: deferred.** Long named as a packaging surface, not yet built. The shipped MCP server (`nativeapptemplate-agent-mcp`) already covers in-assistant invocation across *every* MCP-capable client — strictly wider reach than a Claude-Code-only plugin. Against today's MCP, which wraps `dispatch()` as a single `generate_app` tool, a plugin would be a thin wrapper: a discoverable slash command plus a one-step install, and little else.
+
+The plugin earns its place once there is depth for it to add — work that doesn't exist yet and that the bare MCP tool can't carry cleanly:
+
+1. **Streaming progress out of `dispatch()`** so a 3–5 min build-mode run isn't a frozen wait. (Flagged non-negotiable for the MCP surface in the monetization notes; the plugin inherits the same need.)
+2. **An orchestration skill** that owns the *post*-generation story — chaining a `mobile-mcp` home-screen walkthrough, running the validation layers, and surfacing the report. This is genuinely plugin-shaped (a skill plus bundled MCP wiring), and it's the piece a single `generate_app` tool can't express.
+3. **Bundling the generator MCP + `mobile-mcp` pre-wired** so "generate a clinic queue, then walk its home screen" works out of the box.
+
+Gate building the plugin on (1) and (2) landing first; until then it adds slash-command discoverability over the MCP and not much more.
 
 ## What stays out of scope
 
