@@ -72,11 +72,18 @@ Then in the session:
 After editing plugin files, run `/reload-plugins` to pick up changes. Confirm the
 skill is loaded via `/help` and the MCP server via `/mcp`.
 
-## Install from git
+## Install from the marketplace
+
+The repo ships a marketplace manifest (`.claude-plugin/marketplace.json`) that points at
+this `plugin/` directory. Add the marketplace, then install:
 
 ```
-/plugin install github.com/nativeapptemplate/nativeapptemplate-agent
+/plugin marketplace add nativeapptemplate/nativeapptemplate-agent
+/plugin install nativeapptemplate-agent@nativeapptemplate
 ```
 
-> Note: the plugin lives in the `plugin/` subdirectory of the repo. If installing
-> by path, point at `plugin/`, not the repo root.
+`nativeapptemplate` is the marketplace name; `nativeapptemplate-agent` is the plugin. Once
+installed, the skills are available as `/nativeapptemplate-agent:generate-app` and
+`/nativeapptemplate-agent:walk-app` (and `/mcp` shows both bundled servers). The CLI forms
+are `claude plugin marketplace add nativeapptemplate/nativeapptemplate-agent` and
+`claude plugin install nativeapptemplate-agent@nativeapptemplate`.

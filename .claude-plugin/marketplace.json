@@ -1,0 +1,12 @@
+{
+  "name": "nativeapptemplate",
+  "owner": { "name": "Daisuke" },
+  "description": "NativeAppTemplate Agent — generate validated three-platform SaaS apps (Rails 8.1 API + SwiftUI iOS + Jetpack Compose Android) from a natural-language spec.",
+  "plugins": [
+    {
+      "name": "nativeapptemplate-agent",
+      "source": "./plugin",
+      "description": "Generate, validate, and walk three-platform apps from inside Claude Code — generate-app + walk-app skills, bundling the generator MCP server + mobile-mcp."
+    }
+  ]
+}
