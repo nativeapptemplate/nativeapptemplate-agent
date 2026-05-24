@@ -33,7 +33,7 @@ plugin/
 - **Bundled MCP servers** (`/mcp` to check): the generator server
   (`nativeapptemplate-agent`, wired as
   `npx -y -p nativeapptemplate-agent@latest nativeapptemplate-agent-mcp`) and
-  `mobile-mcp` (`@mobilenext/mobile-mcp`) for device automation.
+  `mobile-mcp` (`@mobilenext/mobile-mcp@0.0.54`) for device automation.
 
   Two non-obvious bits in that generator command: the MCP entry point is a **bin**
   of the `nativeapptemplate-agent` package, not its own package, so `-p` is
@@ -41,6 +41,12 @@ plugin/
   resolves the *local* package when the server is spawned from inside the agent's
   own repo (cwd shadowing) and fails with `command not found`. `@latest` forces
   registry resolution regardless of cwd.
+
+  `mobile-mcp` is **pinned to 0.0.54** on purpose: 0.0.55+ closes the stdio
+  connection on startup (`Connection closed` ~6s in), so `@latest` fails. This
+  matches the agent's own pin in `src/mobile.ts`. If you have a global `mobile-mcp`
+  config on `@latest`, it'll show ✘ failed in `/mcp` — this bundled, pinned one is
+  the working copy (different command, so it won't dedup against your global).
 
 ## Requirements
 
