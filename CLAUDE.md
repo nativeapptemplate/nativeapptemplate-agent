@@ -112,7 +112,7 @@ Each is an independent, buildable git repo.
 
 Ships as two surfaces today:
 - `npx nativeapptemplate-agent "your spec"` — standalone CLI (primary)
-- `npx -y nativeapptemplate-agent-mcp` — stdio MCP server wrapping `dispatch()` as a `generate_app` tool, for any MCP-capable assistant (Claude Code, Cursor, Cline, Goose). The distribution multiplier.
+- `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` — stdio MCP server wrapping `dispatch()` as a `generate_app` tool, for any MCP-capable assistant (Claude Code, Cursor, Cline, Goose). The distribution multiplier. (The `-mcp` entry point is a *bin* of the `nativeapptemplate-agent` package, not its own package — hence `-p`; `npx -y nativeapptemplate-agent-mcp` 404s.)
 
 A Claude Code plugin (slash command + orchestration skill) is **post-v0.1 backlog**, gated on streaming progress out of `dispatch()` and a skill that chains validation + a `mobile-mcp` walkthrough — against today's single-tool MCP a plugin would be a thin wrapper. See `ROADMAP.md` → Post-v0.1 backlog.
 

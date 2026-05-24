@@ -31,7 +31,7 @@ The strategy is two-track.
 
 ### Track 1 — Open source (this repository)
 
-`npx nativeapptemplate-agent "your spec"` — the CLI form of the agent, and the primary surface. A second surface ships alongside it: `npx -y nativeapptemplate-agent-mcp`, a stdio MCP server exposing a `generate_app` tool so any MCP-capable assistant (Claude Code, Cursor, Cline, Goose) can invoke the agent without a terminal — the distribution multiplier. Both target the free-edition substrate and require an Anthropic API key; every generation run reproduces end-to-end on the reviewer's machine. A Claude Code plugin is a planned third surface — see Post-v0.1 backlog.
+`npx nativeapptemplate-agent "your spec"` — the CLI form of the agent, and the primary surface. A second surface ships alongside it: `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp`, a stdio MCP server exposing a `generate_app` tool so any MCP-capable assistant (Claude Code, Cursor, Cline, Goose) can invoke the agent without a terminal — the distribution multiplier. Both target the free-edition substrate and require an Anthropic API key; every generation run reproduces end-to-end on the reviewer's machine. A Claude Code plugin is a planned third surface — see Post-v0.1 backlog.
 
 This track is permanent. It is not a free trial of a commercial product — it is how we believe a generator like this should ship by default in 2026.
 
