@@ -9,6 +9,10 @@ language.
 Two skills: **generate → validate → explain**, and an interactive **walk the
 running app** layer over `mobile-mcp`.
 
+> This file is the concise reference card. For a full, follow-top-to-bottom
+> walkthrough — prerequisites, install, both skills end-to-end, every flag, and
+> troubleshooting — see the **[A-to-Z plugin guide](../docs/PLUGIN-GUIDE.md)**.
+
 ## What's in here
 
 ```

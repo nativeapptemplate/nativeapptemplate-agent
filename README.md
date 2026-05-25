@@ -139,7 +139,7 @@ The same generator also ships as an MCP server — `npx -y -p nativeapptemplate-
 /plugin install nativeapptemplate-agent@nativeapptemplate
 ```
 
-…or load it locally with `claude --plugin-dir ./plugin`. See [`plugin/README.md`](./plugin/README.md).
+…or load it locally with `claude --plugin-dir ./plugin`. See [`plugin/README.md`](./plugin/README.md) for the reference card, or the **[A-to-Z plugin guide](./docs/PLUGIN-GUIDE.md)** for a full follow-along walkthrough.
 
 ## Requirements
 
