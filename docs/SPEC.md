@@ -110,7 +110,7 @@ The agent performs three clean operations against this substrate.
 
 **Operation 2 — Adapt or replace the domain module.**
 
-- *Adapt path* (walk-in-queue variants like clinic queue, restaurant waitlist, salon walk-ins): keep `ItemTag`, rename to the variant's terminology, preserve the two-state toggle (`Idled` ↔ `Completed`) and its transition logic. Variants that genuinely need a three-state lifecycle (e.g., a clinic queue wanting a distinct "in-service" state) extend the state machine rather than replace it — the planner decides whether to preserve, extend, or replace the states based on the NL spec.
+- *Adapt path* (walk-in-queue variants like clinic queue, restaurant waitlist, salon walk-ins, household pest-sighting log): keep `ItemTag`, rename to the variant's terminology, preserve the two-state toggle (`Idled` ↔ `Completed`) and its transition logic. Variants that genuinely need a three-state lifecycle (e.g., a clinic queue wanting a distinct "in-service" state) extend the state machine rather than replace it — the planner decides whether to preserve, extend, or replace the states based on the NL spec.
 - *Replace path* (non-queue SaaS like task tracker, simple CRM, inventory): strip `ItemTag` end-to-end, insert a new primary resource with equivalent coverage (migration + model + controller + policy + serializer + iOS/Android screens + state transitions if applicable).
 
 The planner sub-agent decides which path to run based on the NL spec.

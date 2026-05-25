@@ -117,6 +117,12 @@ npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practic
 npx nativeapptemplate-agent "a restaurant waitlist for casual dining"
 npx nativeapptemplate-agent "a personal task tracker with due dates"
 
+# Name the project explicitly (sets display name + output slug, independent of the
+# domain rename). The plugin/MCP path accepts the same intent in plain language —
+# "…detection. project name is Sentova." — mapped to the projectName argument.
+npx nativeapptemplate-agent "a two-device home monitor for household pest detection" --project-name="Sentova"
+# → out/sentova/ · Sentova.xcodeproj · "Sentova API"; adapts ItemTag (e.g. Shop→Household, ItemTag→Sighting)
+
 # Generated output appears under ./out/<slug>/
 tree ./out/clinic-queue/
 # ├── rails/                   ← Rails 8.1 API, git-initialized, buildable

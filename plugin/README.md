@@ -69,6 +69,23 @@ Then in the session:
 /nativeapptemplate-agent:generate-app a walk-in queue for a barbershop
 ```
 
+The two skills compose end-to-end — generate, then walk what you generated. A
+full session, including a **custom project name passed in plain language**:
+
+```
+/nativeapptemplate-agent:generate-app a two-device home monitor for household pest detection. project name is Sentova.
+/nativeapptemplate-agent:walk-app sentova ios
+/nativeapptemplate-agent:walk-app sentova android
+```
+
+The `project name is Sentova` clause sets the display name and output slug
+(`out/sentova/`, `Sentova.xcodeproj`, `Sentova API`) independently of the domain
+rename the planner chooses. This spec is an **adapt** of the queue toggle — it
+keeps `ItemTag` and renames it (one run: `Shop → Household`, `Shopkeeper →
+Resident`, `ItemTag → Sighting`, states `Idled → Active` / `Completed →
+Resolved`); the planner's exact targets vary run to run. Verified 2026-05-25
+(agent 0.2.1): both specs generate with overall PASS, walked on iOS + Android.
+
 After editing plugin files, run `/reload-plugins` to pick up changes. Confirm the
 skill is loaded via `/help` and the MCP server via `/mcp`.
 
