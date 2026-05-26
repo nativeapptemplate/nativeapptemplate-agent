@@ -83,9 +83,13 @@ It will:
 
 ## Demo
 
+**Quick look (40s)** — what the agent does, the three distribution surfaces, and a live walk of the generated app: **▸ [Watch on YouTube](https://youtu.be/fsjfskPWecQ)**
+
+**Full end-to-end run (90s)** — spec → renamed Rails API + iOS app + Android app, all three platforms validated:
+
 https://github.com/user-attachments/assets/bd1ed091-93d8-45d7-b502-c21720218484
 
-90-second end-to-end run: spec → renamed Rails API + iOS app + Android app, all three platforms validated. Also on [YouTube](https://youtu.be/z08ueZX-02I) for full-screen viewing.
+Also on [YouTube](https://youtu.be/z08ueZX-02I) for full-screen viewing.
 
 Three demo specs, both adapt and replace paths, all four validation layers green end-to-end:
 
