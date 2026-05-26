@@ -14,10 +14,45 @@ Coherent across all three, in under an hour.
 [![node: >=22](https://img.shields.io/node/v/nativeapptemplate-agent.svg)](https://nodejs.org/)
 
 ```bash
-npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices"
+npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices" --project-name="VetClinic"
 ```
 
 > **Status: 0.2.1 stable.** First built during [Built with Opus 4.7: a Claude Code Hackathon](https://cerebralvalley.ai/e/built-with-4-7-hackathon) (April 21–27, 2026); shipped to npm post-hackathon. Verified end-to-end on the three demo specs below from a fresh `/tmp/` cwd — the full 3-spec × 2-edition × 2-platform matrix is green at `NATIVEAPPTEMPLATE_VISUAL=2` (see the [matrix](#demo)). Stage 2 (scripted-CRUD walk-through via `mobile-mcp` against a live Rails server) and paid-edition parity validation landed post-launch. Active development continues — see the [roadmap](./ROADMAP.md) for what's next.
+
+---
+
+## Quick Start
+
+### Option 1: Claude Code plugin (recommended)
+
+Install the plugin once, then drive the agent with two slash commands — `/nativeapptemplate-agent:generate-app` (generate → validate → explain) and `/nativeapptemplate-agent:walk-app` (launch the app on a simulator/emulator and walk its UI via `mobile-mcp`, screenshots inline).
+
+```bash
+/plugin marketplace add nativeapptemplate/nativeapptemplate-agent
+/plugin install nativeapptemplate-agent@nativeapptemplate
+```
+
+Then in Claude Code:
+
+```
+/nativeapptemplate-agent:generate-app a walk-in clinic queue for small veterinary practices. project name is VetClinic.
+```
+
+Or load it locally without the marketplace: `claude --plugin-dir ./plugin`. See [`plugin/README.md`](./plugin/README.md) for the reference card, and the [A-to-Z plugin guide](./docs/PLUGIN-GUIDE.md) for a full walkthrough.
+
+### Option 2: Standalone CLI
+
+No editor required — runs anywhere Node 22+ is installed.
+
+```bash
+npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices" --project-name="VetClinic"
+```
+
+Generated output appears under `./out/<slug>/`. See [Usage](#usage) for rename overrides and report flags.
+
+> **Pass a project name.** `--project-name` (or "project name is …" in the plugin) pins the Pascal project name, output slug (`out/vet-clinic/`), Xcode scheme, and display name across all three platforms. Omit it and the planner picks one — fine for one-off exploration, but it'll differ across re-runs.
+
+> Using Cursor, Cline, Goose, or another MCP-capable editor? The generator also ships as an MCP server: `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` exposes a `generate_app` tool you can wire into your editor's MCP config.
 
 ---
 
