@@ -119,6 +119,20 @@ After the queue cell's Stage-2 hardening landed, sushi and the task tracker pass
 
 Both screenshots are real captures from the booted iOS Simulator and Android emulator post-`./gradlew assembleDebug` / `xcodebuild build`, after the agent installed and launched the generated app.
 
+## Runtime
+
+End-to-end wall-clock per run, measured from `report.json`'s `meta.durationMs` on a 2021 M1 Max with both simulators pre-booted:
+
+| `NATIVEAPPTEMPLATE_VISUAL` | What runs | Observed time | Approx cost |
+|---|---|---|---|
+| `0` (default) | Layer 1 (ripgrep) + Layer 2 *fast* (Rails boot probe, iOS/Android type-check) + reviewer | ~2–3 min | ~$0.05 |
+| `1` | + full `xcodebuild build` + `./gradlew assembleDebug` + home-screen capture + Stage 1 vision judge | ~2.5 min (barbershop-queue · 2026-05-24) | — |
+| `2` | + Rails server boot + scripted-CRUD walk via `mobile-mcp` + Stage 2 vision judge | ~7–8 min (sentova / sushi / task-tracker · 2026-05-23) | — |
+
+Cold builds, first-run cocoapods/gradle dependency resolution, or unbooted simulators add a one-time minute or two. The self-repair loop (opt-in, hard-capped at 5 iterations) can extend a failing run substantially — budget for it if you set `NATIVEAPPTEMPLATE_REPAIR=on`.
+
+**Cost** scales with model usage, not wall-clock. The agent makes real `claude-opus-4-7` API calls (planner, workers, reviewer, judge) and a single VISUAL=2 run consumes tens of thousands of tokens across multiple sub-agents. Set a workspace spend cap (see [Security](#security)) as a backstop — the agent exits non-zero on validation failure, but doesn't gate on spend itself.
+
 ## Architecture
 
 ```mermaid
