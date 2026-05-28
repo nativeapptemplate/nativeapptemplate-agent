@@ -13,8 +13,6 @@ Coherent across all three, in under an hour.
 [![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![node: >=22](https://img.shields.io/node/v/nativeapptemplate-agent.svg)](https://nodejs.org/)
 
-<a href="https://www.producthunt.com/products/nativeapptemplate-agent?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-nativeapptemplate-agent" target="_blank" rel="noopener noreferrer"><img alt="NativeAppTemplate Agent - One sentence → Rails + SwiftUI + Compose Android. Free, MIT. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1156878&amp;theme=light&amp;t=1779864920335"></a>
-
 ```bash
 npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices" --project-name="VetClinic"
 ```
