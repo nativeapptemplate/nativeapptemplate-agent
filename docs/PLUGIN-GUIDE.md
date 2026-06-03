@@ -100,9 +100,11 @@ server (`nativeapptemplate-agent`) and `mobile-mcp` for device automation.
   export NATIVEAPPTEMPLATE_ANDROID="/path/to/NativeAppTemplate-Free-Android"
   ```
   The defaults target the paid edition; the env vars above point at the public
-  free (MIT) edition repos for an OSS-reproducible run. Either works — the same
-  pipeline handles both. A starter [`.env.example`](../.env.example) lists every
-  variable in one place.
+  free (MIT) edition repos — [`nativeapptemplateapi`](https://github.com/nativeapptemplate/nativeapptemplateapi),
+  [`NativeAppTemplate-Free-iOS`](https://github.com/nativeapptemplate/NativeAppTemplate-Free-iOS),
+  [`NativeAppTemplate-Free-Android`](https://github.com/nativeapptemplate/NativeAppTemplate-Free-Android) —
+  for an OSS-reproducible run. Either works — the same pipeline handles both. A
+  starter [`.env.example`](../.env.example) lists every variable in one place.
 
 > **Tip — where to set these.** Claude Code inherits the environment of the shell
 > it was launched from, so export the vars (or load a `.env`/`direnv`) **before**
