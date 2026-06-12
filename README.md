@@ -78,7 +78,7 @@ It will:
 2. **Copy the free-edition substrate** (three MIT-licensed repos covering Rails + iOS + Android) into `./out/<spec-slug>/{rails,ios,android}/`.
 3. **Rename the skeleton** — `Shop → Clinic`, `Shopkeeper → Vet`, etc. — consistently across Ruby migrations, Swift models, Kotlin data classes, policies, tests, and localized copy.
 4. **Adapt or replace the domain module** — keep `ItemTag` for walk-in queue variants; strip and insert a new resource for non-queue SaaS.
-5. **Drive the build green** — `bin/rails test`, `xcodebuild test`, `./gradlew test` must all pass before the agent exits.
+5. **Drive the build green** — Rails boots (`bin/rails db:prepare` + a `bin/rails runner` smoke check), iOS builds (`xcodebuild build`), and Android builds (`./gradlew assembleDebug`) must all pass before the agent exits.
 6. **Validate the output** across three layers (structural, runtime, semantic) and write a self-contained HTML + JSON [validation report](#validation-report). Details in [`docs/SPEC.md`](./docs/SPEC.md) section 6.
 
 ## Demo
