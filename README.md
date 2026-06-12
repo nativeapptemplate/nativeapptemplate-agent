@@ -284,7 +284,7 @@ Report flags:
 
 **Don't** paste a real key into shell history (`HISTFILE` captures it), commit a `.env`, or echo the key into a non-private channel.
 
-The agent strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` from the environment of every subprocess it spawns — Ruby scripts, `git`, `psql`, `xcodebuild`, `gradlew`, the future mobile-mcp client. Keys are only seen by the Anthropic SDK in the Node process. Set spend limits on your API workspace as a backstop, and rotate the key if you suspect leak.
+The agent strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` from the environment of every subprocess it spawns — Ruby scripts, `git`, `psql`, `xcodebuild`, `gradlew`, the mobile-mcp client. Keys are only seen by the Anthropic SDK in the Node process. Set spend limits on your API workspace as a backstop, and rotate the key if you suspect leak.
 
 ## Project docs
 
@@ -294,7 +294,7 @@ The agent strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `NATIVEAPPTEMP
 
 ## Contributing
 
-Issues and PRs welcome. The repository is stable now (v0.1.x) — no more hackathon-pace rewrites. A `CONTRIBUTING.md` with detailed guidelines will land alongside v0.2.
+Issues and PRs welcome. The repository is stable now (v0.2.x) — no more hackathon-pace rewrites. A `CONTRIBUTING.md` with detailed guidelines is still to come.
 
 For now, the simplest path is: open an issue describing what you're trying to do, and we'll figure out the right shape together before code lands. Bug reports with reproducible commands (and the `/tmp/<dir>/tmp/trace/` log) are especially welcome.
 
