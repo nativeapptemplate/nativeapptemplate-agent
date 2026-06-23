@@ -64,6 +64,8 @@ Classic mobile boilerplates sell "save 12–16 weeks of setup." AI coding tools 
 
 This agent is an answer to that: turn a boilerplate into a generator that produces coherent three-platform implementations on demand, with structural and semantic validation built in.
 
+> 📝 **Background:** [*One sentence becomes a native iOS app, a native Android app, and a Rails API*](https://medium.com/@dadachix/one-sentence-becomes-a-native-ios-app-a-native-android-app-and-a-rails-api-0000aaf9010c) — the long-form version of this argument: why cross-platform coherence, not code volume, is the problem AI didn't make easier.
+
 ## What it does
 
 Point the agent at a natural-language spec:
