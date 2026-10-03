@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Project-wide Claude Code instructions. Keep this file short — it's loaded into context every session. For deep context, read the linked docs on demand.
+Project-wide instructions for AI coding agents (Claude Code, Codex, etc.). Keep this file short — it's loaded into context every session. For deep context, read the linked docs on demand.
 
 ## What this project is
 
