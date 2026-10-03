@@ -31,7 +31,7 @@ export type RepairLoopResult = {
 
 type TargetRef = { platform: Platform; layer: RepairLayer };
 
-// The CLAUDE.md hard cap: never iterate more than this regardless of the
+// The AGENTS.md hard cap: never iterate more than this regardless of the
 // requested maxIterations.
 export const REPAIR_ITERATION_CAP = 5;
 

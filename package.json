@@ -13,6 +13,7 @@
     "scripts/ruby/",
     "README.md",
     "LICENSE",
+    "AGENTS.md",
     "CLAUDE.md"
   ],
   "engines": {

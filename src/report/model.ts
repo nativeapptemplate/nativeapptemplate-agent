@@ -17,7 +17,7 @@ export type RunReport = {
     renamePlan: readonly { from: string; to: string }[];
     entities: readonly RunReportEntity[];
   };
-  // Populated once the self-repair loop is wired (CLAUDE.md ≤5 cap).
+  // Populated once the self-repair loop is wired (AGENTS.md ≤5 cap).
   // Rendered only when present.
   repairAttempts?: readonly RepairAttempt[];
 };

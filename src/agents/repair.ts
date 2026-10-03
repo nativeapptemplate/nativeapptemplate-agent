@@ -62,7 +62,7 @@ export async function runRepair(target: RepairTarget, domain: DomainSpec): Promi
       allowDangerouslySkipPermissions: true,
       maxTurns: target.layer === "layer2" ? 40 : 20,
       // Hermetic: don't inherit the developer's ~/.claude settings, project
-      // CLAUDE.md, or custom agents — the repair agent runs only with the
+      // CLAUDE.md / AGENTS.md, or custom agents — the repair agent runs only with the
       // system prompt below.
       settingSources: [],
       env: { ...stringEnv(process.env), ANTHROPIC_API_KEY: apiKey },

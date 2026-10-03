@@ -25,7 +25,7 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
 
   const substrate = process.env['NATIVEAPPTEMPLATE_IOS'];
   if (!substrate) {
-    throw new Error("ios worker: NATIVEAPPTEMPLATE_IOS env var is not set; see CLAUDE.md Substrate section");
+    throw new Error("ios worker: NATIVEAPPTEMPLATE_IOS env var is not set; see AGENTS.md Substrate section");
   }
 
   const outDir = resolve(process.cwd(), "out", domain.slug, "ios");
