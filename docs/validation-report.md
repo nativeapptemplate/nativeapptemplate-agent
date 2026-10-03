@@ -86,7 +86,7 @@ Screenshots originate in `tmp/screenshots/{ios-home,android-home}.png` (Stage 1)
 8. **Domain spec appendix.** Rename plan table (`from → to`), entities and fields, so the reader sees *what was generated and why the tokens changed*.
 9. **Footer / reproduce.** The exact command to reproduce (`npx nativeapptemplate-agent "<spec>"` + the `NATIVEAPPTEMPLATE_VISUAL` value), and a pointer to `tmp/trace/*.log` for raw logs.
 
-**Forward-looking (optional, render only if present):** a **self-repair** section showing the ≤5 iteration history (CLAUDE.md cap) — which layer failed, what was attempted, the delta. The model carries `repairAttempts?` so the renderer is ready when the loop is wired.
+**Forward-looking (optional, render only if present):** a **self-repair** section showing the ≤5 iteration history (AGENTS.md cap) — which layer failed, what was attempted, the delta. The model carries `repairAttempts?` so the renderer is ready when the loop is wired.
 
 ---
 

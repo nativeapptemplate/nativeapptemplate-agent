@@ -1819,7 +1819,7 @@ test("runRepairLoop gives up after the cap when repair never resolves", async ()
   assert.equal(result.overallPass, false);
 });
 
-test("runRepairLoop clamps maxIterations to the CLAUDE.md cap of 5", async () => {
+test("runRepairLoop clamps maxIterations to the AGENTS.md cap of 5", async () => {
   const deps: RepairLoopDeps = {
     repair: async () => ({ action: "x" }),
     revalidate: async (platform) => platDetail(platform, false, true),

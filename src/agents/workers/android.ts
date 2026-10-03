@@ -33,7 +33,7 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
 
   const substrate = process.env['NATIVEAPPTEMPLATE_ANDROID'];
   if (!substrate) {
-    throw new Error("android worker: NATIVEAPPTEMPLATE_ANDROID env var is not set; see CLAUDE.md Substrate section");
+    throw new Error("android worker: NATIVEAPPTEMPLATE_ANDROID env var is not set; see AGENTS.md Substrate section");
   }
 
   const outDir = resolve(process.cwd(), "out", domain.slug, "android");

@@ -292,7 +292,7 @@ The agent strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `NATIVEAPPTEMP
 
 - [`docs/SPEC.md`](./docs/SPEC.md) — full technical specification
 - [`ROADMAP.md`](./ROADMAP.md) — where this project is headed, OSS vs hosted, what stays out of scope
-- [`CLAUDE.md`](./CLAUDE.md) — Claude Code project instructions (read if you're running Claude Code against this repo)
+- [`AGENTS.md`](./AGENTS.md) — AI coding agent instructions (read if you're running Claude Code, Codex, etc. against this repo; `CLAUDE.md` imports it)
 
 ## Contributing
 

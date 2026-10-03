@@ -17,7 +17,7 @@ This document was originally a **pre-hackathon specification** (v1.0). It's pres
 
 | Spec area | Status | Notes |
 |---|---|---|
-| §3 Substrate — free MIT edition only | **Expanded** | Agent now operates on **both** free and paid editions without code changes. The rename pipeline targets only the free-shared concepts (Shop / Shopkeeper / ItemTag), so paid-only concepts (`Account`, `Member`, `Invitation`) survive intact when targeting paid. CLAUDE.md policy: test paid first because free is a strict subset. |
+| §3 Substrate — free MIT edition only | **Expanded** | Agent now operates on **both** free and paid editions without code changes. The rename pipeline targets only the free-shared concepts (Shop / Shopkeeper / ItemTag), so paid-only concepts (`Account`, `Member`, `Invitation`) survive intact when targeting paid. AGENTS.md policy: test paid first because free is a strict subset. |
 | §4 Operations 1–3 | **Shipped** | Rename + adapt/replace + drive-build-green all working across the validation matrix. |
 | §5 Vision-guided self-repair, Stage 1 | **Shipped** | `NATIVEAPPTEMPLATE_VISUAL=1` opts in. Layer 2 escalates to build mode (`xcodebuild build` + `./gradlew assembleDebug`); home-screen judged with `DEFAULT_STAGE1_RUBRIC`. |
 | §5 Vision-guided self-repair, Stage 2 | **Shipped** | `NATIVEAPPTEMPLATE_VISUAL=2` opts in. The agent boots Rails under `mise exec -- bin/dev` (after `bundle install` + `db:prepare` + `db:seed_fu`), then drives the parameterized queue scenario (Welcome → Sign Up → email-confirm via `bin/rails runner` → Sign In → drill into auto-seeded sample) on both platforms via `mobile-mcp`. Layer 3 judges the post-walk screenshot against `DEFAULT_STAGE2_RUBRIC` (domain content + no substrate-token leak). |
