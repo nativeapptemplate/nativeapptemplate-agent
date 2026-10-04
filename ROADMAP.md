@@ -9,7 +9,7 @@ This document describes the shape of the project beyond the hackathon week. It i
 The project started as a submission to Cerebral Valley's *Built with Opus 4.7: a Claude Code Hackathon* (Apr 21–27, 2026). It was not selected — roughly 13,000 applications, ~500 seats — so the April 21–27 block ran as a self-imposed sprint with the same demo-video deliverable. The hackathon was an accelerant, not a prerequisite.
 
 - **v0.1.0** — published to npm on May 5, 2026: working `npx nativeapptemplate-agent "<spec>"` CLI.
-- **v0.2.x** — Opus 4.7 vision judge (Layer 3), full mobile builds in validation, Stage 2 scripted-CRUD walk via `mobile-mcp`, the reviewer's OpenAPI contract diff, paid-edition parity, the stdio MCP server, and the Claude Code plugin. Latest: 0.2.2 (October 4, 2026).
+- **v0.2.x** — Opus 4.7 vision judge (Layer 3), full mobile builds in validation, Stage 2 scripted-CRUD walk via `mobile-mcp`, the reviewer's OpenAPI contract diff, paid-edition parity, the stdio MCP server, and the Claude Code plugin. Latest: 0.2.3 (October 5, 2026).
 - **Public launch** — May 27, 2026.
 
 The pipeline generates three coherent platforms from a one-sentence natural-language spec. The full 3-spec × 2-edition × 2-platform matrix passes end to end at `NATIVEAPPTEMPLATE_VISUAL=2` (verified May 23, 2026).
