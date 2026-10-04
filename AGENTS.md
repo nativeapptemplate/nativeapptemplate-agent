@@ -28,6 +28,19 @@ Project-wide instructions for AI coding agents (Claude Code, Codex, etc.). Keep 
 - Ruby subprocesses: shell out via `execFile("ruby", ["scripts/ruby/<script>.rb", ...])` from a thin wrapper in `src/ruby.ts`. Pass structured data as JSON on stdin/stdout, not positional CLI args. Each script must be self-contained and re-entrant.
 - No comments explaining *what* the code does — name things well instead. Reserve comments for non-obvious *why*.
 
+## Testing policy
+
+Applies to this repo's own code. For generated projects, see Guardrails ("Do not invent tests for the generated code").
+
+- **Bug fixes start with a failing test that reproduces the bug. No exceptions.** The fix commit always includes that reproduction test.
+- **Record where each expected value comes from, in the code.** One of: the relevant spec section, a hand calculation, or a known oracle. Never paste in whatever the implementation happened to output as the expected value.
+
+      # floor(10000 * 31 / 71) = 4366   ← document the basis like this
+
+- **See it red at least once before calling it done.** For every new test — especially guards and config checks — deliberately break the target and confirm the test fails. A test that can't fail verifies nothing.
+- **Passing tests alone don't mean done.** Actually run the thing and exercise it.
+- Implementation and tests go in the same commit. "I'll write the tests later" never happens.
+
 ## Substrate (what the agent operates on)
 
 The agent targets BOTH the paid and free (MIT-licensed) editions — the same code path handles both, validated end-to-end. **Test the paid edition first**: the free edition is a strict subset of paid (paid = free + multi-tenancy + invitations + role permissions + org switching), so anything that works on paid works on free, but not vice-versa. Catching paid-only regressions first avoids "free passes, paid breaks" surprises.
