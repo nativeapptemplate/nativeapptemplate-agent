@@ -59,6 +59,7 @@ export function createMcpServer(): McpServer {
         content: [{ type: "text", text: result.summary }],
         structuredContent: {
           overallPass: result.overallPass,
+          verdict: result.report.verdict,
           summary: result.summary,
           ...(result.visual ? { visual: result.visual } : {}),
           report: result.report,

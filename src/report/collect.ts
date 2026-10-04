@@ -2,7 +2,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import type { DomainSpec, JudgeResult, ReviewerResult } from "../agents/types.js";
 import { renderReport } from "./render.js";
-import type { AssetMap, RepairAttempt, RunReport } from "./model.js";
+import type { AssetMap, RepairAttempt, RunReport, Verdict } from "./model.js";
 
 export type ReportFormat = "html" | "json" | "both";
 
@@ -35,6 +35,7 @@ export function buildRunReport(input: BuildRunReportInput): RunReport {
       durationMs: input.finishedAt - input.startedAt,
     },
     overallPass: input.judge.overallPass,
+    verdict: verdictOf(input.judge),
     summary: input.judge.summary,
     platforms: input.judge.platforms ?? [],
     reviewer: {
@@ -161,4 +162,12 @@ function uniqueBasenames(paths: readonly string[]): string[] {
     used.add(candidate);
     return candidate;
   });
+}
+
+// Stub / detail-less runs carry no platforms and keep the plain pass/fail.
+function verdictOf(judge: JudgeResult): Verdict {
+  if (!judge.overallPass) return "fail";
+  const mobile = (judge.platforms ?? []).filter((p) => p.platform !== "rails");
+  if (mobile.some((p) => p.layer3 === undefined)) return "partial";
+  return "pass";
 }

@@ -248,10 +248,10 @@ Every run writes a report of the validation results to the output directory:
 
 *Example report from a free-edition run of `"a walk-in queue for small veterinary clinics"` — all three layers green. Click to view full size; the real artifact is a live, self-contained HTML file you open in a browser.*
 
-- **`out/<slug>/validation-report.html`** — a self-contained HTML report (screenshots base64-embedded, no external assets, no JavaScript) you can open in a browser, attach to a PR, or drop into a demo. It shows the overall verdict, a platform×layer matrix, Layer 1 leftover-token findings, Layer 2 build commands + `stderr`, Layer 3 home-screen screenshots with the vision judge's per-criterion rationales (plus the Stage 2 filmstrip when `NATIVEAPPTEMPLATE_VISUAL=2`), the reviewer's contract diff, and the domain rename plan.
+- **`out/<slug>/validation-report.html`** — a self-contained HTML report (screenshots base64-embedded, no external assets, no JavaScript) you can open in a browser, attach to a PR, or drop into a demo. It shows the overall verdict — **PASS**, **FAIL**, or **PARTIAL** (nothing failed, but Layer 3 didn't judge the UI, as in a default `NATIVEAPPTEMPLATE_VISUAL=0` run) — a platform×layer matrix, Layer 1 leftover-token findings, Layer 2 build commands + `stderr`, Layer 3 home-screen screenshots with the vision judge's per-criterion rationales (plus the Stage 2 filmstrip when `NATIVEAPPTEMPLATE_VISUAL=2`), the reviewer's contract diff, and the domain rename plan.
 - **`out/<slug>/report.json`** — the same data, machine-readable, for CI gating or programmatic use. The full schema lives in [`docs/validation-report.md`](./docs/validation-report.md).
 
-The CLI **exits non-zero when validation fails**, so a shell `&&` chain or CI step catches it:
+The CLI **exits non-zero when validation fails** (PARTIAL exits 0), so a shell `&&` chain or CI step catches it:
 
 ```bash
 npx nativeapptemplate-agent "a walk-in clinic queue" && echo "validation passed"

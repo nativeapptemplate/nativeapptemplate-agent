@@ -2272,3 +2272,40 @@ test("dropSlugDatabases does not abort the run when a database is still in use",
     psql("DROP DATABASE IF EXISTS zzagent_u_api_development WITH (FORCE)");
   }
 });
+
+// --- PARTIAL verdict: passing run without Layer 3 ---
+
+function verdictReport(judge: JudgeResult) {
+  return buildRunReport({
+    spec: "x", domain: reportDomain, judge, reviewer: { contractParity: judge.overallPass ? "pass" : "fail", diffs: [] },
+    agentVersion: "1.0.0", judgeModel: "claude-opus-4-7", visualLevel: 0, startedAt: 0, finishedAt: 1,
+  });
+}
+const l12pass = (platform: Platform): PlatformDetail => ({
+  platform,
+  layer1: { pass: true, findings: [] },
+  layer2: { pass: true, command: "x", mode: "fast", exitCode: 0, durationMs: 1 },
+});
+
+test("report verdict: Layer 1/2 + reviewer pass without Layer 3 is PARTIAL, not PASS", () => {
+  // AGENTS.md: "A run that green-builds without passing Layer 3 is a failed run" — so a
+  // VISUAL=0 run (no Layer 3) must not read as a full PASS.
+  const report = verdictReport({ overallPass: true, summary: "s", platforms: [l12pass("rails"), l12pass("ios"), l12pass("android")] });
+  assert.equal(report.verdict, "partial");
+  assert.equal(report.overallPass, true, "exit-code semantics unchanged: nothing failed");
+});
+
+test("report verdict: PASS with Layer 3 on the mobile platforms, FAIL on any failure", () => {
+  const withL3 = (p: Platform): PlatformDetail => ({ ...l12pass(p), layer3: { pass: true, scores: [] } });
+  assert.equal(verdictReport({ overallPass: true, summary: "s", platforms: [l12pass("rails"), withL3("ios"), withL3("android")] }).verdict, "pass");
+  assert.equal(verdictReport({ overallPass: false, summary: "s", platforms: [l12pass("rails"), l12pass("ios"), l12pass("android")] }).verdict, "fail");
+});
+
+test("rendered report and CLI line say PARTIAL for a run without Layer 3", async () => {
+  const { overallLine } = await import("../src/index.js");
+  const report = verdictReport({ overallPass: true, summary: "s", platforms: [l12pass("rails"), l12pass("ios"), l12pass("android")] });
+  const html = renderReport(report, {});
+  assert.match(html, /badge partial/);
+  assert.doesNotMatch(html, /✓ Pass/);
+  assert.match(overallLine(report), /^overall: PARTIAL/);
+});

@@ -277,7 +277,8 @@ The skill reads `out/<slug>/report.json` and narrates it. Its shape:
 ```jsonc
 {
   "meta": { "spec", "slug", "displayName", "visualLevel" /* 0|1|2 */, "durationMs", … },
-  "overallPass": true,
+  "overallPass": true,       // nothing failed (drives the exit code)
+  "verdict": "pass"|"partial"|"fail", // "partial" = nothing failed, but Layer 3 didn't judge every mobile UI (e.g. visualLevel 0)
   "summary": "one-line human summary",
   "platforms": [
     { "platform": "rails"|"ios"|"android",
@@ -304,7 +305,7 @@ The validation layers:
 - **Layer 3 — semantic.** Opus 4.7 vision judge scoring the rendered UI against a
   rubric. Present **only** when `visualLevel > 0`.
 
-The skill leads with the headline (`overallPass` + `summary` + total time), then a
+The skill leads with the headline (`verdict` — PASS / PARTIAL / FAIL — + `summary` + total time), then a
 compact per-platform ✅/❌ table, then the domain mapping the planner chose
 (`Shop → Clinic`, `Shopkeeper → Vet`, …) and the entities, and finishes with the
 path to `validation-report.html` (and offers to `open` it on macOS).

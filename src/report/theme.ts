@@ -15,6 +15,7 @@ export const REPORT_CSS = `
   --accent-2: #2bb0ed;
   --pass: #34d399;
   --fail: #f87171;
+  --partial: #fbbf24;
   --na: #52606d;
 }
 * { box-sizing: border-box; }
@@ -44,6 +45,7 @@ header.report-head {
 }
 .badge.pass { background: rgba(52,211,153,0.16); color: var(--pass); border: 1px solid rgba(52,211,153,0.4); }
 .badge.fail { background: rgba(248,113,113,0.16); color: var(--fail); border: 1px solid rgba(248,113,113,0.4); }
+.badge.partial { background: rgba(251,191,36,0.16); color: var(--partial); border: 1px solid rgba(251,191,36,0.4); }
 h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; margin: 14px 0 4px; }
 .spec { color: var(--muted); font-size: 16px; margin: 0 0 12px; }
 .spec b { color: var(--text); font-weight: 600; }

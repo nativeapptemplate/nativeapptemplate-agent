@@ -8,6 +8,7 @@ import { parseRenamePair } from "./rename-overrides.js";
 import { projectNameToSlug, slugToPascal, isValidSlug } from "./slug.js";
 import { readPackageVersion } from "./version.js";
 import type { RenamePair } from "./agents/types.js";
+import type { RunReport } from "./report/model.js";
 
 loadDotenvIfPresent();
 
@@ -70,6 +71,13 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   return { ...(action !== undefined ? { action } : {}), errors, spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, ...(projectName !== undefined ? { projectName } : {}) };
 }
 
+export function overallLine(report: RunReport): string {
+  if (report.verdict === "partial") {
+    return "overall: PARTIAL (nothing failed, but Layer 3 did not judge the UI; set NATIVEAPPTEMPLATE_VISUAL=1 for a full run)";
+  }
+  return `overall: ${report.verdict === "pass" ? "PASS" : "FAIL"}`;
+}
+
 export async function main(spec?: string): Promise<void> {
   const parsed = parseArgs(process.argv.slice(2));
   if (parsed.action === "version") {
@@ -119,7 +127,7 @@ export async function main(spec?: string): Promise<void> {
   console.log('');
   console.log('=== run complete ===');
   console.log(`result: ${result.summary}`);
-  console.log(`overall: ${result.overallPass ? 'PASS' : 'FAIL'}`);
+  console.log(overallLine(result.report));
   if (result.reportPaths.htmlPath) {
     console.log(`report: file://${result.reportPaths.htmlPath}`);
     if (parsed.open && process.platform === 'darwin') {
