@@ -1,6 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { slugToPascal } from "./slug.js";
 import type { DomainSpec } from "./agents/types.js";
 
@@ -174,6 +174,7 @@ export async function syncGradleProperties(bridge: BridgeValues): Promise<SyncRe
     return { path, mode: "dry-run", removedStale, preview: next };
   }
 
+  await mkdir(dirname(path), { recursive: true });
   await writeFile(path, next);
   return { path, mode: hasValues ? "wrote" : "noop", removedStale };
 }

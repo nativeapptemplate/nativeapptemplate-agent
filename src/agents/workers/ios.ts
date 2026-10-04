@@ -1,10 +1,11 @@
-import { cp, lstat, mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { scrubbedEnv } from "../../env.js";
 import { resolve } from "node:path";
 import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
+import { copySubstrate, type CopySkipRules } from "./copy.js";
 import { slugToPascal } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
@@ -15,8 +16,10 @@ type RenameStats = {
   files_renamed: number;
 };
 
-const SKIP_RELATIVE_PATHS = ["/.git", "/.claude", "/DerivedData", "/.build", "/Pods", "/Carthage"];
-const SKIP_DIR_NAMES = new Set(["xcuserdata"]);
+const SKIP_RULES: CopySkipRules = {
+  rootPaths: [".git", ".claude", "DerivedData", ".build", "Pods", "Carthage"],
+  anySegment: ["xcuserdata"],
+};
 
 export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
   if (isStub("ios")) {
@@ -32,7 +35,7 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
 
   trace("ios", `copying substrate from ${substrate} to ${outDir}`);
   await prepareFresh(outDir);
-  await copyFiltered(substrate, outDir);
+  await copySubstrate(substrate, outDir, SKIP_RULES);
 
   const productPairs = buildProductRenamePairs(domain.slug);
   const renamePlan: readonly RenamePair[] = [...productPairs, ...domain.renamePlan].filter((p) => p.from !== p.to);
@@ -78,25 +81,6 @@ async function prepareFresh(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
 }
 
-async function copyFiltered(src: string, dest: string): Promise<void> {
-  await cp(src, dest, {
-    recursive: true,
-    force: true,
-    filter: async (source: string) => {
-      const rel = source.slice(src.length);
-      if (SKIP_RELATIVE_PATHS.some((p) => rel === p || rel.startsWith(`${p}/`))) return false;
-      const segments = rel.split("/").filter(Boolean);
-      if (segments.some((seg) => SKIP_DIR_NAMES.has(seg))) return false;
-      try {
-        const s = await lstat(source);
-        if (s.isSocket() || s.isFIFO() || s.isBlockDevice() || s.isCharacterDevice()) return false;
-      } catch {
-        return false;
-      }
-      return true;
-    },
-  });
-}
 
 async function initGit(dir: string): Promise<void> {
   await new Promise<void>((resolvePromise, rejectPromise) => {

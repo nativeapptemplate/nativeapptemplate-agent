@@ -6,11 +6,18 @@ import { dispatch, type DispatchReportOptions } from "./dispatch.js";
 import { loadDotenvIfPresent } from "./env.js";
 import { parseRenamePair } from "./rename-overrides.js";
 import { projectNameToSlug, slugToPascal, isValidSlug } from "./slug.js";
+import { readPackageVersion } from "./version.js";
 import type { RenamePair } from "./agents/types.js";
 
 loadDotenvIfPresent();
 
+const USAGE =
+  'Usage: nativeapptemplate-agent "your spec here" [--project-name="Vet Clinic"] [--rename From=To]... [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]\n' +
+  '       nativeapptemplate-agent --version | --help';
+
 export type ParsedArgs = {
+  action?: "help" | "version";
+  errors: string[];
   spec: string;
   report: DispatchReportOptions;
   open: boolean;
@@ -26,15 +33,20 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   let open = false;
   let exitZero = false;
   let projectName: string | undefined;
+  let action: ParsedArgs["action"];
+  const errors: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
-    if (arg === "--no-report") report.enabled = false;
+    if (arg === "--version" || arg === "-v") action ??= "version";
+    else if (arg === "--help" || arg === "-h") action ??= "help";
+    else if (arg === "--no-report") report.enabled = false;
     else if (arg === "--report-open") open = true;
     else if (arg === "--exit-zero") exitZero = true;
     else if (arg.startsWith("--report-format=")) {
       const value = arg.slice("--report-format=".length);
       if (value === "html" || value === "json" || value === "both") report.format = value;
+      else console.error(`warning: ignoring invalid --report-format "${value}" (expected html, json, or both)`);
     } else if (arg.startsWith("--report-embed=")) {
       report.embed = arg.slice("--report-embed=".length) !== "false";
     } else if (arg === "--rename" || arg.startsWith("--rename=")) {
@@ -49,20 +61,34 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       // derived in dispatch. Reject only if it yields no valid slug at all.
       if (raw && isValidSlug(projectNameToSlug(raw))) projectName = raw;
       else console.error(`warning: ignoring invalid --project-name "${raw ?? ""}" (e.g. --project-name="Vet Clinic")`);
+    } else if (/^-./.test(arg)) {
+      errors.push(`unknown option "${arg}"`);
     } else {
       specParts.push(arg);
     }
   }
-  return { spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, ...(projectName !== undefined ? { projectName } : {}) };
+  return { ...(action !== undefined ? { action } : {}), errors, spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, ...(projectName !== undefined ? { projectName } : {}) };
 }
 
 export async function main(spec?: string): Promise<void> {
   const parsed = parseArgs(process.argv.slice(2));
+  if (parsed.action === "version") {
+    console.log(readPackageVersion());
+    return;
+  }
+  if (parsed.action === "help") {
+    console.log(USAGE);
+    return;
+  }
+  if (parsed.errors.length > 0) {
+    for (const e of parsed.errors) console.error(`error: ${e}`);
+    console.error(USAGE);
+    process.exitCode = 2;
+    return;
+  }
   const input = (spec ?? parsed.spec).trim();
   if (!input) {
-    console.error(
-      'Usage: nativeapptemplate-agent "your spec here" [--project-name="Vet Clinic"] [--rename From=To]... [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]',
-    );
+    console.error(USAGE);
     process.exitCode = 1;
     return;
   }

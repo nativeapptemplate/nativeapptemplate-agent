@@ -164,6 +164,24 @@ end
 
 all_patterns = plan.flat_map { |p| build_patterns(p.fetch("from"), p.fetch("to")) }
 
+# One combined regex, applied in a single pass, so a replacement is never
+# re-scanned by a later pair: with NativeAppTemplate→PetShop and Shop→Store,
+# sequential gsubs would turn the fresh "PetShop" into "PetStore". At any
+# position the alternation tries patterns in plan order, which preserves the
+# per-pair priority above (plural before singular, snake before flat).
+COMBINED = Regexp.new(all_patterns.each_with_index.map { |(regex, _), i| "(?<p#{i}>#{regex.source})" }.join("|"))
+REPLACEMENTS = all_patterns.map(&:last)
+
+def rename_all(text)
+  count = 0
+  result = text.gsub(COMBINED) do
+    m = Regexp.last_match
+    count += 1
+    REPLACEMENTS[REPLACEMENTS.each_index.find { |i| m["p#{i}"] }]
+  end
+  [result, count]
+end
+
 def skip?(path, root)
   # Compare against the path RELATIVE to the project root, not the absolute
   # path. Otherwise SKIP_DIR_SEGMENTS like "tmp" / "log" / "build" silently
@@ -185,6 +203,7 @@ end
 
 # Pass 1 — rewrite file contents.
 Dir.glob("#{root}/**/*", File::FNM_DOTMATCH).each do |path|
+  next if File.symlink?(path)
   next unless File.file?(path)
   next if skip?(path, root)
   next unless text_file?(path)
@@ -192,17 +211,16 @@ Dir.glob("#{root}/**/*", File::FNM_DOTMATCH).each do |path|
   stats[:files_scanned] += 1
 
   begin
-    content = File.read(path, encoding: "UTF-8")
+    original = File.read(path, encoding: "UTF-8")
   rescue StandardError
     next
   end
-
-  original = content.dup
-  local_subst = 0
-  all_patterns.each do |regex, replacement|
-    content = content.gsub(regex) { local_subst += 1; replacement }
+  unless original.valid_encoding?
+    warn "rename.rb: skipping non-UTF-8 file #{path}"
+    next
   end
 
+  content, local_subst = rename_all(original)
   next if content == original
 
   File.write(path, content)
@@ -217,8 +235,7 @@ Dir.glob("#{root}/**/*", File::FNM_DOTMATCH).sort_by { |p| -p.length }.each do |
   next unless File.exist?(path)
 
   old_name = File.basename(path)
-  new_name = old_name.dup
-  all_patterns.each { |regex, replacement| new_name = new_name.gsub(regex, replacement) }
+  new_name, = rename_all(old_name)
   next if new_name == old_name
 
   new_path = File.join(File.dirname(path), new_name)
