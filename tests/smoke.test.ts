@@ -1914,3 +1914,139 @@ test("buildRunReport omits repairAttempts when none were made", () => {
   assert.equal(report.repairAttempts, undefined);
   assert.ok(!renderReport(report).includes("Self-repair"));
 });
+
+// --- CLI flags that must never start a generation run ---
+
+test("parseArgs treats --version/-v and --help/-h as actions, not spec text", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  for (const flag of ["--version", "-v"]) {
+    const parsed = parseArgs([flag]);
+    assert.equal(parsed.action, "version");
+    assert.equal(parsed.spec, "");
+  }
+  for (const flag of ["--help", "-h"]) {
+    const parsed = parseArgs([flag]);
+    assert.equal(parsed.action, "help");
+    assert.equal(parsed.spec, "");
+  }
+});
+
+test("parseArgs rejects an unknown flag instead of folding it into the spec", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  const parsed = parseArgs(["a", "spec", "--no-reprot"]);
+  assert.equal(parsed.spec, "a spec");
+  assert.deepEqual(parsed.errors, ['unknown option "--no-reprot"']);
+});
+
+test("CLI --version prints the package version and never dispatches", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cli-version-"));
+  const entry = join(process.cwd(), "src", "index.ts");
+  const r = spawnSync(process.execPath, ["--import", import.meta.resolve("tsx"), entry, "--version"], {
+    cwd,
+    env: { ...process.env, NATIVEAPPTEMPLATE_STUB_ALL: "1" },
+    encoding: "utf8",
+  });
+  // Expected value comes from package.json, the published version source of truth.
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as { version: string };
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), pkg.version);
+  assert.equal(spawnSync("test", ["-e", join(cwd, "out")]).status, 1, "a version query must not create out/");
+});
+
+// --- substrate copy (src/agents/workers/copy.ts) ---
+
+test("copySubstrate honors root skip paths even when the substrate path has a trailing slash", async () => {
+  const { copySubstrate } = await import("../src/agents/workers/copy.js");
+  const base = mkdtempSync(join(tmpdir(), "copy-slash-"));
+  const src = join(base, "src");
+  mkdirSync(join(src, ".git"), { recursive: true });
+  writeFileSync(join(src, ".git", "HEAD"), "ref: refs/heads/main\n");
+  writeFileSync(join(src, "keep.txt"), "x");
+  const dest = join(base, "dest");
+  await copySubstrate(`${src}/`, dest, { rootPaths: [".git"] });
+  assert.equal(readFileSync(join(dest, "keep.txt"), "utf8"), "x");
+  assert.equal(spawnSync("test", ["-e", join(dest, ".git")]).status, 1, ".git must not be copied");
+});
+
+test("copySubstrate keeps relative symlinks relative so they never point back into the substrate", async () => {
+  const { copySubstrate } = await import("../src/agents/workers/copy.js");
+  const { symlinkSync, readlinkSync } = await import("node:fs");
+  const base = mkdtempSync(join(tmpdir(), "copy-link-"));
+  const src = join(base, "src");
+  mkdirSync(src, { recursive: true });
+  writeFileSync(join(src, "real.swift"), "Shop");
+  symlinkSync("real.swift", join(src, "link.swift"));
+  const dest = join(base, "dest");
+  await copySubstrate(src, dest, {});
+  assert.equal(readlinkSync(join(dest, "link.swift")), "real.swift");
+});
+
+// --- rename.rb edge cases ---
+
+async function runRenameFixture(files: Record<string, string | Buffer>, renamePlan: { from: string; to: string }[]) {
+  const { runRuby } = await import("../src/ruby.js");
+  const root = mkdtempSync(join(tmpdir(), "rename-"));
+  for (const [rel, content] of Object.entries(files)) {
+    mkdirSync(join(root, rel, ".."), { recursive: true });
+    writeFileSync(join(root, rel), content);
+  }
+  await runRuby("rename.rb", { renamePlan, root });
+  return root;
+}
+
+test("rename.rb renames each source token exactly once (no cascade into a later pair)", { skip: !RUBY_AVAILABLE }, async () => {
+  // Plan from `--project-name "Pet Shop"` + Shop→Store: NativeAppTemplate→PetShop must not
+  // then be rewritten by the Shop→Store pair. Hand-derived: each original token maps once.
+  const root = await runRenameFixture(
+    { "a.swift": "NativeAppTemplate Shop native_app_template shop" },
+    [{ from: "NativeAppTemplate", to: "PetShop" }, { from: "Shop", to: "Store" }],
+  );
+  assert.equal(readFileSync(join(root, "a.swift"), "utf8"), "PetShop Store pet_shop store");
+});
+
+test("rename.rb skips a non-UTF-8 text file instead of aborting the whole rename", { skip: !RUBY_AVAILABLE }, async () => {
+  const latin1 = Buffer.from([0x53, 0x68, 0x6f, 0x70, 0x20, 0xe9]); // "Shop é" in Latin-1
+  const root = await runRenameFixture(
+    { "Latin.strings": latin1, "b.swift": "Shop" },
+    [{ from: "Shop", to: "Clinic" }],
+  );
+  assert.equal(readFileSync(join(root, "b.swift"), "utf8"), "Clinic");
+  assert.deepEqual(readFileSync(join(root, "Latin.strings")), latin1);
+});
+
+test("rename.rb never writes through a symlink to a file outside the tree", { skip: !RUBY_AVAILABLE }, async () => {
+  const { symlinkSync } = await import("node:fs");
+  const outside = mkdtempSync(join(tmpdir(), "rename-outside-"));
+  writeFileSync(join(outside, "real.swift"), "Shop");
+  const root = mkdtempSync(join(tmpdir(), "rename-link-"));
+  symlinkSync(join(outside, "real.swift"), join(root, "linked.swift"));
+  const { runRuby } = await import("../src/ruby.js");
+  await runRuby("rename.rb", { renamePlan: [{ from: "Shop", to: "Clinic" }], root });
+  assert.equal(readFileSync(join(outside, "real.swift"), "utf8"), "Shop");
+});
+
+test("runRuby rejects (instead of crashing the process) when ruby is not on PATH", async () => {
+  const { runRuby } = await import("../src/ruby.js");
+  const realPath = process.env['PATH'];
+  process.env['PATH'] = "/nonexistent";
+  try {
+    await assert.rejects(runRuby("rename.rb", { renamePlan: [], root: tmpdir() }), /ENOENT|ruby/);
+  } finally {
+    process.env['PATH'] = realPath;
+  }
+});
+
+test("env-bridge: syncGradleProperties creates ~/.gradle when it does not exist yet", async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), "env-bridge-nogradle-"));
+  const realHome = process.env['HOME'];
+  process.env['HOME'] = fakeHome;
+  try {
+    const { syncGradleProperties } = await import("../src/env-bridge.js");
+    const r = await syncGradleProperties({ values: { PETSHOP_API_PORT: "3000" } });
+    assert.equal(r.mode, "wrote");
+    assert.match(readFileSync(join(fakeHome, ".gradle", "gradle.properties"), "utf8"), /^PETSHOP_API_PORT=3000$/m);
+  } finally {
+    if (realHome !== undefined) process.env['HOME'] = realHome;
+    else delete process.env['HOME'];
+  }
+});

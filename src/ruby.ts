@@ -25,10 +25,17 @@ export async function runRuby<TInput, TOutput>(
   child.stdout.on("data", (c: Buffer) => stdoutChunks.push(c));
   child.stderr.on("data", (c: Buffer) => stderrChunks.push(c));
 
+  // Without these listeners a missing `ruby` (ENOENT) or an early exit
+  // (EPIPE on stdin) is an unhandled 'error' event that kills the process.
+  const exited = new Promise<number>((resolveExit, rejectExit) => {
+    child.on("error", rejectExit);
+    child.on("close", (code) => resolveExit(code ?? 1));
+  });
+  child.stdin.on("error", () => {});
   child.stdin.write(JSON.stringify(input));
   child.stdin.end();
 
-  const code: number = await new Promise((r) => { child.on("close", r); });
+  const code = await exited;
   if (code !== 0) {
     const stderr = Buffer.concat(stderrChunks).toString("utf8");
     throw new Error(`ruby script ${scriptName} exited ${code}: ${stderr}`);
