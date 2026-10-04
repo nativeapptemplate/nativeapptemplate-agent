@@ -73,7 +73,7 @@ Screenshots originate in `tmp/screenshots/{ios-home,android-home}.png` (Stage 1)
 
 ## 4. Report content (sections, in order)
 
-1. **Header** — overall `PASS`/`FAIL` badge, spec text, `displayName`, slug, timestamp, agent version (from `package.json`), judge model (`claude-opus-4-7`), `NATIVEAPPTEMPLATE_VISUAL` level, total run duration.
+1. **Header** — overall `PASS` / `PARTIAL` / `FAIL` badge (`PARTIAL`: nothing failed, but Layer 3 didn't judge every mobile UI), spec text, `displayName`, slug, timestamp, agent version (from `package.json`), judge model (`claude-opus-4-7`), `NATIVEAPPTEMPLATE_VISUAL` level, total run duration.
 2. **Gate strip** — four chips: Layer 1, Layer 2, Layer 3, Reviewer, each `x/3` (or `x/2` for L3) with pass/fail color. This is the existing `summary` string, made visual.
 3. **Platform × Layer matrix** — the headline. Rows `rails / ios / android`, columns `Layer 1 / Layer 2 / Layer 3`, each cell a pass/fail/skip mark. (Rails has no Layer 3 — render as "n/a".)
 4. **Layer 1 — Structural.** Per platform: pass + count. On failure, a findings table: `token | file:line | text excerpt`. Clean state shows an explicit "no leftover tokens" row.
@@ -107,7 +107,8 @@ export type RunReport = {
     finishedAt: string;         // ISO
     durationMs: number;
   };
-  overallPass: boolean;
+  overallPass: boolean;         // nothing failed (drives the exit code)
+  verdict: "pass" | "partial" | "fail"; // "partial": passed without Layer 3 on every mobile platform
   summary: string;              // existing one-line summary, preserved
 
   platforms: PlatformDetail[];  // rails, ios, android

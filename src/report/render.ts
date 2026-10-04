@@ -38,9 +38,11 @@ ${body}
 
 function head(report: RunReport): string {
   const m = report.meta;
-  const badge = report.overallPass
+  const badge = report.verdict === "pass"
     ? `<span class="badge pass">✓ Pass</span>`
-    : `<span class="badge fail">✗ Fail</span>`;
+    : report.verdict === "partial"
+      ? `<span class="badge partial" title="Nothing failed, but Layer 3 (UI vision judge) did not run — set NATIVEAPPTEMPLATE_VISUAL=1">◐ Partial</span>`
+      : `<span class="badge fail">✗ Fail</span>`;
   const visual = m.visualLevel === 0 ? "off" : `level ${m.visualLevel}`;
   return `<header class="report-head">
 ${badge}

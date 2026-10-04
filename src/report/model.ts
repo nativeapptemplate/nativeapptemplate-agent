@@ -6,7 +6,11 @@ import type { PlatformDetail } from "../agents/types.js";
 // docs/validation-report.md.
 export type RunReport = {
   meta: RunMeta;
+  // overallPass = nothing failed (drives the exit code). verdict adds
+  // "partial": nothing failed, but Layer 3 didn't run on every mobile platform,
+  // so the UI was not judged — per AGENTS.md that is not a full PASS.
   overallPass: boolean;
+  verdict: Verdict;
   summary: string;
   platforms: readonly PlatformDetail[];
   reviewer: {
@@ -21,6 +25,8 @@ export type RunReport = {
   // Rendered only when present.
   repairAttempts?: readonly RepairAttempt[];
 };
+
+export type Verdict = "pass" | "partial" | "fail";
 
 export type RunMeta = {
   spec: string;

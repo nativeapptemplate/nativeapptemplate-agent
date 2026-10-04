@@ -73,7 +73,8 @@ Read `out/<slug>/report.json`. Its shape:
 ```jsonc
 {
   "meta": { "spec", "slug", "displayName", "visualLevel" /* 0|1|2 */, "durationMs", ... },
-  "overallPass": true,
+  "overallPass": true,       // nothing failed (drives the exit code)
+  "verdict": "pass"|"partial"|"fail", // "partial" = nothing failed, but Layer 3 didn't judge every mobile UI (e.g. visualLevel 0)
   "summary": "one-line human summary",
   "platforms": [
     { "platform": "rails"|"ios"|"android",
@@ -98,8 +99,10 @@ means a full build was run), **Layer 3** = semantic vision judge (only when
 
 ## 5. Summarize for the user
 
-Lead with the headline (`overallPass` + `summary` + total time from
-`meta.durationMs`). Then a compact per-platform table — Layer 1 / Layer 2 (/
+Lead with the headline (`verdict` + `summary` + total time from
+`meta.durationMs`). Say PARTIAL plainly when `verdict` is `"partial"`: Layer 1/2
+and the reviewer passed, but the UI was not judged (Layer 3 didn't run) — offer a
+`NATIVEAPPTEMPLATE_VISUAL=1` re-run for a full verdict. Then a compact per-platform table — Layer 1 / Layer 2 (/
 Layer 3 if present) as ✅/❌ for rails, ios, android — plus reviewer contract
 parity. Then the domain mapping the planner chose (`domain.renamePlan`, e.g.
 `Shop → Clinic`, `Shopkeeper → Vet`) and the entities. Finish with the path to
