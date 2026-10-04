@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { access, readdir } from "node:fs/promises";
 import { scrubbedEnv } from "../env.js";
+import { iosSimulatorDestination } from "./ios-destination.js";
 
 export type Layer2Platform = "rails" | "ios" | "android";
 
@@ -24,7 +25,6 @@ export type Layer2Result = {
 const DEFAULT_TIMEOUT_FAST_MS = 300_000;
 const DEFAULT_TIMEOUT_BUILD_MS = 900_000;
 
-const IOS_DESTINATION = "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2";
 
 export async function runLayer2(input: Layer2Input): Promise<Layer2Result> {
   const mode: Layer2Mode = input.mode ?? "fast";
@@ -101,7 +101,7 @@ async function runIosLayer2(outDir: string, mode: Layer2Mode, timeoutMs: number,
     "xcodebuild",
     "-project", xcodeproj,
     "-scheme", scheme,
-    "-destination", IOS_DESTINATION,
+    "-destination", iosSimulatorDestination(),
     "-configuration", "Debug",
     "build",
   ];
@@ -156,12 +156,12 @@ type RunResult = { exitCode: number | null; stderr: string };
 function runIn(cwd: string, argv: readonly string[], timeoutMs: number, useMise: boolean, stream: boolean): Promise<RunResult> {
   const [command, ...rest] = useMise ? ["mise", "exec", "--", ...argv] : argv;
   return new Promise((resolvePromise) => {
-    // Build mode: inherit parent's TTY so Ruby / xcodebuild / gradle
-    // detect a terminal and line-buffer stdout normally. We give up
-    // programmatic stderr capture in exchange — user sees it live.
-    // Fast mode: pipe + drain, silent + fast.
+    // Build mode: stream live to the parent's stderr, which is still the
+    // user's terminal for the CLI. Never inherit stdout/stdin: under the MCP
+    // server those are the JSON-RPC channel. We give up programmatic stderr
+    // capture in exchange. Fast mode: pipe + drain, silent + fast.
     const child = stream
-      ? spawn(command!, rest, { cwd, stdio: "inherit", env: scrubbedEnv() })
+      ? spawn(command!, rest, { cwd, stdio: ["ignore", process.stderr, process.stderr], env: scrubbedEnv() })
       : spawn(command!, rest, { cwd, stdio: ["ignore", "pipe", "pipe"], env: scrubbedEnv() });
 
     const stderrChunks: Buffer[] = [];

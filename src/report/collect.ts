@@ -126,16 +126,17 @@ async function resolveAssets(report: RunReport, dir: string, embed: boolean): Pr
   const map: AssetMap = {};
   const assetsDir = join(dir, "report-assets");
   if (!embed) await mkdir(assetsDir, { recursive: true });
+  const assetNames = uniqueBasenames(paths);
 
   await Promise.all(
-    paths.map(async (p) => {
+    paths.map(async (p, i) => {
       const abs = isAbsolute(p) ? p : resolve(process.cwd(), p);
       try {
         if (embed) {
           const buf = await readFile(abs);
           map[p] = `data:image/png;base64,${buf.toString("base64")}`;
         } else {
-          const name = basename(abs);
+          const name = assetNames[i]!;
           await copyFile(abs, join(assetsDir, name));
           map[p] = `report-assets/${name}`;
         }
@@ -147,4 +148,17 @@ async function resolveAssets(report: RunReport, dir: string, embed: boolean): Pr
   );
 
   return map;
+}
+
+// Screenshots from different platforms can share a basename (same scenario +
+// step label); keep the first as-is and number the rest so none overwrite.
+function uniqueBasenames(paths: readonly string[]): string[] {
+  const used = new Set<string>();
+  return paths.map((p) => {
+    const name = basename(p);
+    let candidate = name;
+    for (let n = 2; used.has(candidate); n++) candidate = `${n}-${name}`;
+    used.add(candidate);
+    return candidate;
+  });
 }

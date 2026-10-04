@@ -1,14 +1,11 @@
 import { spawn } from "node:child_process";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { iosSimulatorDestination } from "./ios-destination.js";
 import { scrubbedEnv } from "../env.js";
 
 export type IosArtifact = { appPath: string; bundleId: string };
 export type AndroidArtifact = { apkPath: string; packageName: string };
-
-// Matches Layer 2 build mode's IOS_DESTINATION so showBuildSettings sees the
-// same SDK/configuration that `xcodebuild build` produced.
-const IOS_DESTINATION = "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2";
 
 // After Layer 2 build mode has built the iOS .app, ask xcodebuild where it
 // landed and read the bundle identifier from the built Info.plist (so any
@@ -71,7 +68,7 @@ async function runShowBuildSettings(
         [
           "-project", xcodeproj,
           "-scheme", scheme,
-          "-destination", IOS_DESTINATION,
+          "-destination", iosSimulatorDestination(),
           "-showBuildSettings",
           "-json",
         ],

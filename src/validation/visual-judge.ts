@@ -137,7 +137,9 @@ export async function runVisualJudge(input: VisualJudgeInput): Promise<VisualJud
     return {
       ok: false,
       launch,
-      error: `screenshot capture failed: ${result.error ?? "unknown"}`,
+      error: result.error?.startsWith("vision judge failed")
+        ? result.error
+        : `screenshot capture failed: ${result.error ?? "unknown"}`,
     };
   }
 
@@ -193,8 +195,8 @@ export function isTransientRenderFail(layer3: Layer3Result): boolean {
 // Settle + capture + judge, retrying the whole thing when the judge fails only
 // on transient render quality. DI'd (settleCapture / judge) so it's unit-tested
 // without a sim or the real vision judge. ok=false only when the *initial*
-// capture fails (nothing to judge); a capture failure on a retry keeps the
-// prior judgement.
+// capture or judge call fails (nothing judged); a failure on a retry keeps
+// the prior judgement.
 export type JudgeRetryDeps = {
   settleCapture: () => Promise<{ ok: boolean; error?: string }>;
   judge: () => Promise<Layer3Result>;
@@ -212,7 +214,19 @@ export async function judgeWithRetry(
   if (!first.ok) {
     return { ok: false, ...(first.error !== undefined ? { error: first.error } : {}) };
   }
-  let layer3 = await deps.judge();
+  // A judge API error (429/529 after SDK retries, malformed verdict) must
+  // become a recorded failure: a rejection here aborts dispatch before the
+  // report is written.
+  const judgeSafely = async (): Promise<Layer3Result | { error: string }> => {
+    try {
+      return await deps.judge();
+    } catch (err) {
+      return { error: `vision judge failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  };
+  const initial = await judgeSafely();
+  if ("error" in initial) return { ok: false, error: initial.error };
+  let layer3 = initial;
   let retries = 0;
   while (!layer3.pass && retries < opts.maxRetries && isTransientRenderFail(layer3)) {
     retries++;
@@ -221,7 +235,9 @@ export async function judgeWithRetry(
     }
     const re = await deps.settleCapture();
     if (!re.ok) break; // capture failed on retry — keep the prior judgement
-    layer3 = await deps.judge();
+    const next = await judgeSafely();
+    if ("error" in next) break; // judge failed on retry — keep the prior judgement
+    layer3 = next;
   }
   return { ok: true, layer3 };
 }
