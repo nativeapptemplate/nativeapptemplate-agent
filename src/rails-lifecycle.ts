@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { connect } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -48,6 +49,15 @@ const DEFAULT_SHUTDOWN_GRACE_MS = 5_000;
 export async function startRails(input: StartRailsInput): Promise<RailsHandle> {
   const { host, port } = await resolveHostPort(input);
   const url = `http://${host}:${port}`;
+
+  // waitForReady accepts any HTTP response on host:port, so a server that is
+  // already listening (e.g. the substrate's own bin/dev) would pass readiness
+  // while our Puma fails to bind, and Stage 2 would sign up against it.
+  if (await isPortInUse(host, port)) {
+    throw new Error(
+      `port ${port} on ${host} is already in use — stop the server listening there (e.g. another bin/dev) before running Stage 2`,
+    );
+  }
 
   // Two prep steps before bin/dev:
   //   1. bundle install — Layer 2 ran it but gems land in a path
@@ -143,6 +153,16 @@ export async function startRails(input: StartRailsInput): Promise<RailsHandle> {
       await Promise.race([exit, timeout]);
     },
   };
+}
+
+function isPortInUse(host: string, port: number): Promise<boolean> {
+  return new Promise((resolvePromise) => {
+    const socket = connect({ host, port });
+    socket.setTimeout(1_000);
+    socket.once("connect", () => { socket.destroy(); resolvePromise(true); });
+    socket.once("timeout", () => { socket.destroy(); resolvePromise(false); });
+    socket.once("error", () => resolvePromise(false));
+  });
 }
 
 export async function waitForReady(

@@ -64,8 +64,14 @@ export async function runReviewer(input: ReviewerInput): Promise<ReviewerResult>
   const summary = formatDiffSummary(diff);
   for (const line of summary) trace("reviewer", line);
 
+  // An extractor that finds nothing (e.g. a renamed networking dir it no
+  // longer recognizes) would otherwise yield an empty diff and a vacuous PASS.
+  const emptyClients = [
+    ...(iosEndpoints.length === 0 ? ["ios:no-endpoints-extracted"] : []),
+    ...(androidEndpoints.length === 0 ? ["android:no-endpoints-extracted"] : []),
+  ];
   const fatalCount =
-    diff.iosOrphan.length + diff.androidOrphan.length + diff.iosOnly.length + diff.androidOnly.length;
+    diff.iosOrphan.length + diff.androidOrphan.length + diff.iosOnly.length + diff.androidOnly.length + emptyClients.length;
 
   const baseDiffs: string[] = [
     `rails:openapi=${railsContract.openapiVersion}`,
@@ -82,6 +88,7 @@ export async function runReviewer(input: ReviewerInput): Promise<ReviewerResult>
     `android-only=${diff.androidOnly.length}`,
   ];
   const findings: string[] = [
+    ...emptyClients,
     ...formatFindings("ios-orphan", diff.iosOrphan),
     ...formatFindings("android-orphan", diff.androidOrphan),
     ...formatFindings("ios-only", diff.iosOnly),
@@ -97,9 +104,17 @@ export async function runReviewer(input: ReviewerInput): Promise<ReviewerResult>
   return { contractParity: "pass", diffs: [...baseDiffs, ...findings] };
 }
 
-function deriveRole(domain: DomainSpec): string {
+export function deriveRole(domain: DomainSpec): string {
   const pair = domain.renamePlan.find((p) => p.from === "Shopkeeper");
-  return (pair?.to ?? "Shopkeeper").toLowerCase();
+  return pascalToSnake(pair?.to ?? "Shopkeeper");
+}
+
+// Mirrors rename.rb's snake_case: the route segment for FrontDesk is front_desk.
+function pascalToSnake(pascal: string): string {
+  return pascal
+    .replace(/([a-z\d])([A-Z])/g, "$1_$2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .toLowerCase();
 }
 
 function formatDiffSummary(diff: ContractDiff): string[] {

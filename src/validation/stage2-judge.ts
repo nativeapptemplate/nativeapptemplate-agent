@@ -76,10 +76,10 @@ export async function runStage2Visual(input: Stage2VisualInput): Promise<Stage2V
 
   const result: Stage2VisualResult = {};
   if (input.iosScenario) {
-    result.ios = await runOnePlatform({
+    result.ios = await runOnePlatformSafely({
       platform: "ios",
       scenario: input.iosScenario,
-      screenshotDir,
+      screenshotDir: join(screenshotDir, "ios"),
       spec: input.spec,
       rubric,
       ...(input.iosAppId !== undefined ? { appId: input.iosAppId } : {}),
@@ -87,10 +87,10 @@ export async function runStage2Visual(input: Stage2VisualInput): Promise<Stage2V
     });
   }
   if (input.androidScenario) {
-    result.android = await runOnePlatform({
+    result.android = await runOnePlatformSafely({
       platform: "android",
       scenario: input.androidScenario,
-      screenshotDir,
+      screenshotDir: join(screenshotDir, "android"),
       spec: input.spec,
       rubric,
       ...(input.androidAppId !== undefined ? { appId: input.androidAppId } : {}),
@@ -109,6 +109,23 @@ type RunOneArgs = {
   appId?: string;
   client?: MobileClient;
 };
+
+// One platform's failure (mobile-mcp connection closed, judge API error)
+// must not discard the other platform's result or skip its walk.
+async function runOnePlatformSafely(args: RunOneArgs): Promise<Stage2PlatformReport> {
+  try {
+    return await runOnePlatform(args);
+  } catch (err) {
+    return {
+      pass: false,
+      scenarioName: args.scenario.name,
+      stepCount: args.scenario.steps.length,
+      stepsPassed: 0,
+      screenshots: [],
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
 
 async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
   const ownsClient = args.client === undefined;

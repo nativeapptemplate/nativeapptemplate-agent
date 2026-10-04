@@ -2050,3 +2050,171 @@ test("env-bridge: syncGradleProperties creates ~/.gradle when it does not exist 
     else delete process.env['HOME'];
   }
 });
+
+// --- MCP stdout safety, Stage 1/2 error isolation, report assets, Rails port, reviewer ---
+
+test("runLayer2 build mode never writes child output to stdout (the MCP JSON-RPC channel)", () => {
+  const outDir = mkdtempSync(join(tmpdir(), "layer2-stdout-"));
+  writeFileSync(join(outDir, "gradlew"), "#!/bin/sh\necho GRADLE-STDOUT-MARKER\n", { mode: 0o755 });
+  const layer2 = join(process.cwd(), "src", "validation", "layer2.ts");
+  const script = `const m = await import(${JSON.stringify(layer2)}); const r = await m.runLayer2({ platform: "android", outDir: ${JSON.stringify(outDir)}, mode: "build" }); process.stderr.write("PASS=" + r.pass);`;
+  const r = spawnSync(process.execPath, ["--import", import.meta.resolve("tsx"), "--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.match(r.stderr, /PASS=true/);
+  assert.doesNotMatch(r.stdout, /GRADLE-STDOUT-MARKER/);
+});
+
+test("judgeWithRetry turns a judge exception into a recorded failure instead of rejecting", async () => {
+  const r = await judgeWithRetry(
+    { settleCapture: async () => ({ ok: true }), judge: async () => { throw new Error("529 overloaded"); } },
+    { maxRetries: 1 },
+  );
+  assert.equal(r.ok, false);
+  assert.match(r.error ?? "", /vision judge failed: 529 overloaded/);
+});
+
+async function fakeMobileClient(platform: "ios" | "android") {
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
+  const fake = new McpServer({ name: `fake-${platform}`, version: "0.0.0" });
+  const device = platform === "ios" ? { name: "iPhone 17", platform: "ios" } : { name: "emulator-5554", platform: "android" };
+  fake.registerTool("mobile_list_available_devices", { description: "fake", inputSchema: {} },
+    async () => ({ content: [{ type: "text", text: JSON.stringify([device]) }] }));
+  fake.registerTool("mobile_list_elements_on_screen", { description: "fake", inputSchema: {} },
+    async () => ({ content: [{ type: "text", text: JSON.stringify([{ label: "Idled", x: 1, y: 1, width: 1, height: 1 }]) }] }));
+  fake.registerTool("mobile_save_screenshot", { description: "fake", inputSchema: { saveTo: z.string() } },
+    async (args) => { writeFileSync(args.saveTo, platform); return { content: [] }; });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+  return { mobile, close: async () => { await mobile.close(); await fake.close(); } };
+}
+
+const shotScenario = { name: "queue-crud-x", steps: [{ kind: "screenshot" as const, label: "home" }] };
+
+test("runStage2Visual keeps iOS and Android screenshots apart when scenario names match", async () => {
+  const { runStage2Visual } = await import("../src/validation/stage2-judge.js");
+  const ios = await fakeMobileClient("ios");
+  const android = await fakeMobileClient("android");
+  try {
+    const result = await runStage2Visual({
+      spec: "x",
+      iosScenario: shotScenario,
+      androidScenario: shotScenario,
+      screenshotDir: mkdtempSync(join(tmpdir(), "stage2-collide-")),
+      iosClient: ios.mobile,
+      androidClient: android.mobile,
+    });
+    const iosShot = result.ios?.representativeScreenshot;
+    const androidShot = result.android?.representativeScreenshot;
+    assert.ok(iosShot && androidShot);
+    assert.notEqual(iosShot, androidShot);
+    assert.equal(readFileSync(iosShot, "utf8"), "ios");
+  } finally {
+    await ios.close();
+    await android.close();
+  }
+});
+
+test("runStage2Visual records one platform's judge error without losing the other platform", async () => {
+  const { runStage2Visual } = await import("../src/validation/stage2-judge.js");
+  const ios = await fakeMobileClient("ios");
+  const android = await fakeMobileClient("android");
+  const saved = { stub: process.env['NATIVEAPPTEMPLATE_STUB_ALL'], base: process.env['ANTHROPIC_BASE_URL'], key: process.env['ANTHROPIC_API_KEY'], natKey: process.env['NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY'] };
+  delete process.env['NATIVEAPPTEMPLATE_STUB_ALL'];
+  delete process.env['NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY'];
+  process.env['ANTHROPIC_BASE_URL'] = "http://127.0.0.1:9"; // nothing listens → the iOS judge call throws
+  process.env['ANTHROPIC_API_KEY'] = "sk-test";
+  try {
+    const result = await runStage2Visual({
+      spec: "x",
+      iosScenario: shotScenario, // screenshot → Layer 3 judge call → throws
+      androidScenario: { name: "queue-crud-x", steps: [{ kind: "assert_text", text: "Idled" }] }, // no screenshot → no judge call
+      screenshotDir: mkdtempSync(join(tmpdir(), "stage2-isolate-")),
+      iosClient: ios.mobile,
+      androidClient: android.mobile,
+    });
+    assert.equal(result.ios?.pass, false);
+    assert.ok(result.ios?.error);
+    assert.equal(result.android?.pass, true);
+    assert.equal(result.android?.stepsPassed, 1);
+  } finally {
+    for (const [k, v] of [["NATIVEAPPTEMPLATE_STUB_ALL", saved.stub], ["ANTHROPIC_BASE_URL", saved.base], ["ANTHROPIC_API_KEY", saved.key], ["NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY", saved.natKey]] as const) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+    await ios.close();
+    await android.close();
+  }
+});
+
+test("writeReport (embed=false) keeps same-named screenshots from different platforms distinct", async () => {
+  const tmp = mkdtempSync(join(tmpdir(), "report-dupe-"));
+  mkdirSync(join(tmp, "ios"));
+  mkdirSync(join(tmp, "android"));
+  writeFileSync(join(tmp, "ios", "home.png"), "ios");
+  writeFileSync(join(tmp, "android", "home.png"), "android");
+  const judge = mixedJudge(join(tmp, "ios", "home.png"));
+  judge.platforms![2]!.layer3 = { pass: true, screenshotPath: join(tmp, "android", "home.png"), scores: [] };
+  const report = buildRunReport({
+    spec: "x", domain: reportDomain, judge, reviewer: { contractParity: "pass", diffs: [] },
+    agentVersion: "1.0.0", judgeModel: "claude-opus-4-7", visualLevel: 1, startedAt: 0, finishedAt: 1,
+  });
+  const dir = join(tmp, "out");
+  await writeReport(report, { dir, embed: false, format: "html" });
+  const { readdirSync } = await import("node:fs");
+  const contents = readdirSync(join(dir, "report-assets")).map((f) => readFileSync(join(dir, "report-assets", f), "utf8")).sort();
+  assert.deepEqual(contents, ["android", "ios"]);
+});
+
+test("startRails fails fast with a clear error when the port is already taken", async () => {
+  const { createServer } = await import("node:net");
+  const { startRails } = await import("../src/rails-lifecycle.js");
+  const server = createServer();
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+  try {
+    await assert.rejects(
+      startRails({ outDir: mkdtempSync(join(tmpdir(), "rails-port-")), host: "127.0.0.1", port, readyTimeoutMs: 1_000 }),
+      /already in use/,
+    );
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test("reviewer role uses the snake_case route segment for a multi-word role", async () => {
+  const { deriveRole } = await import("../src/agents/reviewer.js");
+  // Rails routes and the renamed mobile paths both carry the snake form (rename.rb's snake pattern).
+  assert.equal(deriveRole({ ...reportDomain, renamePlan: [{ from: "Shopkeeper", to: "FrontDesk" }] }), "front_desk");
+});
+
+test("reviewer fails when a mobile client yields zero endpoints (nothing was actually compared)", async () => {
+  const saved = process.env['NATIVEAPPTEMPLATE_STUB_ALL'];
+  delete process.env['NATIVEAPPTEMPLATE_STUB_ALL'];
+  try {
+    const base = mkdtempSync(join(tmpdir(), "reviewer-empty-"));
+    mkdirSync(join(base, "rails", "docs"), { recursive: true });
+    writeFileSync(join(base, "rails", "docs", "openapi.yaml"), "openapi: 3.0.0\ninfo:\n  title: t\n  version: '1'\npaths:\n  /api/v1/vet/clinics:\n    get:\n      responses:\n        '200':\n          description: ok\n");
+    mkdirSync(join(base, "ios"));
+    mkdirSync(join(base, "android"));
+    const worker = (platform: "rails" | "ios" | "android") => ({ platform, outDir: join(base, platform), renamedFrom: [] }) as unknown as import("../src/agents/types.js").WorkerResult;
+    const result = await runReviewer({ domain: reportDomain, rails: worker("rails"), ios: worker("ios"), android: worker("android") });
+    assert.equal(result.contractParity, "fail");
+  } finally {
+    if (saved === undefined) delete process.env['NATIVEAPPTEMPLATE_STUB_ALL']; else process.env['NATIVEAPPTEMPLATE_STUB_ALL'] = saved;
+  }
+});
+
+test("iOS simulator destination honors NATIVEAPPTEMPLATE_IOS_DESTINATION", async () => {
+  const { iosSimulatorDestination } = await import("../src/validation/ios-destination.js");
+  const saved = process.env['NATIVEAPPTEMPLATE_IOS_DESTINATION'];
+  process.env['NATIVEAPPTEMPLATE_IOS_DESTINATION'] = "platform=iOS Simulator,name=iPhone 16";
+  try {
+    assert.equal(iosSimulatorDestination(), "platform=iOS Simulator,name=iPhone 16");
+  } finally {
+    if (saved === undefined) delete process.env['NATIVEAPPTEMPLATE_IOS_DESTINATION']; else process.env['NATIVEAPPTEMPLATE_IOS_DESTINATION'] = saved;
+  }
+});
