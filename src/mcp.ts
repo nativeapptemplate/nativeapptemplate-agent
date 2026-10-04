@@ -13,7 +13,9 @@ import { readPackageVersion } from "./version.js";
 // (Claude Code, Cursor, Cline, Continue, Goose, ...) can invoke the
 // agent as a tool. Same backend as the CLI; different wire format.
 //
-// Run via: `npx -y nativeapptemplate-agent-mcp` from an MCP client config.
+// Run via: `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` from
+// an MCP client config (the -mcp bin lives in the nativeapptemplate-agent
+// package; `npx -y nativeapptemplate-agent-mcp` 404s).
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({

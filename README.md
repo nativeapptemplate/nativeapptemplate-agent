@@ -223,7 +223,10 @@ The same generator also ships as an MCP server — `npx -y -p nativeapptemplate-
 - `NATIVEAPPTEMPLATE_BRIDGE=off` — skip writing to `~/.gradle/gradle.properties`. The agent normally mirrors `NATIVEAPPTEMPLATE_API_*` (HOST/PORT/SCHEME) into renamed-product variants (`<PRODUCT>_API_*`) at run time so the generated Android app picks them up via `gradle.properties` and the iOS sim launch picks them up via `SIMCTL_CHILD_*`. Set this to disable the file write (process.env injection still runs for child-spawn paths).
 - `NATIVEAPPTEMPLATE_BRIDGE_DRY_RUN=1` — log what would be written to `~/.gradle/gradle.properties` instead of writing. Useful before granting the bridge write access to your user-global gradle.
 - `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` — dedicated workspace key, see [Security](#security).
-- `ANDROID_SERIAL` — when more than one Android device/emulator is attached (e.g. a physical device plus a running emulator), `adb` standard practice is to set `ANDROID_SERIAL=<serial>` to disambiguate. The agent honors this transparently because it runs `adb` directly. Run `adb devices` to list serials. Visual-judge runs with multiple Android targets attached will error with `more than one device/emulator` if this isn't set.
+- `NATIVEAPPTEMPLATE_ADB_SERIAL` — the `adb -s` target when more than one Android device/emulator is attached. Without it the agent prefers an `emulator-*` serial, then the first device. Run `adb devices` to list serials.
+- `NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE` / `NATIVEAPPTEMPLATE_MOBILE_ANDROID_DEVICE` — pin the device `mobile-mcp` drives in Stage 2 (device id or exact name) when several are booted.
+- `NATIVEAPPTEMPLATE_IOS_DESTINATION` — the `xcodebuild -destination` for build mode (default `platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2`). Set it if you don't have that simulator, e.g. `platform=iOS Simulator,name=iPhone 16`.
+- `NATIVEAPPTEMPLATE_API_SCHEME` — `http` or `https` for the generated apps' API URL (read by the env bridge alongside the substrate Rails `.env` HOST/PORT).
 
 The agent resolves `adb` to a known-good binary in this priority order: `$ANDROID_HOME/platform-tools/adb`, `$ANDROID_SDK_ROOT/platform-tools/adb`, `~/Library/Android/sdk/platform-tools/adb` (Android Studio default), `/Applications/android-sdk-macosx/platform-tools/adb`, `/opt/homebrew/bin/adb`, `/usr/local/bin/adb`, then PATH. This avoids surprises like a stale `~/.apportable/SDK/bin/adb` (i386, won't exec on Apple Silicon) shadowing a working `adb` on PATH.
 
@@ -232,7 +235,7 @@ The agent resolves `adb` to a known-good binary in this priority order: `$ANDROI
 The agent doesn't just generate code and exit — it validates the output.
 
 1. **Structural.** `ripgrep` for leftover domain tokens; OpenAPI contract parity check between Rails, iOS networking, and Android repository layers. A silent rename inconsistency fails the run before any tests execute.
-2. **Runtime.** Verify the generated Rails app boots (`bin/rails runner 'puts OK'`); type-check or build the iOS and Android apps. With `NATIVEAPPTEMPLATE_VISUAL=1`, escalate to a full build (`xcodebuild build` + `./gradlew assembleDebug`) and install on the booted sim/emulator. With `=2`, additionally boot the live Rails server and drive a scripted CRUD walk-through via [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp). Any 4xx/5xx or unhandled client error fails the run.
+2. **Runtime.** Verify the generated Rails app boots (`bin/rails runner 'puts OK'`); type-check or build the iOS and Android apps. With `NATIVEAPPTEMPLATE_VISUAL=1`, escalate to a full build (`xcodebuild build` + `./gradlew assembleDebug`) and install on the booted sim/emulator. With `=2`, additionally boot the live Rails server and drive a scripted CRUD walk-through via [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp). A walk step that doesn't reach its expected screen fails the run.
 3. **Semantic.** Opus 4.7 as judge — scores whether the generated code and rendered UI actually express the intended domain. Vision judges read simulator/emulator screenshots directly.
 
 See [`docs/SPEC.md`](./docs/SPEC.md) for the full design.

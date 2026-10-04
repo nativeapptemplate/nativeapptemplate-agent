@@ -25,7 +25,7 @@ Project-wide instructions for AI coding agents (Claude Code, Codex, etc.). Keep 
 
 - TypeScript `strict: true`; no implicit `any`.
 - Prefer functions over classes — introduce a class only when state + lifecycle justify it (e.g. a long-lived MCP client wrapper). Stateless transforms are functions.
-- Ruby subprocesses: shell out via `execFile("ruby", ["scripts/ruby/<script>.rb", ...])` from a thin wrapper in `src/ruby.ts`. Pass structured data as JSON on stdin/stdout, not positional CLI args. Each script must be self-contained and re-entrant.
+- Ruby subprocesses: shell out via `spawn("ruby", ["scripts/ruby/<script>.rb"])` from the thin wrapper in `src/ruby.ts` (`runRuby`). Pass structured data as JSON on stdin/stdout, not positional CLI args. Each script must be self-contained and re-entrant.
 - No comments explaining *what* the code does — name things well instead. Reserve comments for non-obvious *why*.
 
 ## Testing policy
@@ -45,7 +45,7 @@ Applies to this repo's own code. For generated projects, see Guardrails ("Do not
 
 The agent targets BOTH the paid and free (MIT-licensed) editions — the same code path handles both, validated end-to-end. **Test the paid edition first**: the free edition is a strict subset of paid (paid = free + multi-tenancy + invitations + role permissions + org switching), so anything that works on paid works on free, but not vice-versa. Catching paid-only regressions first avoids "free passes, paid breaks" surprises.
 
-Env vars point at the paid edition by default. Pick which substrate to use by pointing them at the corresponding repos:
+The three env vars are required (the workers throw if one is unset; there is no built-in default). Point them at the paid repos first, then at the free repos:
 
 - `$NATIVEAPPTEMPLATE_API` — Rails 8.1 API repo (`nativeapptemplateapi`, single repo serves both editions; multi-tenancy + invitations are conditional features)
 - `$NATIVEAPPTEMPLATE_IOS` — SwiftUI iOS repo. Paid: `NativeAppTemplate` (Swift 23,003 LOC, adds org switching, invitations, role permissions). Free: `NativeAppTemplate-Free-iOS` (Swift 15,311 LOC).
@@ -61,16 +61,12 @@ The renamer's substitution rules (Shop / Shopkeeper / ItemTag / NativeAppTemplat
 - `Shopkeeper` → the authenticated user/owner of a Shop
 - `ItemTag` (aka Number Tag) → a queue entry, attached to a Shop
 - **ItemTag has TWO states: `Idled` ↔ `Completed`.** It's a toggle, not a three-state machine. If a user's spec wants three states (e.g. "in-service"), extend the machine rather than assume it.
-- Free edition is single-organization (personal account is transparent). Paid edition adds multi-tenancy, invitations, roles, org switching — all out of scope for the rename pipeline (paid-only concepts aren't in the rename plan), but the agent still operates against paid substrates by default since paid is a superset of free.
-
-## Repository state
-
-Pre-implementation as of this writing: `src/` and `scripts/ruby/` are empty, and there is no `package.json`. The npm commands below are the target interface — don't try to run them until the scaffolding lands. Check `src/` before assuming.
+- Free edition is single-organization (personal account is transparent). Paid edition adds multi-tenancy, invitations, roles, org switching — all out of scope for the rename pipeline (paid-only concepts aren't in the rename plan), but test against the paid substrates first since paid is a superset of free.
 
 ## Commands
 
 ```bash
-# Build & test the agent (run from this repo root — once package.json exists)
+# Build & test the agent (run from this repo root)
 npm run build
 npm run test
 npm run dev -- "your spec here"
@@ -152,4 +148,4 @@ Plugin `.mcp.json` pins are load-bearing: `nativeapptemplate-agent@latest` (MCP 
 - **Don't extend scope beyond the queue / simple-CRUD-SaaS family** during the hackathon week. See `docs/SPEC.md` section 9 for the full non-goals list.
 - **Test the paid edition first.** Free is a strict subset of paid, so running paid first catches regressions that wouldn't surface against free alone. The OSS reproducibility story (judges/contributors with no paid license) lives in the free edition — once paid is green, point env vars at the free repos and re-run for the public demo.
 - **Don't skip the validation layers to save time.** They are the demo story. A run that green-builds without passing Layer 3 is a failed run.
-- **Don't edit, commit, push, or run `git clean` / `rm` inside `$NATIVEAPPTEMPLATE_API`, `$NATIVEAPPTEMPLATE_IOS`, or `$NATIVEAPPTEMPLATE_ANDROID`.** Those are the developer's working copies of the substrate (paid by default; possibly free), shared with other projects on the same machine. Copy them into `./out/<slug>/` first; change nothing in place. If unsure whether a command is safe, ask.
+- **Don't edit, commit, push, or run `git clean` / `rm` inside `$NATIVEAPPTEMPLATE_API`, `$NATIVEAPPTEMPLATE_IOS`, or `$NATIVEAPPTEMPLATE_ANDROID`.** Those are the developer's working copies of the substrate (paid or free), shared with other projects on the same machine. Copy them into `./out/<slug>/` first; change nothing in place. If unsure whether a command is safe, ask.

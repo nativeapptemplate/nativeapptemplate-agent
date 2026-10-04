@@ -4,14 +4,15 @@ This document describes the shape of the project beyond the hackathon week. It i
 
 ---
 
-## Status (April 2026)
+## Status (October 2026)
 
-The project was submitted to Cerebral Valley's *Built with Opus 4.7: a Claude Code Hackathon* (Apr 21–27, 2026). It was not selected — roughly 13,000 applications, ~500 seats. The April 21–27 calendar block remains in place as a self-imposed sprint with the same 6-day rhythm and the same demo-video deliverable. The hackathon was an accelerant, not a prerequisite.
+The project started as a submission to Cerebral Valley's *Built with Opus 4.7: a Claude Code Hackathon* (Apr 21–27, 2026). It was not selected — roughly 13,000 applications, ~500 seats — so the April 21–27 block ran as a self-imposed sprint with the same demo-video deliverable. The hackathon was an accelerant, not a prerequisite.
 
-- **v0.1 target:** April 27, 2026. Public tag, working `npx nativeapptemplate-agent "<spec>"` CLI, demo video published.
-- **Public launch:** May 2026. Wider announcement (HN / Twitter / Reddit). Phase A's hosted-chat layer on nativeapptemplate.com begins taking paying users shortly after.
+- **v0.1.0** — published to npm on May 5, 2026: working `npx nativeapptemplate-agent "<spec>"` CLI.
+- **v0.2.x** — Opus 4.7 vision judge (Layer 3), full mobile builds in validation, Stage 2 scripted-CRUD walk via `mobile-mcp`, the reviewer's OpenAPI contract diff, paid-edition parity, the stdio MCP server, and the Claude Code plugin. Latest: 0.2.2 (October 4, 2026).
+- **Public launch** — May 27, 2026.
 
-The pipeline generates three coherent platforms from a one-sentence natural-language spec, with real structural and runtime validation. Demo-grade as of April 22, ahead of the self-imposed storyboard; the remaining work before v0.1 is the Opus 4.7 vision judge (Layer 3), full mobile builds in validation, and the reviewer sub-agent's OpenAPI contract diff.
+The pipeline generates three coherent platforms from a one-sentence natural-language spec. The full 3-spec × 2-edition × 2-platform matrix passes end to end at `NATIVEAPPTEMPLATE_VISUAL=2` (verified May 23, 2026).
 
 ## Where this project sits
 

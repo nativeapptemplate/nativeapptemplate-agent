@@ -2218,3 +2218,10 @@ test("iOS simulator destination honors NATIVEAPPTEMPLATE_IOS_DESTINATION", async
     if (saved === undefined) delete process.env['NATIVEAPPTEMPLATE_IOS_DESTINATION']; else process.env['NATIVEAPPTEMPLATE_IOS_DESTINATION'] = saved;
   }
 });
+
+test("plugin manifest version matches the npm package version", () => {
+  // Source of truth: package.json, the version published to npm.
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as { version: string };
+  const plugin = JSON.parse(readFileSync(join(process.cwd(), "plugin", ".claude-plugin", "plugin.json"), "utf8")) as { version: string };
+  assert.equal(plugin.version, pkg.version);
+});
