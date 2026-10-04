@@ -82,22 +82,30 @@ async function prepareFresh(dir: string): Promise<void> {
 }
 
 
-async function dropSlugDatabases(slug: string): Promise<void> {
+export async function dropSlugDatabases(slug: string): Promise<void> {
   const prefix = `${slugToSnake(slug)}_api`;
   const names = await listDatabasesStartingWith(prefix);
   if (names.length === 0) {
     trace("rails", `no stale ${prefix}* databases to drop`);
     return;
   }
+  const dropped: string[] = [];
   for (const name of names) {
-    await execPsql(["-c", `DROP DATABASE IF EXISTS "${name}";`]);
+    // Best-effort: a DB still held open by a previous bin/dev must not abort
+    // the run (the other workers would keep running with no report written).
+    try {
+      await execPsql(["-c", `DROP DATABASE IF EXISTS "${name}";`]);
+      dropped.push(name);
+    } catch (err) {
+      trace("rails", `could not drop ${name} (left in place): ${err instanceof Error ? err.message.trim() : String(err)}`);
+    }
   }
-  trace("rails", `dropped ${names.length} stale slug-scoped database(s): ${names.join(", ")}`);
+  trace("rails", `dropped ${dropped.length} stale slug-scoped database(s): ${dropped.join(", ")}`);
 }
 
 async function listDatabasesStartingWith(prefix: string): Promise<string[]> {
   try {
-    const stdout = await execPsql(["-tAc", `SELECT datname FROM pg_database WHERE datname LIKE '${prefix}%' ORDER BY datname;`]);
+    const stdout = await execPsql(["-tAc", `SELECT datname FROM pg_database WHERE datname LIKE '${prefix.replace(/_/g, "\\_")}%' ORDER BY datname;`]);
     return stdout.split("\n").map((s) => s.trim()).filter(Boolean);
   } catch {
     trace("rails", "psql unavailable or refused connection — skipping stale-DB cleanup");
