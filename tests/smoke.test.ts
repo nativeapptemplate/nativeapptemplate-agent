@@ -2225,3 +2225,50 @@ test("plugin manifest version matches the npm package version", () => {
   const plugin = JSON.parse(readFileSync(join(process.cwd(), "plugin", ".claude-plugin", "plugin.json"), "utf8")) as { version: string };
   assert.equal(plugin.version, pkg.version);
 });
+
+// --- Rails server teardown + stale DB cleanup ---
+
+test("stopServer also stops the server's own children (bin/dev → Puma / Solid Queue)", async () => {
+  const { spawnServer, stopServer } = await import("../src/rails-lifecycle.js");
+  const child = spawnServer("sh", ["-c", "sleep 300 & echo $!; wait"], tmpdir());
+  const grandchildPid = await new Promise<number>((r) => child.stdout!.once("data", (c: Buffer) => r(Number(c.toString().trim()))));
+  await stopServer(child, 1_000);
+  await new Promise((r) => setTimeout(r, 200));
+  const alive = (() => { try { process.kill(grandchildPid, 0); return true; } catch { return false; } })();
+  if (alive) process.kill(grandchildPid, "SIGKILL");
+  assert.equal(alive, false, "grandchild must not outlive stopServer");
+});
+
+const PSQL_AVAILABLE = spawnSync("psql", ["-h", "localhost", "-d", "postgres", "-tAc", "select 1"]).status === 0;
+const psql = (sql: string) => spawnSync("psql", ["-h", "localhost", "-d", "postgres", "-tAc", sql], { encoding: "utf8" });
+const dbExists = (name: string) => psql(`SELECT 1 FROM pg_database WHERE datname='${name}'`).stdout.trim() === "1";
+
+test("dropSlugDatabases drops only <slug>_api* databases (LIKE '_' is not a wildcard)", { skip: !PSQL_AVAILABLE }, async () => {
+  const { dropSlugDatabases } = await import("../src/agents/workers/rails.js");
+  // slug "zzagent-t" → prefix "zzagent_t_api"; "zzagent1t_api_keep" differs only where '_' sits.
+  for (const db of ["zzagent_t_api_development", "zzagent1t_api_keep"]) { psql(`DROP DATABASE IF EXISTS ${db}`); psql(`CREATE DATABASE ${db}`); }
+  try {
+    await dropSlugDatabases("zzagent-t");
+    assert.equal(dbExists("zzagent_t_api_development"), false);
+    assert.equal(dbExists("zzagent1t_api_keep"), true, "unrelated database must survive");
+  } finally {
+    psql("DROP DATABASE IF EXISTS zzagent_t_api_development");
+    psql("DROP DATABASE IF EXISTS zzagent1t_api_keep");
+  }
+});
+
+test("dropSlugDatabases does not abort the run when a database is still in use", { skip: !PSQL_AVAILABLE }, async () => {
+  const { dropSlugDatabases } = await import("../src/agents/workers/rails.js");
+  const { spawn } = await import("node:child_process");
+  psql("DROP DATABASE IF EXISTS zzagent_u_api_development");
+  psql("CREATE DATABASE zzagent_u_api_development");
+  const holder = spawn("psql", ["-h", "localhost", "-d", "zzagent_u_api_development", "-c", "select pg_sleep(30)"]);
+  await new Promise((r) => setTimeout(r, 500));
+  try {
+    await dropSlugDatabases("zzagent-u");
+  } finally {
+    holder.kill("SIGKILL");
+    await new Promise((r) => setTimeout(r, 300));
+    psql("DROP DATABASE IF EXISTS zzagent_u_api_development WITH (FORCE)");
+  }
+});

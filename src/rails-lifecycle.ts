@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { connect } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { readFile } from "node:fs/promises";
@@ -88,12 +88,7 @@ export async function startRails(input: StartRailsInput): Promise<RailsHandle> {
   // uses the same wrapper for `bin/rails runner` — match it here so
   // Stage 2's server uses the same toolchain that Layer 2 validated.
   trace("dispatch", `rails-lifecycle: spawning mise exec -- bin/dev in ${input.outDir} (target ${url})`);
-  const child = spawn("mise", ["exec", "--", "bin/dev"], {
-    cwd: input.outDir,
-    env: scrubbedEnv(),
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: false,
-  });
+  const child = spawnServer("mise", ["exec", "--", "bin/dev"], input.outDir);
 
   // Drain stdio so the child doesn't block on backed-up pipes; route
   // a tail to the dispatch trace so silent failures (port already in
@@ -118,7 +113,7 @@ export async function startRails(input: StartRailsInput): Promise<RailsHandle> {
   const ready = await waitForReady(host, port, readyTimeoutMs, () => exitedEarly);
 
   if (!ready) {
-    child.kill("SIGTERM");
+    await stopServer(child, input.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS);
     const lastOutput = tail.join("").slice(-500);
     throw new Error(
       `Rails server at ${url} did not become ready within ${readyTimeoutMs}ms` +
@@ -136,23 +131,76 @@ export async function startRails(input: StartRailsInput): Promise<RailsHandle> {
     async stop() {
       if (exitedEarly) return;
       trace("dispatch", `rails-lifecycle: stopping ${url}`);
-      child.kill("SIGTERM");
-      const exit = new Promise<void>((resolve) => {
-        if (child.exitCode !== null) {
-          resolve();
-        } else {
-          child.on("exit", () => resolve());
-        }
-      });
-      const timeout = sleep(shutdownGraceMs).then(() => {
-        if (child.exitCode === null) {
-          trace("dispatch", `rails-lifecycle: SIGTERM did not exit in ${shutdownGraceMs}ms; SIGKILL`);
-          child.kill("SIGKILL");
-        }
-      });
-      await Promise.race([exit, timeout]);
+      await stopServer(child, shutdownGraceMs);
     },
   };
+}
+
+export function spawnServer(command: string, args: readonly string[], cwd: string): ChildProcess {
+  return spawn(command, [...args], {
+    cwd,
+    env: scrubbedEnv(),
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: false,
+  });
+}
+
+// bin/dev's foreman/overmind children (Puma, Solid Queue) can outlive a
+// signal to bin/dev and keep the port bound. Let the supervisor shut its
+// children down first (overmind removes its socket only on a clean exit),
+// then terminate whatever in the tree is still alive. The tree stays in our
+// process group (not detached) so a Ctrl-C on the CLI still reaches it.
+export async function stopServer(child: ChildProcess, graceMs: number): Promise<void> {
+  const descendants = child.pid !== undefined ? await descendantPids(child.pid) : [];
+  child.kill("SIGTERM");
+  const exit = new Promise<void>((resolve) => {
+    if (child.exitCode !== null) {
+      resolve();
+    } else {
+      child.on("exit", () => resolve());
+    }
+  });
+  const timeout = sleep(graceMs).then(() => {
+    if (child.exitCode === null) {
+      trace("dispatch", `rails-lifecycle: SIGTERM did not exit in ${graceMs}ms; SIGKILL`);
+      child.kill("SIGKILL");
+    }
+  });
+  await Promise.race([exit, timeout]);
+
+  let survivors = descendants.filter(isAlive);
+  if (survivors.length === 0) return;
+  trace("dispatch", `rails-lifecycle: ${survivors.length} child process(es) outlived the server; terminating`);
+  for (const pid of survivors) {
+    try { process.kill(pid, "SIGTERM"); } catch { /* exited meanwhile */ }
+  }
+  const deadline = Date.now() + graceMs;
+  while (survivors.length > 0 && Date.now() < deadline) {
+    await sleep(100);
+    survivors = survivors.filter(isAlive);
+  }
+  for (const pid of survivors) {
+    try { process.kill(pid, "SIGKILL"); } catch { /* exited meanwhile */ }
+  }
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function descendantPids(pid: number): Promise<number[]> {
+  const children = await new Promise<number[]>((resolvePromise) => {
+    execFile("pgrep", ["-P", String(pid)], (_err, stdout) => {
+      resolvePromise(stdout.split("\n").map((s) => Number(s.trim())).filter((n) => n > 0));
+    });
+  });
+  const nested = await Promise.all(children.map(descendantPids));
+  return [...children, ...nested.flat()];
 }
 
 function isPortInUse(host: string, port: number): Promise<boolean> {
