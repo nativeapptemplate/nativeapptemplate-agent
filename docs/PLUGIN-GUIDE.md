@@ -99,7 +99,7 @@ server (`nativeapptemplate-agent`) and `mobile-mcp` for device automation.
   export NATIVEAPPTEMPLATE_IOS="/path/to/NativeAppTemplate-Free-iOS"
   export NATIVEAPPTEMPLATE_ANDROID="/path/to/NativeAppTemplate-Free-Android"
   ```
-  The defaults target the paid edition; the env vars above point at the public
+  All three variables are required (there is no default). The values above point at the public
   free (MIT) edition repos — [`nativeapptemplateapi`](https://github.com/nativeapptemplate/nativeapptemplateapi),
   [`NativeAppTemplate-Free-iOS`](https://github.com/nativeapptemplate/NativeAppTemplate-Free-iOS),
   [`NativeAppTemplate-Free-Android`](https://github.com/nativeapptemplate/NativeAppTemplate-Free-Android) —
@@ -509,13 +509,16 @@ The barbershop walk-in-queue spec is the canonical demo:
 |---|---|
 | `ANTHROPIC_API_KEY` | Your Anthropic key (needs `claude-opus-4-7`). The only sensitive secret the agent requires. |
 | `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` | Optional dedicated workspace key; preferred over `ANTHROPIC_API_KEY` when set, so a runaway loop hits the workspace cap instead of your tier limit. |
-| `NATIVEAPPTEMPLATE_API` / `_IOS` / `_ANDROID` | Paths to the three substrate repos. Defaults target the paid edition; point at the free repos for an OSS-reproducible run. |
+| `NATIVEAPPTEMPLATE_API` / `_IOS` / `_ANDROID` | Paths to the three substrate repos. Required — there is no default. Point at the free repos for an OSS-reproducible run, or at the paid repos if you have them. |
 | `NATIVEAPPTEMPLATE_VISUAL=1` | Stage-1 visual judging: Layer 2 runs in **build mode** (full `xcodebuild build` + `./gradlew assembleDebug`), installs on the booted sim/emulator, captures the home screen, and judges it with Opus 4.7 vision. Requires a sim/emulator booted per platform. Adds ~60–180s per platform. |
 | `NATIVEAPPTEMPLATE_VISUAL=2` | Implies `=1` and additionally runs **Stage 2**: boots the generated Rails app, drives a scripted CRUD walk-through via `mobile-mcp` (Sign Up → email-confirm → Sign In → drill into seeded sample), then judges the post-walk screenshot. Requires both sims/emulators booted + the substrate's `mise` toolchain. Adds 2–4 min/platform. |
 | `NATIVEAPPTEMPLATE_REPAIR` | Opts into the bounded self-repair loop. `on` (or a positive integer N, hard-capped at 5). On a code-repairable failure (Layer 1 leftover tokens or Layer 2 build errors) the agent runs a repair pass scoped to the failing project and re-validates, up to the cap. Layer 3 + reviewer misses are surfaced, not auto-repaired. Off by default. |
 | `NATIVEAPPTEMPLATE_BRIDGE=off` | Skip writing `<PRODUCT>_API_*` into `~/.gradle/gradle.properties` (process.env injection still runs for child-spawn paths). |
 | `NATIVEAPPTEMPLATE_BRIDGE_DRY_RUN=1` | Log what *would* be written to `~/.gradle/gradle.properties` instead of writing it. |
-| `ANDROID_SERIAL` | When more than one Android device/emulator is attached, set this to the target serial (`adb devices` lists them). Visual runs with multiple Android targets error with `more than one device/emulator` without it. |
+| `NATIVEAPPTEMPLATE_ADB_SERIAL` | The `adb -s` target when more than one Android device/emulator is attached (`adb devices` lists them). Without it the agent prefers an `emulator-*` serial, then the first device. |
+| `NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE` / `_ANDROID_DEVICE` | Pin the device `mobile-mcp` drives in Stage 2 (device id or exact name) when several are booted. |
+| `NATIVEAPPTEMPLATE_IOS_DESTINATION` | `xcodebuild -destination` for build mode. Default `platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2`; set it if you don't have that simulator. |
+| `NATIVEAPPTEMPLATE_API_SCHEME` | `http` or `https` for the generated apps' API URL (HOST/PORT come from the substrate Rails `.env`). |
 
 > The agent strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and
 > `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` from the environment of every

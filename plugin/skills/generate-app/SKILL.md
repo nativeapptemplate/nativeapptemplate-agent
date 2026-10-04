@@ -40,14 +40,14 @@ Tell the user, briefly, before you start:
 - Output lands in `./out/<slug>/{rails,ios,android}/` in the current directory,
   each an independent git-initialized project.
 - Substrate selection comes from the environment (`NATIVEAPPTEMPLATE_API` /
-  `_IOS` / `_ANDROID`); the defaults target the paid edition. Don't change these
-  unless the user asks.
+  `_IOS` / `_ANDROID`). All three are required — there is no default; if one is
+  unset, the run fails immediately. Don't change them unless the user asks.
 
 ## 3. Run the generator
 
 Prefer a local build when present, otherwise the published CLI:
-- If you are inside the agent's own repo and `dist/index.js` exists (or
-  `$NATIVEAPPTEMPLATE_AGENT_HOME` is set), run `node dist/index.js …`.
+- If you are inside the agent's own repo and `dist/index.js` exists, run
+  `node dist/index.js …`.
 - Otherwise run `npx -y nativeapptemplate-agent …`.
 
 Always pass `--report-format=both` (so `report.json` is written for parsing) and
@@ -90,7 +90,8 @@ Read `out/<slug>/report.json`. Its shape:
 }
 ```
 
-Layers: **Layer 1** = structural (leftover domain tokens + OpenAPI parity),
+Layers: **Layer 1** = structural (leftover domain tokens; OpenAPI parity is the
+separate `reviewer` result),
 **Layer 2** = runtime (Rails boots / iOS builds / Android builds; `mode: "build"`
 means a full build was run), **Layer 3** = semantic vision judge (only when
 `visualLevel > 0`).

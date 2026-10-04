@@ -49,12 +49,11 @@ interactive exploration.
 Device readiness:
 - **iOS:** ensure a simulator is booted (`xcrun simctl list devices | grep Booted`;
   boot iPhone 17 Pro + `open -a Simulator` if none). mobile-mcp's iOS-sim driver
-  also needs **WebDriverAgent running on :8100** — start it first (the dev machine
-  has a `wda-up` helper for this). Android needs no WDA; mobile-mcp drives the
+  also needs **WebDriverAgent running on :8100** — start it first (a small
+  helper script that launches WDA is the convenient way). Android needs no WDA; mobile-mcp drives the
   emulator directly over `adb`.
-- **Android:** ensure an emulator is running. Boot it from **Android Studio's
-  Device Manager** — don't start it with the CLI `emulator -avd` on this machine
-  (Android Studio owns adb here). Confirm with `adb devices`.
+- **Android:** ensure an emulator is running (Android Studio's Device Manager is
+  the most reliable way to boot one). Confirm with `adb devices`.
 
 If the app needs live data past the welcome screen, two things must both be true —
 Rails must be **running** and the app must be **pointed at it**:
