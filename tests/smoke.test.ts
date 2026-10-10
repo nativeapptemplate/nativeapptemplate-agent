@@ -224,6 +224,20 @@ test("runLayer1 skips compiled build output so un-renamed bundle tokens aren't f
   assert.equal(result.pass, false);
 });
 
+test("runLayer1 scans .kamal/secrets, which has no extension", async () => {
+  // Kamal's secrets file is extensionless. config/deploy.yml (a .yml) names the
+  // secret keys it reads from there, so a leftover substrate token in
+  // .kamal/secrets means the two files disagree and `kamal setup` fails on
+  // the renamed key. Mirrors rename.rb's TEXT_BASENAMES.
+  const root = mkdtempSync(join(tmpdir(), "layer1-secrets-"));
+  mkdirSync(join(root, ".kamal"), { recursive: true });
+  writeFileSync(join(root, ".kamal", "secrets"), "NATIVEAPPTEMPLATEAPI_ORIGIN_CERT=$(cat $HOME/.config/nativeapptemplateapi/origin-cert.pem)\n");
+
+  const result = await runLayer1({ projectDir: root, forbiddenTokens: ["Nativeapptemplateapi", "NATIVEAPPTEMPLATEAPI", "nativeapptemplateapi"] });
+  assert.equal(result.pass, false);
+  assert.deepEqual(result.findings.map((f) => f.file), [".kamal/secrets", ".kamal/secrets"]);
+});
+
 test("runLayer2 returns a failed result for a non-Rails directory", async () => {
   const result = await runLayer2({ platform: "rails", outDir: "/tmp", timeoutMs: 10_000 });
   assert.equal(result.pass, false);
@@ -1744,6 +1758,33 @@ test(
     const model = readFileSync(join(root, "app/models/item_tag.rb"), "utf8");
     assert.ok(model.includes("resolved: 2"), "source state renamed completed -> resolved");
     assert.ok(model.includes("Sentova") && !model.includes("NativeAppTemplate"), "source brand token renamed");
+  },
+);
+
+test(
+  "rename.rb rewrites .kamal/secrets so its keys keep matching config/deploy.yml",
+  { skip: RUBY_AVAILABLE ? false : "ruby not on PATH" },
+  async () => {
+    const { runRuby } = await import("../src/ruby.js");
+    const root = mkdtempSync(join(tmpdir(), "rename-secrets-"));
+    mkdirSync(join(root, ".kamal"), { recursive: true });
+    mkdirSync(join(root, "config"), { recursive: true });
+    // Same key spelled in both files: deploy.yml references it, secrets defines it.
+    writeFileSync(join(root, ".kamal", "secrets"), "POSTGRES_PASSWORD=$NATIVEAPPTEMPLATEAPI_POSTGRES_PASSWORD\nNATIVEAPPTEMPLATEAPI_ORIGIN_CERT=$(cat $HOME/.config/nativeapptemplateapi/origin-cert.pem)\n");
+    writeFileSync(join(root, "config", "deploy.yml"), "proxy:\n  ssl:\n    certificate_pem: NATIVEAPPTEMPLATEAPI_ORIGIN_CERT\n");
+
+    const stats = await runRuby<{ renamePlan: { from: string; to: string }[]; root: string }, { files_changed: number }>(
+      "rename.rb",
+      { renamePlan: [{ from: "Nativeapptemplateapi", to: "VetClinicApi" }], root },
+    );
+    assert.equal(stats.files_changed, 2);
+
+    // Expected forms follow rename.rb's case rules for Nativeapptemplateapi -> VetClinicApi:
+    // upcase token VETCLINICAPI, snake_case token vet_clinic_api.
+    const secrets = readFileSync(join(root, ".kamal/secrets"), "utf8");
+    const deploy = readFileSync(join(root, "config/deploy.yml"), "utf8");
+    assert.equal(secrets, "POSTGRES_PASSWORD=$VETCLINICAPI_POSTGRES_PASSWORD\nVETCLINICAPI_ORIGIN_CERT=$(cat $HOME/.config/vet_clinic_api/origin-cert.pem)\n");
+    assert.equal(deploy, "proxy:\n  ssl:\n    certificate_pem: VETCLINICAPI_ORIGIN_CERT\n");
   },
 );
 

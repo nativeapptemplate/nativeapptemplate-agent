@@ -31,6 +31,9 @@ const TEXT_EXTS = new Set([
 const TEXT_BASENAMES = new Set([
   "Gemfile", "Gemfile.lock", "Rakefile", "Procfile", "Procfile.dev",
   "config.ru", "Dockerfile",
+  // Kamal's extensionless secrets files (.kamal/secrets, .kamal/secrets-common).
+  // config/deploy.yml names the secret keys defined there, so both must rename.
+  "secrets", "secrets-common",
   "Podfile", "Podfile.lock", "Package.swift", "Cartfile", "Makefile",
   "gradlew", "gradlew.bat", "gradle.properties", "local.properties",
 ]);
