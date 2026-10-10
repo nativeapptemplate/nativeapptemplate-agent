@@ -34,6 +34,7 @@ TEXT_BASENAMES    = %w[
   Gemfile Gemfile.lock Rakefile Procfile Procfile.dev
   .gitignore .env.sample .ruby-version .node-version
   config.ru Dockerfile
+  secrets secrets-common
   Podfile Podfile.lock Package.swift Cartfile Makefile
   gradlew gradlew.bat gradle.properties local.properties
   brakeman.ignore .swiftformat
