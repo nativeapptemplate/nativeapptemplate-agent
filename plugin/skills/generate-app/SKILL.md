@@ -31,6 +31,9 @@ Optional overrides the user may include, passed straight through to the CLI:
 - `--rename Shopkeeper=Vet` (repeatable) — overrides one of the planner's chosen
   renames. Only renames the planner *already planned* are overridable; an
   override that matches nothing is reported and dropped.
+- `--rename-ja Shop=動物病院` (repeatable) — the Japanese noun that replaces 店舗
+  (Shop) or アイテムタグ (ItemTag) in the Rails API's Japanese messages. Use it
+  when the user wants a specific Japanese name; otherwise the planner picks one.
 
 ## 2. Set expectations before running
 

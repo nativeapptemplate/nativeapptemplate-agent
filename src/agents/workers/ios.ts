@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
+import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
 import { copySubstrate, type CopySkipRules } from "./copy.js";
 import { slugToPascal } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
@@ -42,9 +43,9 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
   const plan = renamePlan.map((p) => `${p.from}->${p.to}`).join(", ");
   trace("ios", `running scripts/ruby/rename.rb: ${plan}`);
 
-  const renameStats = await runRuby<{ renamePlan: readonly RenamePair[]; root: string }, RenameStats>(
+  const renameStats = await runRuby<{ renamePlan: readonly RenamePair[]; japaneseRenamePlan: readonly RenamePair[]; root: string }, RenameStats>(
     "rename.rb",
-    { renamePlan, root: outDir },
+    { renamePlan, japaneseRenamePlan: japaneseRenamePairs(renamePlan), root: outDir },
   );
 
   trace(
@@ -59,7 +60,7 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
     platform: "ios",
     outDir: `./out/${domain.slug}/ios`,
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
-    renamedFrom: renamePlan.map((p) => p.from),
+    renamedFrom: renamedTokens(renamePlan),
   };
 }
 
@@ -112,6 +113,6 @@ async function runStubIosWorker(domain: DomainSpec): Promise<WorkerResult> {
     platform: "ios",
     outDir: `./out/${domain.slug}/ios`,
     filesTouched: 63,
-    renamedFrom: domain.renamePlan.map((p) => p.from),
+    renamedFrom: renamedTokens(domain.renamePlan),
   };
 }

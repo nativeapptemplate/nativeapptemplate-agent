@@ -34,6 +34,8 @@ For Shopkeeper, prefer domain-distinctive nouns: Assignee, Maintainer, Host, Vet
 For Shop, prefer: Clinic, Restaurant, Workspace, Project, Board, Journal, Space, Studio — NOT Account.
 For ItemTag replacements, prefer: Todo, Ticket, Entry, Card, Issue, Note, Memo, Patient, Reservation — NOT Task (Swift Concurrency) / Actor (Swift Concurrency) / Scan / Notification.
 
+For the Shop and ItemTag renames, also give toJa: the natural Japanese noun a Japanese app would use for the target, e.g. Clinic → 医院, Restaurant → 店, Patient → 患者, Reservation → 予約. The substrate's Japanese messages use 店舗 (Shop) and アイテムタグ (ItemTag), and toJa replaces them as a plain substring, so it must be a bare noun (no particles, no 様/さん) that reads naturally before 名, は and を, as in 医院名, 医院は3件まで作成できます. Omit toJa for other renames.
+
 Never emit identity rename pairs (from === to). If the target happens to equal the source, pick a different target.
 
 slug must be kebab-case and filesystem-safe. Keep entities tight (2-4 per spec). Keep jsonApiContract minimal — a later reviewer sub-agent expands it.`;
@@ -88,6 +90,7 @@ const DOMAIN_TOOL: Anthropic.Messages.Tool = {
           properties: {
             from: { type: "string", description: "Substrate token, e.g. 'Shop'" },
             to: { type: "string", description: "Replacement token, e.g. 'Clinic'" },
+            toJa: { type: "string", description: "Shop and ItemTag only: the Japanese noun for the target, e.g. '医院'" },
           },
           required: ["from", "to"],
         },
@@ -132,7 +135,7 @@ export async function runPlanner(spec: string): Promise<DomainSpec> {
 
   const domain = toolUse.input as DomainSpec;
   trace("planner", `derived slug: ${domain.slug}`);
-  trace("planner", `rename plan: ${domain.renamePlan.map((r) => `${r.from}->${r.to}`).join(", ")}`);
+  trace("planner", `rename plan: ${domain.renamePlan.map((r) => `${r.from}->${r.to}${r.toJa ? ` (${r.toJa})` : ""}`).join(", ")}`);
   trace("planner", `entities: ${domain.entities.map((e) => e.name).join(", ")}`);
   trace("planner", `usage: ${response.usage.input_tokens} in / ${response.usage.output_tokens} out`);
   trace("planner", "done");
@@ -159,7 +162,7 @@ async function runStubPlanner(spec: string): Promise<DomainSpec> {
     displayName: "Clinic Queue",
     entities: [],
     renamePlan: [
-      { from: "Shop", to: "Clinic" },
+      { from: "Shop", to: "Clinic", toJa: "医院" },
       { from: "Shopkeeper", to: "Vet" },
     ],
     jsonApiContract: {},

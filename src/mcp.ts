@@ -42,6 +42,12 @@ export function createMcpServer(): McpServer {
           .describe(
             'Optional manual rename overrides keyed on the substrate token (from = "Shop" | "Shopkeeper" | "ItemTag"), each replacing the planner\'s chosen target. Overrides that match no planned rename are ignored.',
           ),
+        japaneseOverrides: z
+          .array(z.object({ from: z.string().min(1), to: z.string().min(1) }))
+          .optional()
+          .describe(
+            'Optional Japanese names keyed on the substrate token (from = "Shop" | "ItemTag", to = e.g. "医院"), replacing the planner\'s Japanese pick. The Rails API\'s Japanese messages (config/locales/ja.yml) and their tests use it in place of the substrate\'s 店舗 / アイテムタグ.',
+          ),
         projectName: z
           .string()
           .optional()
@@ -50,9 +56,10 @@ export function createMcpServer(): McpServer {
           ),
       },
     },
-    async ({ spec, renameOverrides, projectName }) => {
+    async ({ spec, renameOverrides, japaneseOverrides, projectName }) => {
       const result = await dispatch(spec, {
         ...(renameOverrides ? { renameOverrides } : {}),
+        ...(japaneseOverrides ? { japaneseOverrides } : {}),
         ...(projectName !== undefined ? { projectName } : {}),
       });
       return {

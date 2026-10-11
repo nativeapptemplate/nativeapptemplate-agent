@@ -13,7 +13,7 @@ import type { RunReport } from "./report/model.js";
 loadDotenvIfPresent();
 
 const USAGE =
-  'Usage: nativeapptemplate-agent "your spec here" [--project-name="Vet Clinic"] [--rename From=To]... [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]\n' +
+  'Usage: nativeapptemplate-agent "your spec here" [--project-name="Vet Clinic"] [--rename From=To]... [--rename-ja From=名前]... [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]\n' +
   '       nativeapptemplate-agent --version | --help';
 
 export type ParsedArgs = {
@@ -24,6 +24,7 @@ export type ParsedArgs = {
   open: boolean;
   exitZero: boolean;
   renameOverrides: RenamePair[];
+  japaneseOverrides: RenamePair[];
   projectName?: string;
 };
 
@@ -31,6 +32,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   const specParts: string[] = [];
   const report: DispatchReportOptions = {};
   const renameOverrides: RenamePair[] = [];
+  const japaneseOverrides: RenamePair[] = [];
   let open = false;
   let exitZero = false;
   let projectName: string | undefined;
@@ -56,6 +58,11 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       const pair = parseRenamePair(raw);
       if (pair) renameOverrides.push(pair);
       else console.error(`warning: ignoring malformed --rename "${raw ?? ""}" (expected From=To, e.g. --rename Shop=Clinic)`);
+    } else if (arg === "--rename-ja" || arg.startsWith("--rename-ja=")) {
+      const raw = arg === "--rename-ja" ? argv[++i] : arg.slice("--rename-ja=".length);
+      const pair = parseRenamePair(raw);
+      if (pair) japaneseOverrides.push(pair);
+      else console.error(`warning: ignoring malformed --rename-ja "${raw ?? ""}" (expected From=名前, e.g. --rename-ja Shop=医院)`);
     } else if (arg === "--project-name" || arg.startsWith("--project-name=")) {
       const raw = (arg === "--project-name" ? argv[++i] : arg.slice("--project-name=".length))?.trim();
       // Accept any of "Vet Clinic" / "VetClinic" / "vet-clinic" — the slug is
@@ -68,7 +75,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       specParts.push(arg);
     }
   }
-  return { ...(action !== undefined ? { action } : {}), errors, spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, ...(projectName !== undefined ? { projectName } : {}) };
+  return { ...(action !== undefined ? { action } : {}), errors, spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, japaneseOverrides, ...(projectName !== undefined ? { projectName } : {}) };
 }
 
 export function overallLine(report: RunReport): string {
@@ -107,6 +114,7 @@ export async function main(spec?: string): Promise<void> {
   const result = await dispatch(input, {
     report: parsed.report,
     renameOverrides: parsed.renameOverrides,
+    japaneseOverrides: parsed.japaneseOverrides,
     ...(parsed.projectName !== undefined ? { projectName: parsed.projectName } : {}),
   });
 
@@ -122,6 +130,12 @@ export async function main(spec?: string): Promise<void> {
       const sources = result.report.domain.renamePlan.map((p) => p.from).join(", ");
       console.error(`warning: --rename ${o.from}=${o.to} matched no planned rename — skipped (renamable: ${sources || "none"})`);
     }
+  }
+
+  for (const o of result.japaneseOverrideOutcomes) {
+    if (o.kind === "changed") console.log(`override (ja): ${o.from} → ${o.to}${o.was ? ` (overrode planner's "${o.was}")` : ""}`);
+    else if (o.kind === "noop") console.log(`override (ja): ${o.from} → ${o.to} (already the planner's pick)`);
+    else console.error(`warning: --rename-ja ${o.from}=${o.to} matched no planned rename — skipped`);
   }
 
   console.log('');

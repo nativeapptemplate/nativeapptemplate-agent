@@ -17,7 +17,7 @@ import { runLayer1 } from "./validation/layer1.js";
 import { runLayer2, type Layer2Mode } from "./validation/layer2.js";
 import type { RepairAttempt, RunReport } from "./report/model.js";
 import type { JudgeResult, Platform, PlatformDetail, RenamePair, WorkerResult } from "./agents/types.js";
-import { applyRenameOverrides, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
+import { applyJapaneseOverrides, applyRenameOverrides, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
 import { isValidSlug, slugToPascal, projectNameToSlug, projectNameToDisplayName } from "./slug.js";
 
 export type DispatchReportOptions = {
@@ -32,6 +32,9 @@ export type DispatchOptions = {
   // Manual rename overrides merged onto the planner's plan (CLI --rename).
   // See src/rename-overrides.ts.
   renameOverrides?: readonly RenamePair[];
+  // Japanese names for planned renames (CLI --rename-ja), replacing the
+  // planner's toJa. See src/japanese-nouns.ts.
+  japaneseOverrides?: readonly RenamePair[];
   // Manual project name (CLI --project-name). A human/Pascal name like
   // "Vet Clinic" or "VetClinic" from which the slug (output dir, DB prefix,
   // env-bridge token, Pascal project name across all three platforms) and the
@@ -43,6 +46,7 @@ export type DispatchResult = JudgeResult & {
   report: RunReport;
   reportPaths: ReportPaths;
   renameOverrideOutcomes: readonly OverrideOutcome[];
+  japaneseOverrideOutcomes: readonly OverrideOutcome[];
 };
 
 export async function dispatch(spec: string, options: DispatchOptions = {}): Promise<DispatchResult> {
@@ -86,6 +90,18 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     // metadata coherence, not a code-affecting change.
     const entities = syncEntityNames(domain.entities, merged.outcomes);
     domain = { ...domain, renamePlan: merged.plan, entities };
+  }
+
+  const japaneseOverrides = options.japaneseOverrides ?? [];
+  let japaneseOverrideOutcomes: readonly OverrideOutcome[] = [];
+  if (japaneseOverrides.length > 0) {
+    const merged = applyJapaneseOverrides(domain.renamePlan, japaneseOverrides);
+    japaneseOverrideOutcomes = merged.outcomes;
+    for (const o of merged.outcomes) {
+      if (o.kind === "unmatched") trace("dispatch", `japanese override ignored: no planned rename for "${o.from}" (got ${o.from}=${o.to})`);
+      else trace("dispatch", `japanese override: ${o.from} -> ${o.to}`);
+    }
+    domain = { ...domain, renamePlan: merged.plan };
   }
 
   // Mirror the substrate's NATIVEAPPTEMPLATE_API_* config to the
@@ -283,7 +299,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     if (written.length > 0) trace("dispatch", `report: wrote ${written.join(", ")}`);
   }
 
-  return { ...judge, report, reportPaths, renameOverrideOutcomes };
+  return { ...judge, report, reportPaths, renameOverrideOutcomes, japaneseOverrideOutcomes };
 }
 
 // NATIVEAPPTEMPLATE_REPAIR control: unset / "0" / "off" / "false" → disabled;

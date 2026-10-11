@@ -24,6 +24,9 @@ export type Field = {
 export type RenamePair = {
   from: string;
   to: string;
+  // The Japanese for `to`, replacing the substrate's Japanese for `from`
+  // (src/japanese-nouns.ts). Without it the Japanese is left as is.
+  toJa?: string;
 };
 
 export type Platform = "rails" | "ios" | "android";

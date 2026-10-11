@@ -75,3 +75,28 @@ export function syncEntityNames(
     return change && e.name === change.was ? { ...e, name: change.to } : e;
   });
 }
+
+// Merge `--rename-ja From=名前` onto the plan: sets the Japanese name of a
+// planned rename (the planner's toJa, if any, is replaced). Like --rename, an
+// override for a token the plan doesn't rename is reported and dropped.
+export function applyJapaneseOverrides(
+  plan: readonly RenamePair[],
+  overrides: readonly RenamePair[],
+): ApplyOverridesResult {
+  const merged: RenamePair[] = plan.map((p) => ({ ...p }));
+  const outcomes: OverrideOutcome[] = [];
+  for (const override of overrides) {
+    const target = merged.find((p) => p.from === override.from);
+    if (!target) {
+      outcomes.push({ kind: "unmatched", from: override.from, to: override.to });
+      continue;
+    }
+    if (target.toJa === override.to) {
+      outcomes.push({ kind: "noop", from: override.from, to: override.to });
+      continue;
+    }
+    outcomes.push({ kind: "changed", from: override.from, was: target.toJa ?? "", to: override.to });
+    target.toJa = override.to;
+  }
+  return { plan: merged, outcomes };
+}

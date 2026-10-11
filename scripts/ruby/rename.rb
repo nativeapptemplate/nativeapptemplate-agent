@@ -1,7 +1,9 @@
 #!/usr/bin/env ruby
 #
 # Apply a rename plan to a Rails project tree.
-# Stdin:  { "renamePlan": [{"from":"Shop","to":"Clinic"}, ...], "root": "/abs/path" }
+# Stdin:  { "renamePlan": [{"from":"Shop","to":"Clinic"}, ...],
+#          "japaneseRenamePlan": [{"from":"店舗","to":"医院"}, ...],  (optional)
+#          "root": "/abs/path" }
 # Stdout: { "files_scanned": N, "files_changed": N, "substitutions": N, "files_renamed": N }
 #
 # Rewrites file content AND renames files/directories for every
@@ -16,6 +18,7 @@ require "json"
 
 input = JSON.parse($stdin.read)
 plan  = input.fetch("renamePlan")
+japanese_plan = input.fetch("japaneseRenamePlan", [])
 root  = input.fetch("root")
 
 stats = { files_scanned: 0, files_changed: 0, substitutions: 0, files_renamed: 0 }
@@ -163,7 +166,14 @@ def build_patterns(from, to)
   patterns
 end
 
-all_patterns = plan.flat_map { |p| build_patterns(p.fetch("from"), p.fetch("to")) }
+# Japanese has no word boundaries and its nouns don't inflect, so a plain
+# substring covers compounds (店舗名) and every sentence the noun appears in.
+# Longest first, so a noun inside another (タグ in アイテムタグ) can't win.
+japanese_patterns = japanese_plan
+  .sort_by { |p| -p.fetch("from").length }
+  .map { |p| [/#{Regexp.escape(p.fetch("from"))}/, p.fetch("to")] }
+
+all_patterns = japanese_patterns + plan.flat_map { |p| build_patterns(p.fetch("from"), p.fetch("to")) }
 
 # One combined regex, applied in a single pass, so a replacement is never
 # re-scanned by a later pair: with NativeAppTemplate→PetShop and Shop→Store,
