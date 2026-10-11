@@ -245,6 +245,7 @@ You can pass these inline; they're forwarded straight to the generator:
 |---|---|---|
 | Project name | `--project-name="Vet Clinic"` | Fixes the display name **and** the output slug, independent of the domain rename. You can also say it in plain language — *"…for household pest detection. project name is Sentova."* — and the skill maps it to the same argument. |
 | Rename override | `--rename Shopkeeper=Vet` (repeatable) | Overrides one of the planner's chosen renames. `From` must be a substrate token (`Shop`, `Shopkeeper`, `ItemTag`). Only renames the planner *already planned* are overridable; an override that matches nothing is reported and dropped. |
+| Japanese name | `--rename-ja Shop=動物病院` (repeatable) | Sets the Japanese noun that replaces the substrate's 店舗 (Shop) or アイテムタグ (ItemTag) in the Rails API's Japanese messages and tests. Overrides the planner's pick; an override for an unplanned rename is reported and dropped. |
 
 Example with both:
 
@@ -498,6 +499,7 @@ The barbershop walk-in-queue spec is the canonical demo:
 |---|---|---|
 | `--project-name="Vet Clinic"` | planner's pick | Names the project. Accepts a human name (`"Vet Clinic"`), PascalCase (`VetClinic`), or kebab (`vet-clinic`); derives the Pascal project name, slug/output dir (`out/vet-clinic/`), DB prefix + env-bridge token, and display name. Invalid (no derivable slug) is reported and skipped. |
 | `--rename From=To` | planner's pick | Overrides one planner rename target (repeatable). `From` is a substrate token (`Shop`, `Shopkeeper`, `ItemTag`). An override matching no planned rename is reported and skipped. |
+| `--rename-ja From=名前` | planner's pick | Override the Japanese name of a planned rename (repeatable). `From` is `Shop` or `ItemTag`; the Rails API's Japanese messages (`config/locales/ja.yml`) and their tests use it in place of the substrate's 店舗 / アイテムタグ. The planner picks one itself (`toJa` in the rename plan); without one the Japanese is left as is. Example: `--rename-ja Shop=動物病院` |
 | `--report-format=html\|json\|both` | `both` | Which report artifact(s) to write. The skill always uses `both` so `report.json` exists to parse. |
 | `--report-embed=true\|false` | `true` | Embed screenshots as `data:` URIs (one portable HTML file) vs. copy to `report-assets/`. |
 | `--report-open` | — | Open the HTML in your browser when the run finishes (macOS). |

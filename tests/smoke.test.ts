@@ -2350,3 +2350,136 @@ test("rendered report and CLI line say PARTIAL for a run without Layer 3", async
   assert.doesNotMatch(html, /✓ Pass/);
   assert.match(overallLine(report), /^overall: PARTIAL/);
 });
+
+// --- Japanese renames (src/japanese-nouns.ts, rename.rb japaneseRenamePlan) ---
+
+test("japaneseRenamePairs maps each planned toJa onto the substrate's Japanese noun", async () => {
+  const { japaneseRenamePairs } = await import("../src/japanese-nouns.js");
+  assert.deepEqual(
+    japaneseRenamePairs([
+      { from: "Shop", to: "Clinic", toJa: "医院" },
+      { from: "ItemTag", to: "Patient", toJa: "患者" },
+      // No Japanese name: the substrate's Japanese stays, as before
+      { from: "Shopkeeper", to: "Vet" },
+    ]),
+    [
+      { from: "店舗", to: "医院" },
+      { from: "アイテムタグ", to: "患者" },
+    ],
+  );
+});
+
+test("japaneseRenamePairs skips tokens the substrate has no Japanese for, and identity pairs", async () => {
+  const { japaneseRenamePairs } = await import("../src/japanese-nouns.js");
+  // ja.yml calls a Shopkeeper ユーザー, which fits any domain, so it is not renamed
+  assert.deepEqual(japaneseRenamePairs([{ from: "Shopkeeper", to: "Vet", toJa: "獣医" }]), []);
+  assert.deepEqual(japaneseRenamePairs([{ from: "Shop", to: "Store", toJa: "店舗" }]), []);
+});
+
+test("renamedTokens adds the Japanese nouns being replaced, so Layer 1 flags any left behind", async () => {
+  const { renamedTokens } = await import("../src/japanese-nouns.js");
+  assert.deepEqual(
+    renamedTokens([{ from: "Shop", to: "Clinic", toJa: "医院" }, { from: "Shopkeeper", to: "Vet" }]),
+    ["Shop", "Shopkeeper", "店舗"],
+  );
+});
+
+test("runLayer1 flags a Japanese noun that should have been renamed", async () => {
+  const root = mkdtempSync(join(tmpdir(), "layer1-ja-"));
+  mkdirSync(join(root, "config", "locales"), { recursive: true });
+  writeFileSync(join(root, "config", "locales", "ja.yml"), 'ja:\n  name: "医院名"\n  limit: "店舗は3件まで"\n');
+
+  const result = await runLayer1({ projectDir: root, forbiddenTokens: ["店舗"] });
+
+  assert.equal(result.pass, false);
+  assert.deepEqual(result.findings.map((f) => [f.token, f.file, f.line]), [["店舗", "config/locales/ja.yml", 3]]);
+});
+
+test("parseArgs collects --rename-ja pairs in both forms", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  const parsed = parseArgs(["a", "vet", "clinic", "--rename-ja", "Shop=医院", "--rename-ja=ItemTag=患者"]);
+  assert.equal(parsed.spec, "a vet clinic");
+  assert.deepEqual(parsed.japaneseOverrides, [
+    { from: "Shop", to: "医院" },
+    { from: "ItemTag", to: "患者" },
+  ]);
+});
+
+test("applyJapaneseOverrides sets toJa on planned renames and reports the rest", async () => {
+  const { applyJapaneseOverrides } = await import("../src/rename-overrides.js");
+  const plan = [
+    { from: "Shop", to: "Clinic", toJa: "クリニック" },
+    { from: "Shopkeeper", to: "Vet" },
+  ];
+  const { plan: merged, outcomes } = applyJapaneseOverrides(plan, [
+    { from: "Shop", to: "医院" },
+    { from: "ItemTag", to: "患者" }, // not in the plan → unmatched, dropped
+  ]);
+  assert.deepEqual(merged, [
+    { from: "Shop", to: "Clinic", toJa: "医院" },
+    { from: "Shopkeeper", to: "Vet" },
+  ]);
+  assert.deepEqual(outcomes, [
+    { kind: "changed", from: "Shop", was: "クリニック", to: "医院" },
+    { kind: "unmatched", from: "ItemTag", to: "患者" },
+  ]);
+  assert.equal(plan[0]?.toJa, "クリニック");
+});
+
+test(
+  "rename.rb replaces the Japanese nouns in a single pass, inside compounds, in every text file",
+  { skip: RUBY_AVAILABLE ? false : "ruby not on PATH" },
+  async () => {
+    const { runRuby } = await import("../src/ruby.js");
+    const root = mkdtempSync(join(tmpdir(), "rename-ja-"));
+    mkdirSync(join(root, "config", "locales"), { recursive: true });
+    mkdirSync(join(root, "test", "i18n"), { recursive: true });
+    writeFileSync(
+      join(root, "config", "locales", "ja.yml"),
+      'ja:\n  activerecord:\n    models:\n      shop: "店舗"\n      item_tag: "アイテムタグ"\n    attributes:\n      shop:\n        name: "店舗名"\n  limit_count_shop: "店舗は%{limit_count}件まで作成できます。"\n',
+    );
+    // The substrate's tests assert the Japanese too, so they must follow
+    writeFileSync(join(root, "test", "i18n", "japanese_messages_test.rb"), 'assert_equal "店舗", I18n.t("activerecord.models.shop", locale: :ja)\n');
+
+    await runRuby<object, unknown>("rename.rb", {
+      renamePlan: [{ from: "Shop", to: "Clinic" }, { from: "ItemTag", to: "Patient" }],
+      japaneseRenamePlan: [{ from: "店舗", to: "医院" }, { from: "アイテムタグ", to: "患者" }],
+      root,
+    });
+
+    assert.equal(
+      readFileSync(join(root, "config/locales/ja.yml"), "utf8"),
+      'ja:\n  activerecord:\n    models:\n      clinic: "医院"\n      patient: "患者"\n    attributes:\n      clinic:\n        name: "医院名"\n  limit_count_clinic: "医院は%{limit_count}件まで作成できます。"\n',
+    );
+    assert.equal(
+      readFileSync(join(root, "test/i18n/japanese_messages_test.rb"), "utf8"),
+      'assert_equal "医院", I18n.t("activerecord.models.clinic", locale: :ja)\n',
+    );
+  },
+);
+
+test(
+  "rename.rb leaves Japanese alone without a japaneseRenamePlan",
+  { skip: RUBY_AVAILABLE ? false : "ruby not on PATH" },
+  async () => {
+    const { runRuby } = await import("../src/ruby.js");
+    const root = mkdtempSync(join(tmpdir(), "rename-ja-none-"));
+    writeFileSync(join(root, "ja.yml"), 'shop: "店舗"\n');
+
+    await runRuby<object, unknown>("rename.rb", { renamePlan: [{ from: "Shop", to: "Clinic" }], root });
+
+    assert.equal(readFileSync(join(root, "ja.yml"), "utf8"), 'clinic: "店舗"\n');
+  },
+);
+
+// The table must name the substrate's actual Japanese, or nothing gets renamed
+test(
+  "SUBSTRATE_JAPANESE_NOUNS match the substrate's ja.yml",
+  { skip: process.env["NATIVEAPPTEMPLATE_API"] ? false : "NATIVEAPPTEMPLATE_API not set" },
+  async () => {
+    const { SUBSTRATE_JAPANESE_NOUNS } = await import("../src/japanese-nouns.js");
+    const jaYml = readFileSync(join(process.env["NATIVEAPPTEMPLATE_API"]!, "config", "locales", "ja.yml"), "utf8");
+    assert.match(jaYml, new RegExp(`shop: "${SUBSTRATE_JAPANESE_NOUNS["Shop"]}"`));
+    assert.match(jaYml, new RegExp(`item_tag: "${SUBSTRATE_JAPANESE_NOUNS["ItemTag"]}"`));
+  },
+);
