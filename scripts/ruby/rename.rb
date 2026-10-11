@@ -28,7 +28,7 @@ SKIP_SUBPATHS     = %w[vendor/bundle app/assets/builds public/assets].freeze
 TEXT_EXTS         = %w[
   .rb .erb .yml .yaml .json .md .gemspec .rake .ru .txt .sample .example .conf
   .html .css .scss .js .mjs .tt .lock
-  .swift .plist .strings .xcconfig .entitlements .pbxproj .xcworkspacedata .modulemap .xcscheme
+  .swift .plist .strings .xcstrings .xcconfig .entitlements .pbxproj .xcworkspacedata .modulemap .xcscheme
   .kt .kts .xml .gradle .pro .toml .properties .cfg
   .proto
   .svg .webmanifest

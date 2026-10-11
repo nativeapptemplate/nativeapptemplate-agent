@@ -2483,3 +2483,39 @@ test(
     assert.match(jaYml, new RegExp(`item_tag: "${SUBSTRATE_JAPANESE_NOUNS["ItemTag"]}"`));
   },
 );
+
+// String Catalogs hold both the English keys the code looks up and the
+// Japanese values, so both must follow the rename
+test(
+  "rename.rb rewrites .xcstrings keys and Japanese values",
+  { skip: RUBY_AVAILABLE ? false : "ruby not on PATH" },
+  async () => {
+    const { runRuby } = await import("../src/ruby.js");
+    const root = mkdtempSync(join(tmpdir(), "rename-xcstrings-"));
+    writeFileSync(
+      join(root, "Localizable.xcstrings"),
+      '{ "strings" : { "Add Shop" : { "localizations" : { "ja" : { "stringUnit" : { "value" : "店舗を追加" } } } } } }',
+    );
+
+    await runRuby<object, unknown>("rename.rb", {
+      renamePlan: [{ from: "Shop", to: "Clinic" }],
+      japaneseRenamePlan: [{ from: "店舗", to: "動物病院" }],
+      root,
+    });
+
+    assert.equal(
+      readFileSync(join(root, "Localizable.xcstrings"), "utf8"),
+      '{ "strings" : { "Add Clinic" : { "localizations" : { "ja" : { "stringUnit" : { "value" : "動物病院を追加" } } } } } }',
+    );
+  },
+);
+
+test("runLayer1 scans .xcstrings", async () => {
+  const root = mkdtempSync(join(tmpdir(), "layer1-xcstrings-"));
+  writeFileSync(join(root, "Localizable.xcstrings"), '{ "strings" : { "Add Shop" : {} } }');
+
+  const result = await runLayer1({ projectDir: root, forbiddenTokens: ["Shop"] });
+
+  assert.equal(result.pass, false);
+  assert.deepEqual(result.findings.map((f) => f.file), ["Localizable.xcstrings"]);
+});
