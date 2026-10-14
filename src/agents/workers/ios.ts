@@ -17,9 +17,14 @@ type RenameStats = {
   files_renamed: number;
 };
 
-const SKIP_RULES: CopySkipRules = {
+// RevenueCat.local.xcconfig is the developer's gitignored RevenueCat key for
+// the template itself. Copied, it would switch billing on in the generated app
+// with another app's key (offerings fail, every paid feature locked); without
+// it the generated app starts with billing off, as the template is committed.
+// API.local.xcconfig is kept: it points Debug builds at the developer's Rails.
+export const IOS_SKIP_RULES: CopySkipRules = {
   rootPaths: [".git", ".claude", "DerivedData", ".build", "Pods", "Carthage"],
-  anySegment: ["xcuserdata"],
+  anySegment: ["xcuserdata", "RevenueCat.local.xcconfig"],
 };
 
 export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
@@ -36,7 +41,7 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
 
   trace("ios", `copying substrate from ${substrate} to ${outDir}`);
   await prepareFresh(outDir);
-  await copySubstrate(substrate, outDir, SKIP_RULES);
+  await copySubstrate(substrate, outDir, IOS_SKIP_RULES);
 
   const productPairs = buildProductRenamePairs(domain.slug);
   const renamePlan: readonly RenamePair[] = [...productPairs, ...domain.renamePlan].filter((p) => p.from !== p.to);

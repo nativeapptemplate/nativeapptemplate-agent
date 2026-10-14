@@ -105,6 +105,10 @@ If `Shop` is a domain entity, don't have a variable named `shop_count` that mean
 
 Keep domain words *only* in domain contexts. Use generic names (`count`, `total`, `entries`) for non-domain counters and collections.
 
+Platform names that merely *start* with a domain token are fine when the renamer's boundaries leave them alone — e.g. Material's `Icons.Outlined.ShoppingCart` in the paid Android template's subscription settings (`Shop` followed by a lowercase letter is not a word boundary). Layer 1 must then know them too: they're listed in `NON_DOMAIN_WORDS` in `src/validation/layer1.ts`, otherwise the leftover check (and the repair loop after it) flags them.
+
+The paid templates' subscription (RevenueCat) layer follows this rule: billing identifiers talk about the account owner and app user ID, never the domain (`PaywallFeature.multipleRecords`), and only the paywall copy that names the primary resource says *shop* / 店舗, so it follows the rename. Its type stems and the SDK names it calls are reserved rename targets (`src/reserved-words.ts`).
+
 ### 6. Comments and docstrings: same rules
 
 Comments are scanned by the rename pipeline and treated like any other text. If a comment says "an item tag," it'll become "an patient" the same way a UI string does. Apply rule 1 to comments too:

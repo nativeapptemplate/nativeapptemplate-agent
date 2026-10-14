@@ -2519,3 +2519,174 @@ test("runLayer1 scans .xcstrings", async () => {
   assert.equal(result.pass, false);
   assert.deepEqual(result.findings.map((f) => f.file), ["Localizable.xcstrings"]);
 });
+
+// --- reserved rename targets (src/reserved-words.ts) ---
+
+// The billing names, as listed in the paid templates' subscription docs
+// (iOS docs/subscription.md "Keeping it safe for nativeapptemplate-agent's
+// rename"; Android docs/subscriptions.md "Renaming the app") plus the SDK /
+// StoreKit / Play Billing type names their billing code refers to.
+const BILLING_NAMES = [
+  "Subscription", "Paywall", "Plan", "Purchase", "Purchases", "Billing", "Entitlement", "Trial", "Customer",
+  "Package", "Offering", "Store", "StoreProduct", "Product", "Transaction", "Price", "Period",
+];
+
+test("reservedReason rejects every billing name, in any case, and accepts ordinary domain nouns", async () => {
+  const { reservedReason } = await import("../src/reserved-words.js");
+  for (const name of BILLING_NAMES) {
+    assert.match(reservedReason(name) ?? "", /subscription/, `${name} must be reserved`);
+    assert.ok(reservedReason(name.toLowerCase()), `${name.toLowerCase()} must be reserved`);
+  }
+  assert.match(reservedReason("Owner") ?? "", /auth\/admin/);
+  assert.match(reservedReason("Task") ?? "", /Swift/);
+  for (const name of ["Clinic", "Vet", "Patient", "Restaurant", "Project", "Ticket"]) {
+    assert.equal(reservedReason(name), null, `${name} must be allowed`);
+  }
+});
+
+test("planner prompt lists every billing-reserved name", async () => {
+  const { SYSTEM_PROMPT } = await import("../src/agents/planner.js");
+  const billingLine = SYSTEM_PROMPT.split("\n").find((l) => l.includes("Subscription, Paywall")) ?? "";
+  for (const name of BILLING_NAMES) {
+    assert.ok(billingLine.split(", ").map((w) => w.trim()).includes(name), `planner prompt must reserve ${name}`);
+  }
+});
+
+test("applyRenameOverrides rejects a reserved target and keeps the planner's pick", async () => {
+  const { applyRenameOverrides } = await import("../src/rename-overrides.js");
+  const plan = [
+    { from: "Shop", to: "Clinic", toJa: "医院" },
+    { from: "Shopkeeper", to: "Vet" },
+  ];
+  const { plan: merged, outcomes } = applyRenameOverrides(plan, [
+    { from: "Shop", to: "Store" },
+    { from: "Shopkeeper", to: "Owner" },
+  ]);
+  assert.deepEqual(merged, plan);
+  assert.deepEqual(outcomes.map((o) => [o.kind, o.from, o.to]), [
+    ["reserved", "Shop", "Store"],
+    ["reserved", "Shopkeeper", "Owner"],
+  ]);
+});
+
+test("dispatch drops a reserved --rename override and reports it (stub pipeline)", async () => {
+  const result = await dispatch("a walk-in clinic queue for vets", {
+    renameOverrides: [{ from: "Shop", to: "Subscription" }],
+  });
+  assert.equal(result.renameOverrideOutcomes[0]?.kind, "reserved");
+  // Stub planner picks Shop -> Clinic (src/agents/planner.ts runStubPlanner).
+  assert.ok(result.report.domain.renamePlan.some((p) => p.from === "Shop" && p.to === "Clinic"));
+  assert.deepEqual(result.reservedTargets, []);
+});
+
+test("reservedTargets flags a planned target that collides with a reserved word", async () => {
+  const { reservedTargets } = await import("../src/reserved-words.js");
+  const hits = reservedTargets([
+    { from: "Shop", to: "Clinic" },
+    { from: "ItemTag", to: "Purchase" },
+  ]);
+  assert.deepEqual(hits.map((h) => [h.from, h.to]), [["ItemTag", "Purchase"]]);
+});
+
+// --- the developer's local billing key must not reach generated apps ---
+
+test("iOS copy leaves out RevenueCat.local.xcconfig but keeps API.local.xcconfig", async () => {
+  const { copySubstrate } = await import("../src/agents/workers/copy.js");
+  const { IOS_SKIP_RULES } = await import("../src/agents/workers/ios.js");
+  const { existsSync } = await import("node:fs");
+  const base = mkdtempSync(join(tmpdir(), "copy-rc-"));
+  const src = join(base, "src");
+  mkdirSync(join(src, "Nested"), { recursive: true });
+  writeFileSync(join(src, "RevenueCat.xcconfig"), 'REVENUECAT_API_KEY =\n#include? "RevenueCat.local.xcconfig"\n');
+  writeFileSync(join(src, "RevenueCat.local.xcconfig"), "REVENUECAT_API_KEY = appl_developers_own_key\n");
+  writeFileSync(join(src, "Nested", "RevenueCat.local.xcconfig"), "REVENUECAT_API_KEY = appl_developers_own_key\n");
+  writeFileSync(join(src, "API.local.xcconfig"), "NATIVEAPPTEMPLATE_API_DOMAIN = 192.168.1.11\n");
+  const dest = join(base, "dest");
+  await copySubstrate(src, dest, IOS_SKIP_RULES);
+  assert.equal(existsSync(join(dest, "RevenueCat.local.xcconfig")), false);
+  assert.equal(existsSync(join(dest, "Nested", "RevenueCat.local.xcconfig")), false);
+  assert.equal(existsSync(join(dest, "RevenueCat.xcconfig")), true);
+  assert.equal(existsSync(join(dest, "API.local.xcconfig")), true);
+});
+
+test("env-bridge never mirrors the template's RevenueCat key to the generated app", async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), "env-bridge-rc-"));
+  mkdirSync(join(fakeHome, ".gradle"), { recursive: true });
+  writeFileSync(
+    join(fakeHome, ".gradle", "gradle.properties"),
+    "NATIVEAPPTEMPLATE_API_SCHEME=http\nNATIVEAPPTEMPLATE_REVENUECAT_GOOGLE_API_KEY=goog_developers_own_key\n",
+  );
+  const fakeSubstrate = mkdtempSync(join(tmpdir(), "substrate-rc-"));
+  writeFileSync(join(fakeSubstrate, ".env"), "HOST=192.168.1.11\nPORT=3000\n");
+
+  const saved = {
+    HOME: process.env['HOME'],
+    NATIVEAPPTEMPLATE_API: process.env['NATIVEAPPTEMPLATE_API'],
+    NATIVEAPPTEMPLATE_API_SCHEME: process.env['NATIVEAPPTEMPLATE_API_SCHEME'],
+    NATIVEAPPTEMPLATE_REVENUECAT_GOOGLE_API_KEY: process.env['NATIVEAPPTEMPLATE_REVENUECAT_GOOGLE_API_KEY'],
+  };
+  process.env['HOME'] = fakeHome;
+  process.env['NATIVEAPPTEMPLATE_API'] = fakeSubstrate;
+  delete process.env['NATIVEAPPTEMPLATE_API_SCHEME'];
+  process.env['NATIVEAPPTEMPLATE_REVENUECAT_GOOGLE_API_KEY'] = "goog_developers_own_key";
+  try {
+    const { buildBridgeValues } = await import("../src/env-bridge.js");
+    const bridge = await buildBridgeValues({
+      slug: "clinic-queue", displayName: "Clinic Queue", entities: [], renamePlan: [], jsonApiContract: {},
+    });
+    // The API settings still bridge (control: the fixture is read at all).
+    assert.equal(bridge.values['CLINICQUEUE_API_SCHEME'], "http");
+    assert.deepEqual(Object.keys(bridge.values).filter((k) => /REVENUECAT/.test(k)), []);
+    assert.ok(!Object.values(bridge.values).includes("goog_developers_own_key"));
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v !== undefined) process.env[k] = v;
+      else delete process.env[k];
+    }
+  }
+});
+
+test("rename.rb renames the shop wording in billing strings and leaves billing identifiers alone", { skip: !RUBY_AVAILABLE }, async () => {
+  // Inputs are lines from the paid templates' billing code (iOS Constants.swift /
+  // PaywallView, Android strings.xml / PaywallFeature.kt); the expected output is
+  // the hand-applied Shop -> Clinic rename of the shop words only.
+  const root = await runRenameFixture(
+    {
+      "Paywall.swift": 'case multipleRecords\nlet t = "Run all your shops from one account"\nSubscriptionRepository.purchase(RevenueCat.Package)',
+      "strings.xml": '<string name="paywall_title_shops">Manage multiple shops from one account</string>',
+      "PaywallFeature.kt": "enum class PaywallFeature { SHOPS, ORGANIZATIONS, MEMBERS }",
+    },
+    [{ from: "Shop", to: "Clinic" }],
+  );
+  assert.equal(
+    readFileSync(join(root, "Paywall.swift"), "utf8"),
+    'case multipleRecords\nlet t = "Run all your clinics from one account"\nSubscriptionRepository.purchase(RevenueCat.Package)',
+  );
+  assert.equal(
+    readFileSync(join(root, "strings.xml"), "utf8"),
+    '<string name="paywall_title_clinics">Manage multiple clinics from one account</string>',
+  );
+  assert.equal(
+    readFileSync(join(root, "PaywallFeature.kt"), "utf8"),
+    "enum class PaywallFeature { CLINICS, ORGANIZATIONS, MEMBERS }",
+  );
+});
+
+test("runLayer1 ignores Material's ShoppingCart icons but still flags a leftover Shop next to them", async () => {
+  // The paid Android template's Settings subscription section uses
+  // Icons.Outlined.ShoppingCart / AddShoppingCart. rename.rb leaves them alone
+  // (Shop is followed by a lowercase letter, not a word boundary), so they are
+  // not leftovers; renaming them would break the build.
+  const root = mkdtempSync(join(tmpdir(), "layer1-shopping-"));
+  writeFileSync(
+    join(root, "SettingsView.kt"),
+    "import androidx.compose.material.icons.outlined.AddShoppingCart\nicon = Icons.Outlined.ShoppingCart,\n",
+  );
+  const clean = await runLayer1({ projectDir: root, forbiddenTokens: ["Shop"] });
+  assert.deepEqual(clean.findings, []);
+
+  writeFileSync(join(root, "Leftover.kt"), "val s: Shop = Shops.first() // ShoppingCart\n");
+  const dirty = await runLayer1({ projectDir: root, forbiddenTokens: ["Shop"] });
+  // Hand count: "Shop" and the "Shop" of "Shops" are leftovers; ShoppingCart is not.
+  assert.deepEqual(dirty.findings.map((f) => [f.file, f.token]), [["Leftover.kt", "Shop"], ["Leftover.kt", "Shop"]]);
+});

@@ -2,11 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { trace } from "../trace.js";
 import { isStub } from "../stub.js";
 import type { DomainSpec } from "./types.js";
+import { BILLING_RESERVED, STDLIB_RESERVED, SUBSTRATE_RESERVED } from "../reserved-words.js";
 
 const MODEL = "claude-opus-4-7";
 const MAX_TOKENS = 4096;
 
-const SYSTEM_PROMPT = `You are a domain modeler for a three-platform SaaS code generator. You receive a one-sentence natural-language specification of a SaaS product and output a structured DomainSpec that drives code generation across Rails 8.1 (API), SwiftUI (iOS), and Jetpack Compose (Android).
+export const SYSTEM_PROMPT = `You are a domain modeler for a three-platform SaaS code generator. You receive a one-sentence natural-language specification of a SaaS product and output a structured DomainSpec that drives code generation across Rails 8.1 (API), SwiftUI (iOS), and Jetpack Compose (Android).
 
 The substrate you specialize is a walk-in queue management system. Its generic types are:
 - Shop (the primary tenant resource) — renamed to a domain-appropriate noun
@@ -18,20 +19,18 @@ For non-queue specs (task tracker, note-taking, inventory), propose replacing It
 
 IMPORTANT — substrate-reserved vocabulary: the substrate's auth/admin layer already uses these tokens as unrelated identifiers, so rename targets MUST NOT collide with them (a lexical rename would produce duplicate-identifier build errors):
 
-  Owner, Account, Admin, Personal, Role, Permission, User, App, Version,
-  Privacy, Terms, Invitation, Error, Scan, Redirect, Notification, Session
+  ${SUBSTRATE_RESERVED.join(", ")}
+
+IMPORTANT — billing-reserved vocabulary: the substrate's subscription layer (RevenueCat) already uses these tokens — its own type names (SubscriptionRepository, PaywallView, SubscriptionPlan, FreeTrial…) and the RevenueCat / StoreKit / Play Billing types it calls — so rename targets MUST NOT collide with them either:
+
+  ${BILLING_RESERVED.join(", ")}
 
 IMPORTANT — language-stdlib-reserved vocabulary: the generated code must compile in Swift, Kotlin, and Ruby. A rename target that collides with any of these standard-library types silently shadows the stdlib and breaks compilation (e.g. Task.isCancelled no longer resolves if Task is shadowed):
 
-  Swift   — Task, Actor, Result, Error, View, Text, Image, State, Binding,
-            Data, Date, URL, UUID, Set, Array, Dictionary, Optional
-  Kotlin  — Unit, Nothing, Any, List, Map, Set, Flow, Sequence, Result,
-            Continuation, Deferred, Context
-  Ruby/Rails — Object, Module, Class, Array, Hash, String, Integer, Proc,
-               Thread, Request, Response, Session
+${Object.entries(STDLIB_RESERVED).map(([lang, words]) => `  ${lang} — ${words.join(", ")}`).join("\n")}
 
 For Shopkeeper, prefer domain-distinctive nouns: Assignee, Maintainer, Host, Vet, Barber, Stylist, Staff, Curator, Editor, Author — NOT Owner / User / Admin.
-For Shop, prefer: Clinic, Restaurant, Workspace, Project, Board, Journal, Space, Studio — NOT Account.
+For Shop, prefer: Clinic, Restaurant, Workspace, Project, Board, Journal, Space, Studio — NOT Account / Store.
 For ItemTag replacements, prefer: Todo, Ticket, Entry, Card, Issue, Note, Memo, Patient, Reservation — NOT Task (Swift Concurrency) / Actor (Swift Concurrency) / Scan / Notification.
 
 For the Shop and ItemTag renames, also give toJa: the natural Japanese noun a Japanese app would use for the target, e.g. Clinic → 医院, Restaurant → 店, Patient → 患者, Reservation → 予約. The substrate's Japanese messages use 店舗 (Shop) and アイテムタグ (ItemTag), and toJa replaces them as a plain substring, so it must be a bare noun (no particles, no 様/さん) that reads naturally before 名, は and を, as in 医院名, 医院は3件まで作成できます. Omit toJa for other renames.

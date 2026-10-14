@@ -126,6 +126,7 @@ export async function main(spec?: string): Promise<void> {
   for (const o of result.renameOverrideOutcomes) {
     if (o.kind === "changed") console.log(`override: ${o.from} → ${o.to} (overrode planner's "${o.was}")`);
     else if (o.kind === "noop") console.log(`override: ${o.from} → ${o.to} (already the planner's pick)`);
+    else if (o.kind === "reserved") console.error(`warning: --rename ${o.from}=${o.to} rejected: ${o.reason} — kept the planner's pick`);
     else {
       const sources = result.report.domain.renamePlan.map((p) => p.from).join(", ");
       console.error(`warning: --rename ${o.from}=${o.to} matched no planned rename — skipped (renamable: ${sources || "none"})`);
@@ -136,6 +137,10 @@ export async function main(spec?: string): Promise<void> {
     if (o.kind === "changed") console.log(`override (ja): ${o.from} → ${o.to}${o.was ? ` (overrode planner's "${o.was}")` : ""}`);
     else if (o.kind === "noop") console.log(`override (ja): ${o.from} → ${o.to} (already the planner's pick)`);
     else console.error(`warning: --rename-ja ${o.from}=${o.to} matched no planned rename — skipped`);
+  }
+
+  for (const r of result.reservedTargets) {
+    console.error(`warning: rename target ${r.from} → ${r.to} collides with a reserved word: ${r.reason}`);
   }
 
   console.log('');

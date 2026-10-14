@@ -40,7 +40,7 @@ export function createMcpServer(): McpServer {
           .array(z.object({ from: z.string().min(1), to: z.string().min(1) }))
           .optional()
           .describe(
-            'Optional manual rename overrides keyed on the substrate token (from = "Shop" | "Shopkeeper" | "ItemTag"), each replacing the planner\'s chosen target. Overrides that match no planned rename are ignored.',
+            'Optional manual rename overrides keyed on the substrate token (from = "Shop" | "Shopkeeper" | "ItemTag"), each replacing the planner\'s chosen target. Overrides that match no planned rename are ignored, and so are targets that collide with a reserved word (the substrate\'s auth/admin names such as Owner or Account, its subscription names such as Subscription, Plan, Purchase, Product or Store, and Swift/Kotlin/Ruby standard-library types); the planner\'s pick is kept.',
           ),
         japaneseOverrides: z
           .array(z.object({ from: z.string().min(1), to: z.string().min(1) }))
