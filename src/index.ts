@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { dispatch, type DispatchReportOptions } from "./dispatch.js";
 import { loadDotenvIfPresent } from "./env.js";
-import { parseRenamePair } from "./rename-overrides.js";
+import { describeRenameOverride, parseRenamePair } from "./rename-overrides.js";
 import { projectNameToSlug, slugToPascal, isValidSlug } from "./slug.js";
 import { readPackageVersion } from "./version.js";
 import type { RenamePair } from "./agents/types.js";
@@ -123,14 +123,11 @@ export async function main(spec?: string): Promise<void> {
     console.log(`project: ${slugToPascal(finalSlug)} (output out/${finalSlug}/)`);
   }
 
+  const renamable = result.report.domain.renamePlan.map((p) => p.from);
   for (const o of result.renameOverrideOutcomes) {
-    if (o.kind === "changed") console.log(`override: ${o.from} → ${o.to} (overrode planner's "${o.was}")`);
-    else if (o.kind === "noop") console.log(`override: ${o.from} → ${o.to} (already the planner's pick)`);
-    else if (o.kind === "reserved") console.error(`warning: --rename ${o.from}=${o.to} rejected: ${o.reason} — kept the planner's pick`);
-    else {
-      const sources = result.report.domain.renamePlan.map((p) => p.from).join(", ");
-      console.error(`warning: --rename ${o.from}=${o.to} matched no planned rename — skipped (renamable: ${sources || "none"})`);
-    }
+    const line = describeRenameOverride(o, renamable);
+    if (o.kind === "changed" || o.kind === "noop") console.log(line);
+    else console.error(line);
   }
 
   for (const o of result.japaneseOverrideOutcomes) {

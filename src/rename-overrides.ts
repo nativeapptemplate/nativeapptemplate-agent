@@ -10,7 +10,9 @@ export type OverrideOutcome =
   | { kind: "changed"; from: string; was: string; to: string }
   | { kind: "noop"; from: string; to: string }
   | { kind: "unmatched"; from: string; to: string }
-  | { kind: "reserved"; from: string; to: string; reason: string };
+  // kept: the target left in place — the planner's pick, or an earlier
+  // --rename for the same token that was accepted.
+  | { kind: "reserved"; from: string; to: string; reason: string; kept: string; keptFrom: "planner" | "override" };
 
 export type ApplyOverridesResult = {
   plan: RenamePair[];
@@ -36,7 +38,7 @@ export function parseRenamePair(raw: string | undefined): RenamePair | null {
 // matches no planned rename are reported as `unmatched` and dropped — we don't
 // silently invent new renames. Overrides into a reserved word
 // (src/reserved-words.ts) are reported as `reserved` and dropped, keeping the
-// planner's pick: the planner is told to avoid those words, and an override
+// current target (the planner's pick or an earlier accepted override): the planner is told to avoid those words, and an override
 // must not reintroduce a collision that breaks the build. Later overrides for
 // the same `from` win.
 export function applyRenameOverrides(
@@ -45,6 +47,7 @@ export function applyRenameOverrides(
 ): ApplyOverridesResult {
   const merged: RenamePair[] = plan.map((p) => ({ ...p }));
   const outcomes: OverrideOutcome[] = [];
+  const overridden = new Set<string>();
   for (const override of overrides) {
     const target = merged.find((p) => p.from === override.from);
     if (!target) {
@@ -53,7 +56,8 @@ export function applyRenameOverrides(
     }
     const reason = reservedReason(override.to);
     if (reason) {
-      outcomes.push({ kind: "reserved", from: override.from, to: override.to, reason });
+      const keptFrom = overridden.has(override.from) ? "override" : "planner";
+      outcomes.push({ kind: "reserved", from: override.from, to: override.to, reason, kept: target.to, keptFrom });
       continue;
     }
     if (target.to === override.to) {
@@ -62,8 +66,25 @@ export function applyRenameOverrides(
     }
     outcomes.push({ kind: "changed", from: override.from, was: target.to, to: override.to });
     target.to = override.to;
+    overridden.add(override.from);
   }
   return { plan: merged, outcomes };
+}
+
+export function describeKeptTarget(o: Extract<OverrideOutcome, { kind: "reserved" }>): string {
+  return o.keptFrom === "override" ? `kept "${o.kept}" from an earlier --rename` : `kept the planner's pick "${o.kept}"`;
+}
+
+// The CLI line for one --rename outcome. renamable lists the plan's `from`
+// tokens, shown when an override matched none of them.
+export function describeRenameOverride(o: OverrideOutcome, renamable: readonly string[]): string {
+  switch (o.kind) {
+    case "changed": return `override: ${o.from} → ${o.to} (overrode planner's "${o.was}")`;
+    case "noop": return `override: ${o.from} → ${o.to} (already the planner's pick)`;
+    case "reserved": return `warning: --rename ${o.from}=${o.to} rejected: ${o.reason} — ${describeKeptTarget(o)}`;
+    case "unmatched":
+      return `warning: --rename ${o.from}=${o.to} matched no planned rename — skipped (renamable: ${renamable.join(", ") || "none"})`;
+  }
 }
 
 // Keep entity names in step with rename-plan overrides. The planner names each

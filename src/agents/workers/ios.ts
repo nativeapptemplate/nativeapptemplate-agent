@@ -24,10 +24,15 @@ type RenameStats = {
 // Sentry.local.xcconfig likewise holds the developer's DSN and org/project:
 // copied, the generated app would send its crashes to the template's Sentry
 // project and its archives would upload dSYMs there.
-// API.local.xcconfig is kept: it points Debug builds at the developer's Rails.
+// API.local.xcconfig is kept although gitignored: it points Debug builds at
+// the developer's Rails. build/ and *.xcresult (what `xcodebuild` and its test
+// runs leave in the working tree) are listed only for a substrate outside git;
+// in git the template's .gitignore already leaves them out.
 export const IOS_SKIP_RULES: CopySkipRules = {
-  rootPaths: [".git", ".claude", "DerivedData", ".build", "Pods", "Carthage"],
+  rootPaths: [".git", ".claude", "build", "DerivedData", ".build", "Pods", "Carthage"],
   anySegment: ["xcuserdata", "RevenueCat.local.xcconfig", "Sentry.local.xcconfig", ...SENTRY_CREDENTIAL_FILES],
+  anySuffix: [".xcresult"],
+  keepIgnored: ["API.local.xcconfig"],
 };
 
 export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
