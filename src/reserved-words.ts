@@ -21,6 +21,18 @@ export const BILLING_RESERVED: readonly string[] = [
   "Package", "Offering", "Store", "StoreProduct", "Product", "Transaction", "Price", "Period",
 ];
 
+// The paid templates' optional Sentry error monitoring. ErrorReport /
+// ErrorReporter / ErrorReporting are the templates' own types (iOS and Android;
+// ErrorReportPolicy etc. only extend them). Sentry is the SDK's module (iOS
+// `Sentry.Event`) and the Ruby gem's top-level module, so a class of that name
+// would reopen it. Event is the iOS template's own logging type (Logger.swift),
+// which is why the reporter has to write `Sentry.Event`. Breadcrumb and
+// Exception are Sentry SDK types the iOS tests use unqualified (an app type of
+// that name makes them ambiguous); Exception is also Ruby's base exception.
+export const ERROR_MONITORING_RESERVED: readonly string[] = [
+  "Sentry", "ErrorReport", "ErrorReporter", "ErrorReporting", "Event", "Breadcrumb", "Exception",
+];
+
 export const STDLIB_RESERVED: Readonly<Record<string, readonly string[]>> = {
   Swift: [
     "Task", "Actor", "Result", "Error", "View", "Text", "Image", "State", "Binding",
@@ -46,6 +58,8 @@ export function reservedReason(target: string): string | null {
   if (substrate) return `"${substrate}" is used by the substrate's auth/admin layer`;
   const billing = hit(BILLING_RESERVED);
   if (billing) return `"${billing}" is used by the substrate's subscription (RevenueCat) layer`;
+  const monitoring = hit(ERROR_MONITORING_RESERVED);
+  if (monitoring) return `"${monitoring}" is used by the substrate's error monitoring (Sentry) layer`;
   for (const [lang, words] of Object.entries(STDLIB_RESERVED)) {
     const w = hit(words);
     if (w) return `"${w}" is a ${lang} standard-library type`;

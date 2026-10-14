@@ -91,6 +91,17 @@ def build_patterns(from, to)
   to_camel      = camel_case(to)
   from_camel_pl = pluralize(from_camel)
   to_camel_pl   = pluralize(to_camel)
+  # SCREAMING form: the upper case of whatever its lower-case spelling becomes.
+  # A one-word `from` has a single lower-case spelling (snake == flat) and the
+  # snake pattern above wins for it, so `nativeapptemplateapi` becomes
+  # `barber_queue_api`; NATIVEAPPTEMPLATEAPI must then become BARBER_QUEUE_API,
+  # not BARBERQUEUEAPI, or code that derives one from the other breaks (the
+  # API's deploy test checks `$#{SERVICE.upcase}_SENTRY_DSN` in .kamal/secrets).
+  # A multi-word `from` (NativeAppTemplate) keeps the flat form, matching its
+  # flat lower-case rename (NATIVEAPPTEMPLATE_API_DOMAIN -> CLINICQUEUE_API_DOMAIN).
+  one_word      = from_snake == from_flat
+  to_upper      = one_word ? to_snake.upcase : to.upcase
+  to_upper_pl   = one_word ? to_snake_pl.upcase : to_pl.upcase
   from_human_lo    = humanize_lower(from)
   to_human_lo      = humanize_lower(to)
   from_human_ti    = humanize_title(from)
@@ -119,6 +130,9 @@ def build_patterns(from, to)
   pascal_r = "(?:(?![A-Za-z])|(?=[A-Z]))"
   snake_l  = "(?<![A-Za-z])"
   snake_r  = "(?:(?![A-Za-z])|(?=[A-Z]))"
+  # SCREAMING tokens also follow Gradle's `-P` (`-PNATIVEAPPTEMPLATE_SENTRY_DSN=...`
+  # in the Android template's docs and build script comments).
+  upper_l  = "(?:(?<![A-Za-z])|(?<=-P))"
 
   patterns = [
     [/#{pascal_l}#{Regexp.escape(from_pl)}#{pascal_r}/,     to_pl],
@@ -136,8 +150,8 @@ def build_patterns(from, to)
     # (from `ItemTag`) or `itemTagInfoFromNdefMessage`.
     [/#{snake_l}#{Regexp.escape(from_camel_pl)}#{snake_r}/, to_camel_pl],
     [/#{snake_l}#{Regexp.escape(from_camel)}#{snake_r}/,    to_camel],
-    [/#{snake_l}#{Regexp.escape(from_pl.upcase)}(?![A-Za-z])/, to_pl.upcase],
-    [/#{snake_l}#{Regexp.escape(from.upcase)}(?![A-Za-z])/,    to.upcase],
+    [/#{upper_l}#{Regexp.escape(from_pl.upcase)}(?![A-Za-z])/, to_upper_pl],
+    [/#{upper_l}#{Regexp.escape(from.upcase)}(?![A-Za-z])/,    to_upper],
   ]
 
   # Humanized display forms — three case shapes per number:

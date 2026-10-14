@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { trace } from "../trace.js";
 import { isStub } from "../stub.js";
 import type { DomainSpec } from "./types.js";
-import { BILLING_RESERVED, STDLIB_RESERVED, SUBSTRATE_RESERVED } from "../reserved-words.js";
+import { BILLING_RESERVED, ERROR_MONITORING_RESERVED, STDLIB_RESERVED, SUBSTRATE_RESERVED } from "../reserved-words.js";
 
 const MODEL = "claude-opus-4-7";
 const MAX_TOKENS = 4096;
@@ -25,12 +25,16 @@ IMPORTANT — billing-reserved vocabulary: the substrate's subscription layer (R
 
   ${BILLING_RESERVED.join(", ")}
 
+IMPORTANT — error-monitoring-reserved vocabulary: the substrate's error monitoring layer (Sentry) already uses these tokens — its own type names (ErrorReporter, ErrorReport, ErrorReporting), the template's logging Event type, and the Sentry SDK names it calls — so rename targets MUST NOT collide with them either:
+
+  ${ERROR_MONITORING_RESERVED.join(", ")}
+
 IMPORTANT — language-stdlib-reserved vocabulary: the generated code must compile in Swift, Kotlin, and Ruby. A rename target that collides with any of these standard-library types silently shadows the stdlib and breaks compilation (e.g. Task.isCancelled no longer resolves if Task is shadowed):
 
 ${Object.entries(STDLIB_RESERVED).map(([lang, words]) => `  ${lang} — ${words.join(", ")}`).join("\n")}
 
 For Shopkeeper, prefer domain-distinctive nouns: Assignee, Maintainer, Host, Vet, Barber, Stylist, Staff, Curator, Editor, Author — NOT Owner / User / Admin.
-For Shop, prefer: Clinic, Restaurant, Workspace, Project, Board, Journal, Space, Studio — NOT Account / Store.
+For Shop, prefer: Clinic, Restaurant, Workspace, Project, Board, Journal, Space, Studio — NOT Account / Store / Event.
 For ItemTag replacements, prefer: Todo, Ticket, Entry, Card, Issue, Note, Memo, Patient, Reservation — NOT Task (Swift Concurrency) / Actor (Swift Concurrency) / Scan / Notification.
 
 For the Shop and ItemTag renames, also give toJa: the natural Japanese noun a Japanese app would use for the target, e.g. Clinic → 医院, Restaurant → 店, Patient → 患者, Reservation → 予約. The substrate's Japanese messages use 店舗 (Shop) and アイテムタグ (ItemTag), and toJa replaces them as a plain substring, so it must be a bare noun (no particles, no 様/さん) that reads naturally before 名, は and を, as in 医院名, 医院は3件まで作成できます. Omit toJa for other renames.

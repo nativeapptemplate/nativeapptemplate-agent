@@ -6,7 +6,7 @@ import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
 import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
-import { copySubstrate, type CopySkipRules } from "./copy.js";
+import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
 import { slugToPascal, slugToSnake } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
@@ -17,8 +17,9 @@ type RenameStats = {
   files_renamed: number;
 };
 
-const SKIP_RULES: CopySkipRules = {
+export const RAILS_SKIP_RULES: CopySkipRules = {
   rootPaths: [".git", ".claude", "node_modules", "tmp", "log", "vendor/bundle"],
+  anySegment: SENTRY_CREDENTIAL_FILES,
 };
 
 export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> {
@@ -35,7 +36,7 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
 
   trace("rails", `copying substrate from ${substrate} to ${outDir}`);
   await prepareFresh(outDir);
-  await copySubstrate(substrate, outDir, SKIP_RULES);
+  await copySubstrate(substrate, outDir, RAILS_SKIP_RULES);
 
   const productPairs = buildProductRenamePairs(domain.slug);
   const renamePlan: readonly RenamePair[] = [...productPairs, ...domain.renamePlan].filter((p) => p.from !== p.to);
@@ -64,11 +65,16 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
   };
 }
 
-function buildProductRenamePairs(slug: string): readonly RenamePair[] {
+export function buildProductRenamePairs(slug: string): readonly RenamePair[] {
   const pascal = slugToPascal(slug);
+  // "Nativeapptemplate" (one capital) is the API's own spelling of the product
+  // in Ruby constants such as `NativeapptemplateSentry`
+  // (config/initializers/sentry.rb). It comes after the other two so their
+  // lower-case and upper-case forms keep winning.
   return [
     { from: "Nativeapptemplateapi", to: `${pascal}Api` },
     { from: "NativeAppTemplate", to: pascal },
+    { from: "Nativeapptemplate", to: pascal },
   ];
 }
 

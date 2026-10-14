@@ -8,6 +8,12 @@ export type CopySkipRules = {
   anySegment?: readonly string[];
 };
 
+// Sentry's local credentials, gitignored in the templates: sentry-cli's auth
+// token (.sentryclirc, sentry.properties). Never carried into a generated app,
+// whatever the platform, so an upload can't run with the template developer's
+// token against their Sentry project.
+export const SENTRY_CREDENTIAL_FILES: readonly string[] = [".sentryclirc", "sentry.properties"];
+
 export async function copySubstrate(src: string, dest: string, rules: CopySkipRules): Promise<void> {
   const rootPaths = rules.rootPaths ?? [];
   const anySegment = new Set(rules.anySegment ?? []);

@@ -33,7 +33,8 @@ Optional overrides the user may include, passed straight through to the CLI:
   override that matches nothing is reported and dropped, and so is one whose
   target is a reserved name — the substrate's own (Owner, Account, User…), its
   subscription layer's (Subscription, Paywall, Plan, Purchase, Product, Store,
-  Customer…) or a Swift/Kotlin/Ruby stdlib type (Task, List, Result…). If the
+  Customer…), its error monitoring layer's (Sentry, ErrorReporter, Event…) or a
+  Swift/Kotlin/Ruby stdlib type (Task, List, Result…). If the
   user asks for one, suggest a nearby noun instead.
 - `--rename-ja Shop=動物病院` (repeatable) — the Japanese noun that replaces 店舗
   (Shop) or アイテムタグ (ItemTag) in the Rails API's Japanese messages. Use it
@@ -53,6 +54,9 @@ Tell the user, briefly, before you start:
   switched off until the user sets their own RevenueCat key; the generated iOS
   project resolves `purchases-ios` via Swift Package Manager, so its first build
   needs network access.
+- The generated apps also include Sentry error monitoring, off until the user
+  sets their own DSN; nothing is sent and no dSYM / mapping is uploaded before
+  that.
 
 ## 3. Run the generator
 
