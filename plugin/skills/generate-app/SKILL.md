@@ -30,7 +30,11 @@ Optional overrides the user may include, passed straight through to the CLI:
 - `--project-name="Vet Clinic"` — fixes the display name + output slug.
 - `--rename Shopkeeper=Vet` (repeatable) — overrides one of the planner's chosen
   renames. Only renames the planner *already planned* are overridable; an
-  override that matches nothing is reported and dropped.
+  override that matches nothing is reported and dropped, and so is one whose
+  target is a reserved name — the substrate's own (Owner, Account, User…), its
+  subscription layer's (Subscription, Paywall, Plan, Purchase, Product, Store,
+  Customer…) or a Swift/Kotlin/Ruby stdlib type (Task, List, Result…). If the
+  user asks for one, suggest a nearby noun instead.
 - `--rename-ja Shop=動物病院` (repeatable) — the Japanese noun that replaces 店舗
   (Shop) or アイテムタグ (ItemTag) in the Rails API's Japanese messages. Use it
   when the user wants a specific Japanese name; otherwise the planner picks one.
@@ -45,6 +49,10 @@ Tell the user, briefly, before you start:
 - Substrate selection comes from the environment (`NATIVEAPPTEMPLATE_API` /
   `_IOS` / `_ANDROID`). All three are required — there is no default; if one is
   unset, the run fails immediately. Don't change them unless the user asks.
+- With the paid templates, the generated apps include RevenueCat subscriptions,
+  switched off until the user sets their own RevenueCat key; the generated iOS
+  project resolves `purchases-ios` via Swift Package Manager, so its first build
+  needs network access.
 
 ## 3. Run the generator
 

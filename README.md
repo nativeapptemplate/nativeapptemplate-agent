@@ -162,6 +162,15 @@ The agent operates on the free, MIT-licensed edition of NativeAppTemplate — th
 
 Combined ~42.5k LOC. Extracted from [MyTurnTag Creator](https://myturntag.com), a walk-in queue-management SaaS live on both app stores since 2024.
 
+### Subscriptions in the paid templates
+
+The paid iOS and Android templates include optional [RevenueCat](https://www.revenuecat.com) subscriptions. Generated apps keep them, **switched off**: billing stays off until you set your own app's RevenueCat key, so a generated app behaves as it would without billing (every feature open, no paywall). The agent never carries a key over:
+
+- **iOS:** the key is `REVENUECAT_API_KEY` in `RevenueCat.xcconfig` (committed empty). The template's gitignored `RevenueCat.local.xcconfig`, which may hold the template developer's own key, is not copied into the generated app; `API.local.xcconfig` still is, so Debug builds keep pointing at your local Rails. Generated iOS apps depend on [`purchases-ios`](https://github.com/RevenueCat/purchases-ios) through Swift Package Manager, so the **first build needs network access** to resolve it.
+- **Android:** the key is the Gradle property `<PRODUCT>_REVENUECAT_GOOGLE_API_KEY` (e.g. `CLINICQUEUE_REVENUECAT_GOOGLE_API_KEY`), renamed with the app. The env bridge mirrors only the API settings (`<PRODUCT>_API_*`), never `NATIVEAPPTEMPLATE_REVENUECAT_GOOGLE_API_KEY`.
+
+To turn billing on, follow the template's subscription docs (`docs/subscription.md` on iOS, `docs/subscriptions.md` on Android) with your own RevenueCat app. The paywall copy that names the primary resource ("Run all your shops from one account", 店舗) is renamed with it.
+
 ## Usage
 
 ```bash
@@ -262,8 +271,16 @@ Naming flags:
 | Flag | Default | Effect |
 |---|---|---|
 | `--project-name="Vet Clinic"` | planner's pick | Name the project. Accepts a human name (`"Vet Clinic"`), PascalCase (`VetClinic`), or kebab (`vet-clinic`); from it the agent derives the Pascal project name (`NativeAppTemplate → VetClinic` across all three platforms), the slug/output dir (`out/vet-clinic/`), the DB prefix + env-bridge token, and the display name. Invalid (no derivable slug) is reported and skipped. |
-| `--rename From=To` | planner's pick | Override one of the planner's domain rename targets (repeatable). `From` is a substrate token (`Shop`, `Shopkeeper`, `ItemTag`); the planner fills in everything else. An override that matches no planned rename is reported and skipped. Example: `--rename Shopkeeper=Vet --rename Shop=Clinic` |
+| `--rename From=To` | planner's pick | Override one of the planner's domain rename targets (repeatable). `From` is a substrate token (`Shop`, `Shopkeeper`, `ItemTag`); the planner fills in everything else. An override that matches no planned rename is reported and skipped, and so is one whose target is a [reserved name](#reserved-rename-targets) (the planner's pick is kept). Example: `--rename Shopkeeper=Vet --rename Shop=Clinic` |
 | `--rename-ja From=名前` | planner's pick | Override the Japanese name of a planned rename (repeatable). `From` is `Shop` or `ItemTag`; the Rails API's Japanese messages (`config/locales/ja.yml`) and their tests use it in place of the substrate's 店舗 / アイテムタグ. The planner picks one itself (`toJa` in the rename plan); without one the Japanese is left as is. Example: `--rename-ja Shop=動物病院` |
+
+#### Reserved rename targets
+
+A rename target must not be a name the substrate or the languages already use, or the renamed types collide with existing ones and the build breaks. The planner is told to avoid these, `--rename` / the MCP `renameOverrides` reject them (case-insensitively), and a run warns if a planned target is one of them. The list lives in [`src/reserved-words.ts`](./src/reserved-words.ts):
+
+- **Substrate auth/admin:** Owner, Account, Admin, Personal, Role, Permission, User, App, Version, Privacy, Terms, Invitation, Error, Scan, Redirect, Notification, Session
+- **Subscriptions (paid templates):** Subscription, Paywall, Plan, Purchase, Purchases, Billing, Entitlement, Trial, Customer, and the RevenueCat / StoreKit / Play Billing names Package, Offering, Store, StoreProduct, Product, Transaction, Price, Period
+- **Standard libraries:** Swift (Task, Actor, Result, View, Data, Date, …), Kotlin (Unit, List, Map, Flow, Context, …), Ruby/Rails (Object, Module, Class, Hash, Request, Response, …)
 
 Report flags:
 

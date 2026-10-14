@@ -1,4 +1,5 @@
 import type { Entity, RenamePair } from "./agents/types.js";
+import { reservedReason } from "./reserved-words.js";
 
 // Manual rename overrides (ROADMAP §"Optional explicit naming overrides").
 // The planner is the sole source of the rename plan; these let a human veto a
@@ -8,7 +9,8 @@ import type { Entity, RenamePair } from "./agents/types.js";
 export type OverrideOutcome =
   | { kind: "changed"; from: string; was: string; to: string }
   | { kind: "noop"; from: string; to: string }
-  | { kind: "unmatched"; from: string; to: string };
+  | { kind: "unmatched"; from: string; to: string }
+  | { kind: "reserved"; from: string; to: string; reason: string };
 
 export type ApplyOverridesResult = {
   plan: RenamePair[];
@@ -32,7 +34,11 @@ export function parseRenamePair(raw: string | undefined): RenamePair | null {
 // "change a planned target": an override keys on the substrate token (`from`)
 // and replaces the planner's chosen target (`to`). Overrides whose `from`
 // matches no planned rename are reported as `unmatched` and dropped — we don't
-// silently invent new renames. Later overrides for the same `from` win.
+// silently invent new renames. Overrides into a reserved word
+// (src/reserved-words.ts) are reported as `reserved` and dropped, keeping the
+// planner's pick: the planner is told to avoid those words, and an override
+// must not reintroduce a collision that breaks the build. Later overrides for
+// the same `from` win.
 export function applyRenameOverrides(
   plan: readonly RenamePair[],
   overrides: readonly RenamePair[],
@@ -43,6 +49,11 @@ export function applyRenameOverrides(
     const target = merged.find((p) => p.from === override.from);
     if (!target) {
       outcomes.push({ kind: "unmatched", from: override.from, to: override.to });
+      continue;
+    }
+    const reason = reservedReason(override.to);
+    if (reason) {
+      outcomes.push({ kind: "reserved", from: override.from, to: override.to, reason });
       continue;
     }
     if (target.to === override.to) {

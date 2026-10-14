@@ -18,6 +18,7 @@ import { runLayer2, type Layer2Mode } from "./validation/layer2.js";
 import type { RepairAttempt, RunReport } from "./report/model.js";
 import type { JudgeResult, Platform, PlatformDetail, RenamePair, WorkerResult } from "./agents/types.js";
 import { applyJapaneseOverrides, applyRenameOverrides, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
+import { reservedTargets, type ReservedTarget } from "./reserved-words.js";
 import { isValidSlug, slugToPascal, projectNameToSlug, projectNameToDisplayName } from "./slug.js";
 
 export type DispatchReportOptions = {
@@ -47,6 +48,9 @@ export type DispatchResult = JudgeResult & {
   reportPaths: ReportPaths;
   renameOverrideOutcomes: readonly OverrideOutcome[];
   japaneseOverrideOutcomes: readonly OverrideOutcome[];
+  // Planned targets that collide with a reserved word (src/reserved-words.ts).
+  // The planner is told to avoid them; a hit here usually means a build error.
+  reservedTargets: readonly ReservedTarget[];
 };
 
 export async function dispatch(spec: string, options: DispatchOptions = {}): Promise<DispatchResult> {
@@ -82,6 +86,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     for (const o of merged.outcomes) {
       if (o.kind === "changed") trace("dispatch", `rename override: ${o.from} ${o.was}->${o.to} (overrode planner's pick)`);
       else if (o.kind === "noop") trace("dispatch", `rename override: ${o.from}=${o.to} already the planned target — no change`);
+      else if (o.kind === "reserved") trace("dispatch", `rename override rejected: ${o.from}=${o.to} — ${o.reason}; keeping the planner's pick`);
       else trace("dispatch", `rename override ignored: no planned rename for "${o.from}" (got ${o.from}=${o.to})`);
     }
     // Carry the override into entity names too, so the report's entity cards
@@ -103,6 +108,9 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     }
     domain = { ...domain, renamePlan: merged.plan };
   }
+
+  const reserved = reservedTargets(domain.renamePlan);
+  for (const r of reserved) trace("dispatch", `warning: rename target ${r.from}->${r.to} collides with a reserved word (${r.reason})`);
 
   // Mirror the substrate's NATIVEAPPTEMPLATE_API_* config to the
   // renamed product equivalents (<PRODUCT>_API_*) so the agent's auto-
@@ -299,7 +307,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     if (written.length > 0) trace("dispatch", `report: wrote ${written.join(", ")}`);
   }
 
-  return { ...judge, report, reportPaths, renameOverrideOutcomes, japaneseOverrideOutcomes };
+  return { ...judge, report, reportPaths, renameOverrideOutcomes, japaneseOverrideOutcomes, reservedTargets: reserved };
 }
 
 // NATIVEAPPTEMPLATE_REPAIR control: unset / "0" / "off" / "false" → disabled;

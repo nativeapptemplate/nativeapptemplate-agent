@@ -50,6 +50,13 @@ const SKIP_SEGMENTS = new Set([
 // Layer 1 must not scan them either, or it flags tokens we intentionally left.
 const SKIP_SUBPATHS = ["app/assets/builds", "public/assets"];
 
+// Ordinary words that begin with a forbidden token but aren't the domain noun.
+// rename.rb leaves them alone (the token is followed by a lowercase letter, not
+// a word boundary), so they aren't leftovers, and "repairing" them would break
+// the build. ShoppingCart / AddShoppingCart are Material icons in the paid
+// Android template's subscription settings.
+const NON_DOMAIN_WORDS = ["Shopping"];
+
 export async function runLayer1(input: Layer1Input): Promise<Layer1Result> {
   if (input.forbiddenTokens.length === 0) {
     return { pass: true, findings: [] };
@@ -72,6 +79,8 @@ export async function runLayer1(input: Layer1Input): Promise<Layer1Result> {
       regex.lastIndex = 0;
       let m: RegExpExecArray | null;
       while ((m = regex.exec(line)) !== null) {
+        const at = m.index;
+        if (NON_DOMAIN_WORDS.some((w) => w.startsWith(m![0]) && line.startsWith(w, at))) continue;
         findings.push({
           token: m[0],
           file: relative(root, filePath),
