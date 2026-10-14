@@ -6,7 +6,7 @@ import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
 import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
-import { copySubstrate, type CopySkipRules } from "./copy.js";
+import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
 import { slugToPascal } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
@@ -21,10 +21,13 @@ type RenameStats = {
 // the template itself. Copied, it would switch billing on in the generated app
 // with another app's key (offerings fail, every paid feature locked); without
 // it the generated app starts with billing off, as the template is committed.
+// Sentry.local.xcconfig likewise holds the developer's DSN and org/project:
+// copied, the generated app would send its crashes to the template's Sentry
+// project and its archives would upload dSYMs there.
 // API.local.xcconfig is kept: it points Debug builds at the developer's Rails.
 export const IOS_SKIP_RULES: CopySkipRules = {
   rootPaths: [".git", ".claude", "DerivedData", ".build", "Pods", "Carthage"],
-  anySegment: ["xcuserdata", "RevenueCat.local.xcconfig"],
+  anySegment: ["xcuserdata", "RevenueCat.local.xcconfig", "Sentry.local.xcconfig", ...SENTRY_CREDENTIAL_FILES],
 };
 
 export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {

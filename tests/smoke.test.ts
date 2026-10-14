@@ -1780,11 +1780,12 @@ test(
     assert.equal(stats.files_changed, 2);
 
     // Expected forms follow rename.rb's case rules for Nativeapptemplateapi -> VetClinicApi:
-    // upcase token VETCLINICAPI, snake_case token vet_clinic_api.
+    // snake_case token vet_clinic_api, and the upper case of that, VET_CLINIC_API
+    // (a one-word `from` has a single lower-case spelling; see build_patterns).
     const secrets = readFileSync(join(root, ".kamal/secrets"), "utf8");
     const deploy = readFileSync(join(root, "config/deploy.yml"), "utf8");
-    assert.equal(secrets, "POSTGRES_PASSWORD=$VETCLINICAPI_POSTGRES_PASSWORD\nVETCLINICAPI_ORIGIN_CERT=$(cat $HOME/.config/vet_clinic_api/origin-cert.pem)\n");
-    assert.equal(deploy, "proxy:\n  ssl:\n    certificate_pem: VETCLINICAPI_ORIGIN_CERT\n");
+    assert.equal(secrets, "POSTGRES_PASSWORD=$VET_CLINIC_API_POSTGRES_PASSWORD\nVET_CLINIC_API_ORIGIN_CERT=$(cat $HOME/.config/vet_clinic_api/origin-cert.pem)\n");
+    assert.equal(deploy, "proxy:\n  ssl:\n    certificate_pem: VET_CLINIC_API_ORIGIN_CERT\n");
   },
 );
 
@@ -2689,4 +2690,226 @@ test("runLayer1 ignores Material's ShoppingCart icons but still flags a leftover
   const dirty = await runLayer1({ projectDir: root, forbiddenTokens: ["Shop"] });
   // Hand count: "Shop" and the "Shop" of "Shops" are leftovers; ShoppingCart is not.
   assert.deepEqual(dirty.findings.map((f) => [f.file, f.token]), [["Leftover.kt", "Shop"], ["Leftover.kt", "Shop"]]);
+});
+
+// --- Sentry error monitoring in the templates ---
+
+// The error monitoring names: the templates' own types (iOS NativeAppTemplate/
+// ErrorReporting/, Android common/errors/reporting/), the iOS template's logging
+// `struct Event` (Logger.swift, why SentryErrorReporter writes `Sentry.Event`),
+// and the SDK names used unqualified (iOS SentryErrorReporterTest: Breadcrumb,
+// Exception) or as a top-level module (Swift `import Sentry`, Ruby `Sentry`).
+const ERROR_MONITORING_NAMES = [
+  "Sentry", "ErrorReport", "ErrorReporter", "ErrorReporting", "Event", "Breadcrumb", "Exception",
+];
+
+test("reservedReason rejects every error monitoring name, in any case, and still accepts ordinary domain nouns", async () => {
+  const { reservedReason } = await import("../src/reserved-words.js");
+  for (const name of ERROR_MONITORING_NAMES) {
+    assert.match(reservedReason(name) ?? "", /error monitoring \(Sentry\)/, `${name} must be reserved`);
+    assert.ok(reservedReason(name.toUpperCase()), `${name.toUpperCase()} must be reserved`);
+  }
+  // Nouns a barbershop / clinic / bug-tracker spec could pick; none is an
+  // identifier the error monitoring layer declares or imports.
+  for (const name of ["Barbershop", "Barber", "Visit", "Report", "Incident", "Clinic"]) {
+    assert.equal(reservedReason(name), null, `${name} must be allowed`);
+  }
+});
+
+test("planner prompt lists every error-monitoring-reserved name", async () => {
+  const { SYSTEM_PROMPT } = await import("../src/agents/planner.js");
+  const line = SYSTEM_PROMPT.split("\n").find((l) => l.includes("Sentry, ErrorReport")) ?? "";
+  for (const name of ERROR_MONITORING_NAMES) {
+    assert.ok(line.split(", ").map((w) => w.trim()).includes(name), `planner prompt must reserve ${name}`);
+  }
+});
+
+test("applyRenameOverrides rejects an error monitoring target and keeps the planner's pick", async () => {
+  const { applyRenameOverrides } = await import("../src/rename-overrides.js");
+  const plan = [
+    { from: "Shop", to: "Barbershop" },
+    { from: "ItemTag", to: "Visit" },
+  ];
+  const { plan: merged, outcomes } = applyRenameOverrides(plan, [
+    { from: "Shop", to: "Event" },
+    { from: "ItemTag", to: "sentry" },
+  ]);
+  assert.deepEqual(merged, plan);
+  assert.deepEqual(outcomes.map((o) => [o.kind, o.from, o.to]), [
+    ["reserved", "Shop", "Event"],
+    ["reserved", "ItemTag", "sentry"],
+  ]);
+});
+
+test("copies leave out Sentry's local config and credentials but keep the committed Sentry files", async () => {
+  const { copySubstrate } = await import("../src/agents/workers/copy.js");
+  const { IOS_SKIP_RULES } = await import("../src/agents/workers/ios.js");
+  const { ANDROID_SKIP_RULES } = await import("../src/agents/workers/android.js");
+  const { RAILS_SKIP_RULES } = await import("../src/agents/workers/rails.js");
+  const { existsSync } = await import("node:fs");
+  const base = mkdtempSync(join(tmpdir(), "copy-sentry-"));
+
+  const ios = join(base, "ios");
+  mkdirSync(join(ios, "scripts"), { recursive: true });
+  writeFileSync(join(ios, "Project.xcconfig"), '#include "RevenueCat.xcconfig"\n#include "Sentry.xcconfig"\n');
+  writeFileSync(join(ios, "Sentry.xcconfig"), 'SENTRY_DSN =\nSENTRY_ORG =\nSENTRY_PROJECT =\n#include? "Sentry.local.xcconfig"\n');
+  writeFileSync(join(ios, "Sentry.local.xcconfig"), "SENTRY_DSN = https:/$()/developers-own@o1.ingest.us.sentry.io/1\n");
+  writeFileSync(join(ios, ".sentryclirc"), "[auth]\ntoken=developers_own_token\n");
+  writeFileSync(join(ios, "scripts", "upload-dsyms-to-sentry.sh"), "#!/bin/sh\nexit 0\n");
+  await copySubstrate(ios, join(base, "ios-out"), IOS_SKIP_RULES);
+  assert.equal(existsSync(join(base, "ios-out", "Sentry.local.xcconfig")), false);
+  assert.equal(existsSync(join(base, "ios-out", ".sentryclirc")), false);
+  for (const kept of ["Project.xcconfig", "Sentry.xcconfig", "scripts/upload-dsyms-to-sentry.sh"]) {
+    assert.equal(existsSync(join(base, "ios-out", kept)), true, `${kept} must be copied`);
+  }
+
+  for (const [name, rules] of [["android", ANDROID_SKIP_RULES], ["rails", RAILS_SKIP_RULES]] as const) {
+    const src = join(base, name);
+    mkdirSync(join(src, "app"), { recursive: true });
+    writeFileSync(join(src, ".sentryclirc"), "[auth]\ntoken=developers_own_token\n");
+    writeFileSync(join(src, "app", "sentry.properties"), "auth.token=developers_own_token\n");
+    writeFileSync(join(src, ".gitignore"), ".sentryclirc\nsentry.properties\n");
+    await copySubstrate(src, join(base, `${name}-out`), rules);
+    assert.equal(existsSync(join(base, `${name}-out`, ".sentryclirc")), false, `${name}: .sentryclirc`);
+    assert.equal(existsSync(join(base, `${name}-out`, "app", "sentry.properties")), false, `${name}: sentry.properties`);
+    assert.equal(existsSync(join(base, `${name}-out`, ".gitignore")), true, `${name}: control file copied`);
+  }
+});
+
+test("env-bridge never mirrors the template's Sentry settings to the generated app", async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), "env-bridge-sentry-"));
+  mkdirSync(join(fakeHome, ".gradle"), { recursive: true });
+  writeFileSync(
+    join(fakeHome, ".gradle", "gradle.properties"),
+    "NATIVEAPPTEMPLATE_API_SCHEME=http\nNATIVEAPPTEMPLATE_SENTRY_DSN=https://developers-own@o1.ingest.us.sentry.io/1\nNATIVEAPPTEMPLATE_SENTRY_ORG=developers-org\n",
+  );
+  const fakeSubstrate = mkdtempSync(join(tmpdir(), "substrate-sentry-"));
+  writeFileSync(join(fakeSubstrate, ".env"), "HOST=192.168.1.11\nPORT=3000\n");
+  const saved = {
+    HOME: process.env['HOME'],
+    NATIVEAPPTEMPLATE_API: process.env['NATIVEAPPTEMPLATE_API'],
+    NATIVEAPPTEMPLATE_API_SCHEME: process.env['NATIVEAPPTEMPLATE_API_SCHEME'],
+    NATIVEAPPTEMPLATE_SENTRY_DSN: process.env['NATIVEAPPTEMPLATE_SENTRY_DSN'],
+  };
+  process.env['HOME'] = fakeHome;
+  process.env['NATIVEAPPTEMPLATE_API'] = fakeSubstrate;
+  delete process.env['NATIVEAPPTEMPLATE_API_SCHEME'];
+  process.env['NATIVEAPPTEMPLATE_SENTRY_DSN'] = "https://developers-own@o1.ingest.us.sentry.io/1";
+  try {
+    const { buildBridgeValues } = await import("../src/env-bridge.js");
+    const bridge = await buildBridgeValues({
+      slug: "barbershop-queue", displayName: "Barbershop Queue", entities: [], renamePlan: [], jsonApiContract: {},
+    });
+    // Control: the fixture is read at all.
+    assert.equal(bridge.values['BARBERSHOPQUEUE_API_SCHEME'], "http");
+    assert.deepEqual(Object.keys(bridge.values).filter((k) => /SENTRY/.test(k)), []);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v !== undefined) process.env[k] = v;
+      else delete process.env[k];
+    }
+  }
+});
+
+test("rename.rb keeps the API's Sentry DSN secret matching the deploy test's SERVICE.upcase", { skip: !RUBY_AVAILABLE }, async () => {
+  // Lines from nativeapptemplateapi (config/deploy.yml, .kamal/secrets,
+  // test/config/deploy_config_test.rb, config/initializers/sentry.rb, test/config/sentry_test.rb).
+  // The deploy test asserts `SENTRY_DSN=$#{SERVICE.upcase}_SENTRY_DSN`, so after the rename the
+  // secret's prefix must be the upper case of the renamed service name.
+  const { buildProductRenamePairs } = await import("../src/agents/workers/rails.js");
+  const root = await runRenameFixture(
+    {
+      "config/deploy.yml": "service: nativeapptemplateapi\n",
+      ".kamal/secrets": "SENTRY_DSN=$NATIVEAPPTEMPLATEAPI_SENTRY_DSN\n",
+      "test/config/deploy_config_test.rb": 'SERVICE = "nativeapptemplateapi"\n',
+      "config/initializers/sentry.rb": 'module NativeapptemplateSentry\nend\nNativeapptemplateSentry.init(ENV["SENTRY_DSN"])\n',
+      "test/config/sentry_test.rb": "NativeapptemplateSentry.init(Sentry::TestHelper::DUMMY_DSN)\n",
+    },
+    [...buildProductRenamePairs("barbershop-queue")],
+  );
+  const service = /SERVICE = "(.+)"/.exec(readFileSync(join(root, "test/config/deploy_config_test.rb"), "utf8"))?.[1] ?? "";
+  // snake_case("BarbershopQueueApi") = barbershop_queue_api (rename.rb snake_case)
+  assert.equal(service, "barbershop_queue_api");
+  assert.equal(readFileSync(join(root, "config/deploy.yml"), "utf8"), `service: ${service}\n`);
+  assert.equal(readFileSync(join(root, ".kamal/secrets"), "utf8"), `SENTRY_DSN=$${service.toUpperCase()}_SENTRY_DSN\n`);
+  // The module and every call to it move together; the SDK's own `Sentry` stays.
+  assert.equal(
+    readFileSync(join(root, "config/initializers/sentry.rb"), "utf8"),
+    'module BarbershopQueueSentry\nend\nBarbershopQueueSentry.init(ENV["SENTRY_DSN"])\n',
+  );
+  assert.equal(readFileSync(join(root, "test/config/sentry_test.rb"), "utf8"), "BarbershopQueueSentry.init(Sentry::TestHelper::DUMMY_DSN)\n");
+});
+
+test("rename.rb renames the Sentry Gradle properties with the app and leaves Sentry identifiers and xcconfig wiring alone", { skip: !RUBY_AVAILABLE }, async () => {
+  // Lines from the paid templates: Android app/build.gradle.kts and
+  // SentryErrorReporter.kt; iOS project.pbxproj (Project.xcconfig as the project's
+  // base configuration), Project.xcconfig and SentryErrorReporter.swift.
+  const root = await runRenameFixture(
+    {
+      "app/build.gradle.kts":
+        'val sentryOrg = gradleProperty("NATIVEAPPTEMPLATE_SENTRY_ORG")\n' +
+        'buildConfigField("String", "SENTRY_DSN", "\\"${property("NATIVEAPPTEMPLATE_SENTRY_DSN") ?: ""}\\"")\n',
+      "SentryErrorReporter.kt": "import io.sentry.Sentry\nimport io.sentry.Breadcrumb\nSentry.captureEvent(event)\n",
+      "App.xcodeproj/project.pbxproj":
+        "5E7A10000000000000000105 /* Project.xcconfig */ = {isa = PBXFileReference; path = Project.xcconfig; };\n" +
+        "baseConfigurationReference = 5E7A10000000000000000105 /* Project.xcconfig */;\n" +
+        "shellScript = \"\\\"${SRCROOT}/scripts/upload-dsyms-to-sentry.sh\\\"\\n\";\n",
+      "Project.xcconfig": '#include "RevenueCat.xcconfig"\n#include "Sentry.xcconfig"\n',
+      "SentryErrorReporter.swift": "static func scrub(_ event: Sentry.Event) -> Sentry.Event {\n    SentrySDK.setUser(Sentry.User(userId: id))\n",
+    },
+    [
+      { from: "NativeAppTemplate", to: "BarbershopQueue" },
+      { from: "Shop", to: "Barbershop" },
+      { from: "Shopkeeper", to: "Barber" },
+      { from: "ItemTag", to: "Visit" },
+    ],
+  );
+  // NativeAppTemplate is two words, so its upper form stays flat: BARBERSHOPQUEUE,
+  // the same token the env bridge uses (slugToPascal(slug).toUpperCase()).
+  assert.equal(
+    readFileSync(join(root, "app/build.gradle.kts"), "utf8"),
+    'val sentryOrg = gradleProperty("BARBERSHOPQUEUE_SENTRY_ORG")\n' +
+      'buildConfigField("String", "SENTRY_DSN", "\\"${property("BARBERSHOPQUEUE_SENTRY_DSN") ?: ""}\\"")\n',
+  );
+  for (const unchanged of ["SentryErrorReporter.kt", "App.xcodeproj/project.pbxproj", "Project.xcconfig", "SentryErrorReporter.swift"]) {
+    const original = {
+      "SentryErrorReporter.kt": "import io.sentry.Sentry\nimport io.sentry.Breadcrumb\nSentry.captureEvent(event)\n",
+      "App.xcodeproj/project.pbxproj":
+        "5E7A10000000000000000105 /* Project.xcconfig */ = {isa = PBXFileReference; path = Project.xcconfig; };\n" +
+        "baseConfigurationReference = 5E7A10000000000000000105 /* Project.xcconfig */;\n" +
+        "shellScript = \"\\\"${SRCROOT}/scripts/upload-dsyms-to-sentry.sh\\\"\\n\";\n",
+      "Project.xcconfig": '#include "RevenueCat.xcconfig"\n#include "Sentry.xcconfig"\n',
+      "SentryErrorReporter.swift": "static func scrub(_ event: Sentry.Event) -> Sentry.Event {\n    SentrySDK.setUser(Sentry.User(userId: id))\n",
+    }[unchanged];
+    assert.equal(readFileSync(join(root, unchanged), "utf8"), original, `${unchanged} must be untouched`);
+  }
+});
+
+test("rename.rb upper-cases a one-word token from its snake_case rename", { skip: !RUBY_AVAILABLE }, async () => {
+  // Shop -> PetSalon: shop_id becomes pet_salon_id (snake), so SHOP_ID must become
+  // PET_SALON_ID (its upper case), not PETSALON_ID. ItemTag is two words: its upper
+  // form ITEMTAG keeps following the flat rename (itemtag -> visitlog -> VISITLOG).
+  const root = await runRenameFixture(
+    { "a.kt": "const val SHOP_ID = \"shop_id\"\nenum class F { SHOPS }\nval x = ITEMTAG\n" },
+    [{ from: "Shop", to: "PetSalon" }, { from: "ItemTag", to: "VisitLog" }],
+  );
+  assert.equal(
+    readFileSync(join(root, "a.kt"), "utf8"),
+    "const val PET_SALON_ID = \"pet_salon_id\"\nenum class F { PET_SALONS }\nval x = VISITLOG\n",
+  );
+});
+
+test("rename.rb renames a Gradle property after -P", { skip: !RUBY_AVAILABLE }, async () => {
+  // Android template README / build.gradle.kts: "-PNATIVEAPPTEMPLATE_SENTRY_UPLOAD_MAPPING=false".
+  // The P of -P is a letter, so the plain left boundary missed it and the generated
+  // app's docs named a property its build no longer reads.
+  const root = await runRenameFixture(
+    { "README.md": "./gradlew assembleRelease -PNATIVEAPPTEMPLATE_SENTRY_UPLOAD_MAPPING=false\nXNATIVEAPPTEMPLATE_KEEP\n" },
+    [{ from: "NativeAppTemplate", to: "FadeQueue" }],
+  );
+  // Hand-applied: -P prefix renamed; a token glued to another letter (X...) is still left alone.
+  assert.equal(
+    readFileSync(join(root, "README.md"), "utf8"),
+    "./gradlew assembleRelease -PFADEQUEUE_SENTRY_UPLOAD_MAPPING=false\nXNATIVEAPPTEMPLATE_KEEP\n",
+  );
 });

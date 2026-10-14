@@ -109,6 +109,8 @@ Platform names that merely *start* with a domain token are fine when the renamer
 
 The paid templates' subscription (RevenueCat) layer follows this rule: billing identifiers talk about the account owner and app user ID, never the domain (`PaywallFeature.multipleRecords`), and only the paywall copy that names the primary resource says *shop* / 店舗, so it follows the rename. Its type stems and the SDK names it calls are reserved rename targets (`src/reserved-words.ts`).
 
+The error monitoring (Sentry) layer follows it too: it reports the signed-in user's ID only and never names the domain in identifiers, so the rename leaves it alone. Its type names (ErrorReport, ErrorReporter, ErrorReporting), the iOS logging `Event` it must tell apart from `Sentry.Event`, and the SDK names its tests use unqualified are reserved rename targets. Spell the product the way the renamer knows it: `NativeAppTemplate` / `NATIVEAPPTEMPLATE_` in the apps, `Nativeapptemplateapi` / `Nativeapptemplate` (e.g. `NativeapptemplateSentry`) in the API. A one-word token's upper case is renamed from its snake_case form (`NATIVEAPPTEMPLATEAPI_SENTRY_DSN` becomes `FADE_QUEUE_API_SENTRY_DSN`, matching the service `fade_queue_api`), so code may derive one from the other (`SERVICE.upcase`).
+
 ### 6. Comments and docstrings: same rules
 
 Comments are scanned by the rename pipeline and treated like any other text. If a comment says "an item tag," it'll become "an patient" the same way a UI string does. Apply rule 1 to comments too:

@@ -171,6 +171,17 @@ The paid iOS and Android templates include optional [RevenueCat](https://www.rev
 
 To turn billing on, follow the template's subscription docs (`docs/subscription.md` on iOS, `docs/subscriptions.md` on Android) with your own RevenueCat app. The paywall copy that names the primary resource ("Run all your shops from one account", 店舗) is renamed with it.
 
+### Error monitoring (Sentry) in the templates
+
+The paid iOS and Android templates and the Rails API include optional [Sentry](https://sentry.io) error monitoring, **off** until you set your own DSN. Generated apps keep it off and never carry the template developer's settings over:
+
+- **iOS:** `SENTRY_DSN`, `SENTRY_ORG` and `SENTRY_PROJECT` live in `Sentry.xcconfig` (committed empty), included by `Project.xcconfig`, the project's base configuration for Debug and Release. Both files are copied and stay wired (the renamed `.pbxproj` keeps `Project.xcconfig` as the base configuration). The gitignored `Sentry.local.xcconfig` (the developer's own DSN) is not copied. The "Upload dSYMs to Sentry" build phase does nothing while the DSN, org or project is empty. The project depends on [`sentry-cocoa`](https://github.com/getsentry/sentry-cocoa) through Swift Package Manager, so the first build needs network access.
+- **Android:** the DSN and the R8 mapping upload read the Gradle properties `<PRODUCT>_SENTRY_DSN`, `<PRODUCT>_SENTRY_ORG`, `<PRODUCT>_SENTRY_PROJECT` (e.g. `FADEQUEUE_SENTRY_DSN`), renamed with the app; without them `BuildConfig.SENTRY_DSN` is empty and no mapping is uploaded. The env bridge never mirrors `NATIVEAPPTEMPLATE_SENTRY_*`.
+- **Rails API:** `SENTRY_DSN` (unset in development and test); in production it comes from the Kamal secret `<SERVICE>_SENTRY_DSN` (e.g. `FADE_QUEUE_API_SENTRY_DSN` for the service `fade_queue_api`). The initializer's `NativeapptemplateSentry` module is renamed with the app (`FadeQueueSentry`).
+- sentry-cli's auth token files (`.sentryclirc`, `sentry.properties`) are never copied from any substrate.
+
+To turn it on, follow the template's README section "Error monitoring (Sentry)" with your own Sentry project.
+
 ## Usage
 
 ```bash
@@ -280,6 +291,7 @@ A rename target must not be a name the substrate or the languages already use, o
 
 - **Substrate auth/admin:** Owner, Account, Admin, Personal, Role, Permission, User, App, Version, Privacy, Terms, Invitation, Error, Scan, Redirect, Notification, Session
 - **Subscriptions (paid templates):** Subscription, Paywall, Plan, Purchase, Purchases, Billing, Entitlement, Trial, Customer, and the RevenueCat / StoreKit / Play Billing names Package, Offering, Store, StoreProduct, Product, Transaction, Price, Period
+- **Error monitoring (paid templates, Rails API):** Sentry, ErrorReport, ErrorReporter, ErrorReporting, and Event (the iOS template's logging type, which the Sentry reporter tells apart from `Sentry.Event`), Breadcrumb, Exception (Sentry SDK names the iOS tests use unqualified; `Exception` is also Ruby's)
 - **Standard libraries:** Swift (Task, Actor, Result, View, Data, Date, …), Kotlin (Unit, List, Map, Flow, Context, …), Ruby/Rails (Object, Module, Class, Hash, Request, Response, …)
 
 Report flags:

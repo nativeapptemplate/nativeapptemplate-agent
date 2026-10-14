@@ -244,7 +244,7 @@ You can pass these inline; they're forwarded straight to the generator:
 | Override | Example | Effect |
 |---|---|---|
 | Project name | `--project-name="Vet Clinic"` | Fixes the display name **and** the output slug, independent of the domain rename. You can also say it in plain language — *"…for household pest detection. project name is Sentova."* — and the skill maps it to the same argument. |
-| Rename override | `--rename Shopkeeper=Vet` (repeatable) | Overrides one of the planner's chosen renames. `From` must be a substrate token (`Shop`, `Shopkeeper`, `ItemTag`). Only renames the planner *already planned* are overridable; an override that matches nothing is reported and dropped, and so is one into a reserved name (e.g. `Owner`, `Account`, `Subscription`, `Plan`, `Product`, `Store`, `Task`; full list in the README's "Reserved rename targets"). |
+| Rename override | `--rename Shopkeeper=Vet` (repeatable) | Overrides one of the planner's chosen renames. `From` must be a substrate token (`Shop`, `Shopkeeper`, `ItemTag`). Only renames the planner *already planned* are overridable; an override that matches nothing is reported and dropped, and so is one into a reserved name (e.g. `Owner`, `Account`, `Subscription`, `Plan`, `Product`, `Store`, `Sentry`, `Event`, `Task`; full list in the README's "Reserved rename targets"). |
 | Japanese name | `--rename-ja Shop=動物病院` (repeatable) | Sets the Japanese noun that replaces the substrate's 店舗 (Shop) or アイテムタグ (ItemTag) in the Rails API's Japanese messages and tests. Overrides the planner's pick; an override for an unplanned rename is reported and dropped. |
 
 Example with both:
@@ -340,6 +340,15 @@ you set your own app's RevenueCat key (iOS `REVENUECAT_API_KEY` in
 developer's key (`RevenueCat.local.xcconfig` is left out; the env bridge mirrors
 only the API settings). The iOS project pulls `purchases-ios` through Swift
 Package Manager, so its first build needs network access.
+
+**Error monitoring (paid templates, Rails API).** Generated apps carry the
+optional Sentry error monitoring, **off** until you set your own DSN (iOS
+`SENTRY_DSN` in `Sentry.xcconfig`, included by `Project.xcconfig`; Android the
+Gradle property `<PRODUCT>_SENTRY_DSN`; Rails `SENTRY_DSN`, from the Kamal
+secret `<SERVICE>_SENTRY_DSN` in production). The agent never copies the
+developer's `Sentry.local.xcconfig`, `.sentryclirc` or `sentry.properties`, and
+the dSYM / R8 mapping uploads do nothing without your own Sentry org and project.
+The iOS project also pulls `sentry-cocoa` through Swift Package Manager.
 
 ---
 

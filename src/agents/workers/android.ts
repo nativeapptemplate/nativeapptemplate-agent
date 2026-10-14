@@ -6,7 +6,7 @@ import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
 import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
-import { copySubstrate, type CopySkipRules } from "./copy.js";
+import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
 import { slugToPascal } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
@@ -17,8 +17,9 @@ type RenameStats = {
   files_renamed: number;
 };
 
-const SKIP_RULES: CopySkipRules = {
+export const ANDROID_SKIP_RULES: CopySkipRules = {
   anySegment: [
+    ...SENTRY_CREDENTIAL_FILES,
     ".git",
     ".claude",
     "build",
@@ -44,7 +45,7 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
 
   trace("android", `copying substrate from ${substrate} to ${outDir}`);
   await prepareFresh(outDir);
-  await copySubstrate(substrate, outDir, SKIP_RULES);
+  await copySubstrate(substrate, outDir, ANDROID_SKIP_RULES);
 
   const productPairs = buildProductRenamePairs(domain.slug);
   const renamePlan: readonly RenamePair[] = [...productPairs, ...domain.renamePlan].filter((p) => p.from !== p.to);
