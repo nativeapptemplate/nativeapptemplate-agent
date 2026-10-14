@@ -2913,3 +2913,99 @@ test("rename.rb renames a Gradle property after -P", { skip: !RUBY_AVAILABLE }, 
     "./gradlew assembleRelease -PFADEQUEUE_SENTRY_UPLOAD_MAPPING=false\nXNATIVEAPPTEMPLATE_KEEP\n",
   );
 });
+
+// --- substrate copies take only what the template's git would commit ---
+
+function gitIn(cwd: string, ...args: string[]) {
+  const r = spawnSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", ...args], { cwd, encoding: "utf8" });
+  assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+}
+
+test("copySubstrate leaves out a git substrate's ignored build output but keeps tracked, new and required local files", async () => {
+  const { copySubstrate } = await import("../src/agents/workers/copy.js");
+  const { IOS_SKIP_RULES } = await import("../src/agents/workers/ios.js");
+  const { existsSync } = await import("node:fs");
+  const base = mkdtempSync(join(tmpdir(), "copy-git-"));
+  const src = join(base, "src");
+  mkdirSync(join(src, "App"), { recursive: true });
+  // Mirrors NativeAppTemplate's .gitignore (build/, DerivedData/, xcuserdata/)
+  // plus *.xcresult, the bundle `xcodebuild test` leaves in the working tree,
+  // and the gitignored local xcconfig the copy must keep.
+  writeFileSync(join(src, ".gitignore"), "build/\nDerivedData/\nxcuserdata/\n*.xcresult\nAPI.local.xcconfig\n/docs-private/\n");
+  writeFileSync(join(src, "App", "Shop.swift"), "struct Shop {}\n");
+  gitIn(src, "init", "-q");
+  gitIn(src, "add", ".");
+  gitIn(src, "commit", "-q", "-m", "init");
+  writeFileSync(join(src, "App", "NewWork.swift"), "struct NewWork {}\n");
+  writeFileSync(join(src, "API.local.xcconfig"), "NATIVEAPPTEMPLATE_API_DOMAIN = 192.168.1.11\n");
+  mkdirSync(join(src, "build", "Build", "Products"), { recursive: true });
+  writeFileSync(join(src, "build", "Build", "Products", "App.o"), "obj");
+  mkdirSync(join(src, "TestResults.xcresult", "Data"), { recursive: true });
+  writeFileSync(join(src, "TestResults.xcresult", "Info.plist"), "<plist/>");
+  mkdirSync(join(src, "App", "Nested.xcresult"), { recursive: true });
+  writeFileSync(join(src, "App", "Nested.xcresult", "Info.plist"), "<plist/>");
+  mkdirSync(join(src, "docs-private"), { recursive: true });
+  writeFileSync(join(src, "docs-private", "notes.md"), "private\n");
+
+  const dest = join(base, "dest");
+  await copySubstrate(src, dest, IOS_SKIP_RULES);
+  for (const kept of [".gitignore", "App/Shop.swift", "App/NewWork.swift", "API.local.xcconfig"]) {
+    assert.equal(existsSync(join(dest, kept)), true, `${kept} must be copied`);
+  }
+  for (const left of ["build", "TestResults.xcresult", "App/Nested.xcresult", "docs-private", ".git"]) {
+    assert.equal(existsSync(join(dest, left)), false, `${left} must not be copied`);
+  }
+});
+
+test("every platform keeps its gitignored files the generated app needs", async () => {
+  const { IOS_SKIP_RULES } = await import("../src/agents/workers/ios.js");
+  const { ANDROID_SKIP_RULES } = await import("../src/agents/workers/android.js");
+  const { RAILS_SKIP_RULES } = await import("../src/agents/workers/rails.js");
+  // API.local.xcconfig: Debug builds' Rails host (ios.ts). local.properties:
+  // Gradle's sdk.dir. .env: HOST/PORT read by rails-lifecycle.ts from the
+  // generated dir. development.key: decrypts development.yml.enc for bin/dev.
+  assert.deepEqual(IOS_SKIP_RULES.keepIgnored, ["API.local.xcconfig"]);
+  assert.deepEqual(ANDROID_SKIP_RULES.keepIgnored, ["local.properties"]);
+  assert.deepEqual(RAILS_SKIP_RULES.keepIgnored, [".env", "config/credentials/development.key"]);
+});
+
+test("copySubstrate of a non-git iOS substrate still leaves out build/ and .xcresult bundles", async () => {
+  const { copySubstrate } = await import("../src/agents/workers/copy.js");
+  const { IOS_SKIP_RULES } = await import("../src/agents/workers/ios.js");
+  const { existsSync } = await import("node:fs");
+  const base = mkdtempSync(join(tmpdir(), "copy-nogit-"));
+  const src = join(base, "src");
+  mkdirSync(join(src, "build"), { recursive: true });
+  writeFileSync(join(src, "build", "App.o"), "obj");
+  mkdirSync(join(src, "TestResults.xcresult"), { recursive: true });
+  writeFileSync(join(src, "TestResults.xcresult", "Info.plist"), "<plist/>");
+  writeFileSync(join(src, "Shop.swift"), "struct Shop {}\n");
+  const dest = join(base, "dest");
+  await copySubstrate(src, dest, IOS_SKIP_RULES);
+  assert.equal(existsSync(join(dest, "Shop.swift")), true);
+  assert.equal(existsSync(join(dest, "build")), false);
+  assert.equal(existsSync(join(dest, "TestResults.xcresult")), false);
+});
+
+// --- a rejected --rename names what it actually kept ---
+
+test("a rejected --rename after an accepted one reports keeping the earlier override, not the planner's pick", async () => {
+  const { applyRenameOverrides, describeRenameOverride } = await import("../src/rename-overrides.js");
+  const plan = [{ from: "Shopkeeper", to: "Stylist" }];
+  const { plan: merged, outcomes } = applyRenameOverrides(plan, [
+    { from: "Shopkeeper", to: "Barber" },
+    { from: "Shopkeeper", to: "Sentry" },
+  ]);
+  // The first override wins; Sentry is reserved (error monitoring).
+  assert.deepEqual(merged, [{ from: "Shopkeeper", to: "Barber" }]);
+  const rejected = describeRenameOverride(outcomes[1]!, ["Shopkeeper"]);
+  assert.match(rejected, /--rename Shopkeeper=Sentry rejected/);
+  assert.match(rejected, /kept "Barber" from an earlier --rename/);
+  assert.doesNotMatch(rejected, /planner's pick/);
+});
+
+test("a rejected --rename with no earlier override reports keeping the planner's pick by name", async () => {
+  const { applyRenameOverrides, describeRenameOverride } = await import("../src/rename-overrides.js");
+  const { outcomes } = applyRenameOverrides([{ from: "Shopkeeper", to: "Stylist" }], [{ from: "Shopkeeper", to: "Sentry" }]);
+  assert.match(describeRenameOverride(outcomes[0]!, ["Shopkeeper"]), /kept the planner's pick "Stylist"/);
+});

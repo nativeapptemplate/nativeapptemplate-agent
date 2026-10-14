@@ -20,6 +20,10 @@ type RenameStats = {
 export const RAILS_SKIP_RULES: CopySkipRules = {
   rootPaths: [".git", ".claude", "node_modules", "tmp", "log", "vendor/bundle"],
   anySegment: SENTRY_CREDENTIAL_FILES,
+  // Gitignored but needed: .env holds the HOST/PORT rails-lifecycle.ts reads
+  // from the generated dir, and development.key decrypts the committed
+  // development credentials bin/dev boots with. production.key stays behind.
+  keepIgnored: [".env", "config/credentials/development.key"],
 };
 
 export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> {

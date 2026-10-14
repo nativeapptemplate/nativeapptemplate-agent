@@ -17,7 +17,7 @@ import { runLayer1 } from "./validation/layer1.js";
 import { runLayer2, type Layer2Mode } from "./validation/layer2.js";
 import type { RepairAttempt, RunReport } from "./report/model.js";
 import type { JudgeResult, Platform, PlatformDetail, RenamePair, WorkerResult } from "./agents/types.js";
-import { applyJapaneseOverrides, applyRenameOverrides, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
+import { applyJapaneseOverrides, applyRenameOverrides, describeKeptTarget, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
 import { reservedTargets, type ReservedTarget } from "./reserved-words.js";
 import { isValidSlug, slugToPascal, projectNameToSlug, projectNameToDisplayName } from "./slug.js";
 
@@ -86,7 +86,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     for (const o of merged.outcomes) {
       if (o.kind === "changed") trace("dispatch", `rename override: ${o.from} ${o.was}->${o.to} (overrode planner's pick)`);
       else if (o.kind === "noop") trace("dispatch", `rename override: ${o.from}=${o.to} already the planned target — no change`);
-      else if (o.kind === "reserved") trace("dispatch", `rename override rejected: ${o.from}=${o.to} — ${o.reason}; keeping the planner's pick`);
+      else if (o.kind === "reserved") trace("dispatch", `rename override rejected: ${o.from}=${o.to} — ${o.reason}; ${describeKeptTarget(o)}`);
       else trace("dispatch", `rename override ignored: no planned rename for "${o.from}" (got ${o.from}=${o.to})`);
     }
     // Carry the override into entity names too, so the report's entity cards

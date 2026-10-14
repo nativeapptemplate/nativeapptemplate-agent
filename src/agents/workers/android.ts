@@ -29,6 +29,8 @@ export const ANDROID_SKIP_RULES: CopySkipRules = {
     "captures",
     "node_modules",
   ],
+  // Gradle's sdk.dir, written by Android Studio and gitignored.
+  keepIgnored: ["local.properties"],
 };
 
 export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult> {
