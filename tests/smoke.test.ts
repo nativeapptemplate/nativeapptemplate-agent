@@ -59,6 +59,19 @@ test("discoverIosArtifact returns null for missing dir", async () => {
   assert.equal(result, null);
 });
 
+test("both leak checks tell the judge to ignore the OS status bar", async () => {
+  // A real run (2026-10-15) failed no-substrate-leak on the iOS status bar's
+  // "◀ Native App Templ…" back link, drawn by the OS because the substrate was
+  // the previously open app on the shared simulator. The app itself was clean.
+  const { DEFAULT_STAGE2_RUBRIC } = await import("../src/validation/stage2-judge.js");
+  for (const rubric of [DEFAULT_STAGE1_RUBRIC, DEFAULT_STAGE2_RUBRIC]) {
+    const leak = rubric.find((c) => c.id === "no-substrate-leak");
+    assert.ok(leak, "rubric has no-substrate-leak");
+    assert.match(leak.question, /status bar/);
+    assert.match(leak.question, /link back to a previously open app/);
+  }
+});
+
 test("DEFAULT_STAGE1_RUBRIC has the expected criteria ids", () => {
   const ids = DEFAULT_STAGE1_RUBRIC.map((c) => c.id);
   assert.deepEqual(ids, ["no-substrate-leak", "renders-cleanly"]);

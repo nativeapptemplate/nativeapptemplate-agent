@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { runStage2Scenario, recoverFromErrorScreen, type Stage2Result, type Stage2Scenario } from "./stage2.js";
 import { runLayer3, type Layer3Criterion } from "./layer3.js";
+import { NO_SUBSTRATE_LEAK_QUESTION } from "./visual-judge.js";
 import { createMobileClient, type MobileClient, type ScreenElement } from "../mobile.js";
 import type { Stage2PlatformReport } from "../agents/types.js";
 
@@ -64,8 +65,7 @@ export const DEFAULT_STAGE2_RUBRIC: readonly Layer3Criterion[] = [
   },
   {
     id: "no-substrate-leak",
-    question:
-      "Is the screen free of substrate-original tokens like 'Shop', 'Shopkeeper', 'ItemTag', 'NativeAppTemplate', or 'Number Tag'?",
+    question: NO_SUBSTRATE_LEAK_QUESTION,
   },
 ];
 
