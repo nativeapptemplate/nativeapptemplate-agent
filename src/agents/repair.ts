@@ -3,6 +3,7 @@ import { trace } from "../trace.js";
 import { isStub } from "../stub.js";
 import type { DomainSpec, Platform } from "./types.js";
 import { REPAIR_EFFORT, REPAIR_MODEL } from "../models.js";
+import { tokenCounts, type TokenUsage } from "../structured-output.js";
 
 // Which validation layer this repair attempt targets. Layer 1 (leftover
 // substrate tokens) and Layer 2 (build/compile failures) are the
@@ -61,7 +62,7 @@ export async function runRepair(target: RepairTarget, domain: DomainSpec): Promi
   for await (const message of response) {
     if (message.type === "result") {
       turns = message.num_turns;
-      cost = ` ($${message.total_cost_usd.toFixed(4)}, ${message.usage.input_tokens} in / ${message.usage.output_tokens} out)`;
+      cost = `, ${repairCostLine(message)}`;
       if (message.subtype === "success" && !message.is_error) {
         action = firstLine(message.result) || action;
       } else {
@@ -72,6 +73,14 @@ export async function runRepair(target: RepairTarget, domain: DomainSpec): Promi
 
   trace("repair", `${target.platform}/${target.layer}: ${turns} turns${cost} — ${action}`);
   return { action };
+}
+
+// The Agent SDK prices its own multi-turn loop (cache reads dominate) and
+// reports it as total_cost_usd. scripts/cost.sh takes that figure as is
+// rather than re-pricing the tokens, so this deliberately avoids the
+// "usage:" prefix the planner/judge lines use.
+export function repairCostLine(result: { total_cost_usd: number; usage: TokenUsage }): string {
+  return `sdk-cost: $${result.total_cost_usd.toFixed(4)} (${tokenCounts(result.usage)})`;
 }
 
 // Agent SDK options for one repair pass. Exported so tests can check them

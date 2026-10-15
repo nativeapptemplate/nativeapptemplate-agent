@@ -3133,3 +3133,76 @@ test("dispatch reports the judge model from src/models.ts", async () => {
   assert.equal(result.report.meta.judgeModel, JUDGE_MODEL);
   assert.match(renderReport(result.report), new RegExp(`judge: ${JUDGE_MODEL}`));
 });
+
+test("usageLine logs cache write/read tokens next to input/output", async () => {
+  const { usageLine } = await import("../src/structured-output.js");
+  // The judge's screenshot sits under cache_control, so its image tokens are
+  // billed as cache writes/reads, not input_tokens.
+  const line = usageLine(fakeMessage({
+    usage: { input_tokens: 83, output_tokens: 300, cache_creation_input_tokens: 1520, cache_read_input_tokens: 40 },
+  }), "claude-opus-5-5");
+  assert.equal(line, "usage: 83 in / 300 out / 1520 cache-write / 40 cache-read");
+  // Missing/null cache fields print as 0 so the line stays fixed-shape.
+  const bare = usageLine(fakeMessage({ usage: { input_tokens: 5, output_tokens: 6, cache_creation_input_tokens: null } }), "claude-opus-5-5");
+  assert.equal(bare, "usage: 5 in / 6 out / 0 cache-write / 0 cache-read");
+});
+
+test("repairCostLine reports the Agent SDK's total_cost_usd and cache tokens", async () => {
+  const { repairCostLine } = await import("../src/agents/repair.js");
+  assert.equal(
+    repairCostLine({ total_cost_usd: 0.1, usage: { input_tokens: 12, output_tokens: 3400, cache_creation_input_tokens: 15000, cache_read_input_tokens: 90000 } }),
+    "sdk-cost: $0.1000 (12 in / 3400 out / 15000 cache-write / 90000 cache-read)",
+  );
+});
+
+function runCostScript(logs: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "cost-trace-"));
+  for (const [name, body] of Object.entries(logs)) writeFileSync(join(dir, name), body);
+  const r = spawnSync("bash", ["scripts/cost.sh", dir], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout;
+}
+
+test("cost.sh prices cache writes/reads and adds the repair agent's SDK cost once", () => {
+  const out = runCostScript({
+    "judge.log": [
+      "[01:00:00] layer3 renders-cleanly: usage: 100 in / 200 out / 1000 cache-write / 0 cache-read",
+      "[01:00:01] layer3 renders-cleanly: usage: 100 in / 200 out / 0 cache-write / 1000 cache-read (served by claude-opus-5)",
+    ].join("\n") + "\n",
+    // Legacy line from before cache tokens were logged: still parses.
+    "planner.log": "[01:00:00] usage: 1000 in / 500 out\n",
+    "repair.log": [
+      "[01:00:00] ios/layer2: invoking repair agent in /tmp/x",
+      "[01:01:00] ios/layer2: 3 turns, sdk-cost: $0.1000 (12 in / 3400 out / 15000 cache-write / 90000 cache-read) — added 1 import in Foo.kt, 2 out of 3 errors",
+    ].join("\n") + "\n",
+  });
+  // judge: in 200*$4 + out 400*$20 + write 1000*$5 + read 1000*$0.40
+  //      = 800 + 8000 + 5000 + 400 = 14200 µ$ = $0.0142
+  assert.match(out, /^judge\s+2\s+200\s+400\s+1000\s+1000\s+\$0\.0142$/m);
+  // planner: 1000*$4 + 500*$20 = 4000 + 10000 = 14000 µ$ = $0.0140
+  assert.match(out, /^planner\s+1\s+1000\s+500\s+0\s+0\s+\$0\.0140$/m);
+  // repair: the SDK's own total, not re-priced from its tokens.
+  assert.match(out, /^repair\s+1\s+12\s+3400\s+15000\s+90000\s+\$0\.1000$/m);
+  // total = 0.0142 + 0.0140 + 0.1000 = $0.1282
+  assert.match(out, /^Total\s+4\s+1212\s+4300\s+16000\s+91000\s+\$0\.1282$/m);
+});
+
+test("cost.sh rates match OPUS_PRICE_PER_MTOK in src/models.ts", async () => {
+  const { OPUS_PRICE_PER_MTOK } = await import("../src/models.js");
+  // Opus 5.5 list price: $4 in / $20 out; 5-minute cache write = 1.25x input, cache read = 0.1x input.
+  assert.deepEqual({ ...OPUS_PRICE_PER_MTOK }, { input: 4, output: 20, cacheWrite5m: 5, cacheRead: 0.4 });
+  const script = readFileSync("scripts/cost.sh", "utf8");
+  const rate = (name: string) => Number(script.match(new RegExp(`^${name}=([0-9.]+)`, "m"))?.[1]);
+  assert.equal(rate("RATE_IN"), OPUS_PRICE_PER_MTOK.input);
+  assert.equal(rate("RATE_OUT"), OPUS_PRICE_PER_MTOK.output);
+  assert.equal(rate("RATE_CACHE_WRITE"), OPUS_PRICE_PER_MTOK.cacheWrite5m);
+  assert.equal(rate("RATE_CACHE_READ"), OPUS_PRICE_PER_MTOK.cacheRead);
+});
+
+test("judge screenshot cache uses the default 5-minute TTL that cost.sh prices", async () => {
+  const { buildJudgeRequest } = await import("../src/validation/layer3.js");
+  const req = buildJudgeRequest("claude-opus-5-5", "iVBORw0K", "spec", { id: "c1", question: "q?" });
+  const image = (req.messages[0]!.content as unknown as Array<Record<string, unknown>>)[0]!;
+  // No ttl field = 5 minutes; a "1h" TTL bills writes at 2x input instead.
+  assert.deepEqual(image["cache_control"], { type: "ephemeral" });
+});

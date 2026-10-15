@@ -30,3 +30,15 @@ export const REPAIR_EFFORT: Effort = "high";
 // this beta header (the array form uses server-side-fallback-2026-06-01).
 export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 export const FALLBACKS = "default" as const;
+
+// Claude Opus 5.5 list prices, USD per million tokens (Anthropic pricing page,
+// checked 2026-10-15). Cache writes use the 5-minute TTL rate (1.25x input),
+// which is what the judge's `cache_control: { type: "ephemeral" }` gets;
+// cache reads are 0.1x input. scripts/cost.sh repeats these as RATE_* and a
+// test keeps the two in sync — update both on a model or price change.
+export const OPUS_PRICE_PER_MTOK = {
+  input: 4,
+  output: 20,
+  cacheWrite5m: 5,
+  cacheRead: 0.4,
+} as const;
