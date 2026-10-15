@@ -60,7 +60,7 @@ const RETRYABLE_CRITERIA = new Set<string>(["renders-cleanly"]);
 //   1. install + launch the built app on the booted sim/emulator
 //   2. wait for render
 //   3. capture the home screen as PNG
-//   4. send PNG + rubric to the Opus 4.7 vision judge (median-of-3 per criterion)
+//   4. send PNG + rubric to the Opus 5.5 vision judge (median-of-3 per criterion)
 //
 // Fail-fast: any step's failure short-circuits and surfaces in the result.
 // Caller is responsible for: building the artifact (Layer 2 build mode),

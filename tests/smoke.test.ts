@@ -1376,7 +1376,7 @@ test("buildRunReport assembles meta + platforms + domain from the run pieces", (
     judge: mixedJudge(),
     reviewer: failReviewer,
     agentVersion: "9.9.9",
-    judgeModel: "claude-opus-4-7",
+    judgeModel: "claude-opus-5-5",
     visualLevel: 1,
     startedAt: 1000,
     finishedAt: 4000,
@@ -1401,7 +1401,7 @@ test("renderReport surfaces findings, stderr, reviewer diff, rename plan, and ov
     judge: mixedJudge("/tmp/nonexistent/ios-home.png"),
     reviewer: failReviewer,
     agentVersion: "9.9.9",
-    judgeModel: "claude-opus-4-7",
+    judgeModel: "claude-opus-5-5",
     visualLevel: 1,
     startedAt: 1000,
     finishedAt: 4000,
@@ -1433,7 +1433,7 @@ test("renderReport falls back to the summary line when platforms are empty (stub
     judge: { overallPass: true, summary: "Layer 1/2/3 PASS" },
     reviewer: { contractParity: "pass", diffs: [] },
     agentVersion: "1.0.0",
-    judgeModel: "claude-opus-4-7",
+    judgeModel: "claude-opus-5-5",
     visualLevel: 0,
     startedAt: 0,
     finishedAt: 10,
@@ -1455,7 +1455,7 @@ test("writeReport emits a self-contained report.json + HTML with embedded screen
     judge: mixedJudge(shotPath),
     reviewer: failReviewer,
     agentVersion: "1.0.0",
-    judgeModel: "claude-opus-4-7",
+    judgeModel: "claude-opus-5-5",
     visualLevel: 1,
     startedAt: 0,
     finishedAt: 1000,
@@ -1491,7 +1491,7 @@ test("writeReport with embed=false externalizes screenshots to report-assets/", 
     judge: mixedJudge(shotPath),
     reviewer: { contractParity: "pass", diffs: [] },
     agentVersion: "1.0.0",
-    judgeModel: "claude-opus-4-7",
+    judgeModel: "claude-opus-5-5",
     visualLevel: 1,
     startedAt: 0,
     finishedAt: 1,
@@ -1926,7 +1926,7 @@ test("buildRunReport carries repairAttempts and renderReport shows the self-repa
     judge: mixedJudge(),
     reviewer: failReviewer,
     agentVersion: "9.9.9",
-    judgeModel: "claude-opus-4-7",
+    judgeModel: "claude-opus-5-5",
     visualLevel: 1,
     startedAt: 1000,
     finishedAt: 4000,
@@ -1947,7 +1947,7 @@ test("buildRunReport omits repairAttempts when none were made", () => {
     judge: mixedJudge(),
     reviewer: failReviewer,
     agentVersion: "1.0.0",
-    judgeModel: "claude-opus-4-7",
+    judgeModel: "claude-opus-5-5",
     visualLevel: 0,
     startedAt: 0,
     finishedAt: 1,
@@ -2202,7 +2202,7 @@ test("writeReport (embed=false) keeps same-named screenshots from different plat
   judge.platforms![2]!.layer3 = { pass: true, screenshotPath: join(tmp, "android", "home.png"), scores: [] };
   const report = buildRunReport({
     spec: "x", domain: reportDomain, judge, reviewer: { contractParity: "pass", diffs: [] },
-    agentVersion: "1.0.0", judgeModel: "claude-opus-4-7", visualLevel: 1, startedAt: 0, finishedAt: 1,
+    agentVersion: "1.0.0", judgeModel: "claude-opus-5-5", visualLevel: 1, startedAt: 0, finishedAt: 1,
   });
   const dir = join(tmp, "out");
   await writeReport(report, { dir, embed: false, format: "html" });
@@ -2320,7 +2320,7 @@ test("dropSlugDatabases does not abort the run when a database is still in use",
 function verdictReport(judge: JudgeResult) {
   return buildRunReport({
     spec: "x", domain: reportDomain, judge, reviewer: { contractParity: judge.overallPass ? "pass" : "fail", diffs: [] },
-    agentVersion: "1.0.0", judgeModel: "claude-opus-4-7", visualLevel: 0, startedAt: 0, finishedAt: 1,
+    agentVersion: "1.0.0", judgeModel: "claude-opus-5-5", visualLevel: 0, startedAt: 0, finishedAt: 1,
   });
 }
 const l12pass = (platform: Platform): PlatformDetail => ({
@@ -3008,4 +3008,115 @@ test("a rejected --rename with no earlier override reports keeping the planner's
   const { applyRenameOverrides, describeRenameOverride } = await import("../src/rename-overrides.js");
   const { outcomes } = applyRenameOverrides([{ from: "Shopkeeper", to: "Stylist" }], [{ from: "Shopkeeper", to: "Sentry" }]);
   assert.match(describeRenameOverride(outcomes[0]!, ["Shopkeeper"]), /kept the planner's pick "Stylist"/);
+});
+
+// ---- Claude Opus 5.5 request shapes (src/models.ts) ----
+//
+// Expected values come from the Opus 5.5 migration notes: forced tool_choice
+// is a 400, thinking can't be disabled (no thinking / budget_tokens fields),
+// sampling params are rejected, structured outputs need additionalProperties:
+// false on every object and don't support `pattern`, and the "default"
+// fallbacks form needs exactly the server-side-fallback-2026-07-01 beta.
+
+type JsonNode = { [k: string]: unknown };
+
+function walkSchema(node: unknown, visit: (n: JsonNode) => void): void {
+  if (node === null || typeof node !== "object") return;
+  if (Array.isArray(node)) { node.forEach((n) => walkSchema(n, visit)); return; }
+  visit(node as JsonNode);
+  for (const v of Object.values(node as JsonNode)) walkSchema(v, visit);
+}
+
+function assertOpus55Request(req: Record<string, unknown>, effort: string): void {
+  assert.equal(req["model"], "claude-opus-5-5");
+  for (const banned of ["tool_choice", "tools", "thinking", "temperature", "top_p", "top_k"]) {
+    assert.equal(banned in req, false, `request must not send ${banned}`);
+  }
+  const outputConfig = req["output_config"] as { effort: string; format: { type: string; schema: unknown } };
+  assert.equal(outputConfig.effort, effort);
+  assert.equal(outputConfig.format.type, "json_schema");
+  walkSchema(outputConfig.format.schema, (n) => {
+    if (n["type"] === "object") assert.equal(n["additionalProperties"], false, `object schema needs additionalProperties: false: ${JSON.stringify(n).slice(0, 80)}`);
+    assert.equal("pattern" in n, false, "structured outputs don't support pattern");
+  });
+  assert.deepEqual(req["betas"], ["server-side-fallback-2026-07-01"]);
+  assert.equal(req["fallbacks"], "default");
+  const messages = req["messages"] as { role: string }[];
+  assert.equal(messages.at(-1)?.role, "user", "no assistant prefill");
+}
+
+function fakeMessage(overrides: Record<string, unknown>): never {
+  return {
+    id: "msg_test", type: "message", role: "assistant", model: "claude-opus-5-5",
+    content: [], stop_reason: "end_turn", stop_sequence: null, stop_details: null,
+    usage: { input_tokens: 1, output_tokens: 1 },
+    ...overrides,
+  } as never;
+}
+
+test("model ids live in one module and every role uses Opus 5.5", async () => {
+  const m = await import("../src/models.js");
+  assert.equal(m.OPUS_MODEL, "claude-opus-5-5");
+  assert.equal(m.PLANNER_MODEL, m.OPUS_MODEL);
+  assert.equal(m.JUDGE_MODEL, m.OPUS_MODEL);
+  assert.equal(m.REPAIR_MODEL, m.OPUS_MODEL);
+});
+
+test("planner request uses structured outputs, explicit effort, and default fallbacks", async () => {
+  const { buildPlannerRequest } = await import("../src/agents/planner.js");
+  const req = buildPlannerRequest("a walk-in queue for a barbershop") as unknown as Record<string, unknown>;
+  assertOpus55Request(req, "high");
+  // max_tokens must leave room for always-on thinking (was 4096 on 4.7).
+  assert.ok((req["max_tokens"] as number) >= 16000);
+});
+
+test("judge request uses structured outputs, explicit effort, and default fallbacks", async () => {
+  const { buildJudgeRequest } = await import("../src/validation/layer3.js");
+  const req = buildJudgeRequest("claude-opus-5-5", "iVBORw0K", "spec", { id: "c1", question: "q?" }) as unknown as Record<string, unknown>;
+  assertOpus55Request(req, "medium");
+  assert.ok((req["max_tokens"] as number) >= 4096, "max_tokens must leave room for thinking");
+});
+
+test("repair agent options pin Opus 5.5 with explicit effort and no thinking override", async () => {
+  const { buildRepairOptions } = await import("../src/agents/repair.js");
+  const opts = buildRepairOptions({ platform: "ios", outDir: "/tmp/x", layer: "layer2", detail: "" }, "sk-test", ["Read"]);
+  assert.equal(opts.model, "claude-opus-5-5");
+  assert.equal(opts.effort, "high");
+  assert.equal(opts.thinking, undefined);
+  assert.equal(opts.maxTurns, 40);
+});
+
+test("parsePlannerResponse reads the JSON text after thinking and fallback blocks", async () => {
+  const { parsePlannerResponse } = await import("../src/agents/planner.js");
+  const domain = parsePlannerResponse(fakeMessage({
+    content: [
+      { type: "fallback", from: { model: "claude-opus-5-5" }, to: { model: "claude-opus-5" } },
+      { type: "thinking", thinking: "", signature: "sig" },
+      { type: "text", text: JSON.stringify({ slug: "fade-queue", displayName: "Fade Queue", entities: [], renamePlan: [{ from: "Shop", to: "Barbershop" }], jsonApiContract: {} }) },
+    ],
+  }));
+  assert.equal(domain.slug, "fade-queue");
+  assert.deepEqual(domain.renamePlan, [{ from: "Shop", to: "Barbershop" }]);
+});
+
+test("parsePlannerResponse rejects refusals, truncation, and invalid slugs", async () => {
+  const { parsePlannerResponse } = await import("../src/agents/planner.js");
+  assert.throws(() => parsePlannerResponse(fakeMessage({ stop_reason: "refusal", stop_details: { type: "refusal", category: "cyber", explanation: null } })), /declined.*cyber/);
+  assert.throws(() => parsePlannerResponse(fakeMessage({ stop_reason: "max_tokens", content: [{ type: "text", text: "{\"slug\":" }] })), /max_tokens/);
+  assert.throws(() => parsePlannerResponse(fakeMessage({ content: [] })), /expected JSON text/);
+  assert.throws(() => parsePlannerResponse(fakeMessage({ content: [{ type: "text", text: JSON.stringify({ slug: "Fade Queue", displayName: "x", entities: [], renamePlan: [], jsonApiContract: {} }) }] })), /invalid slug/);
+});
+
+test("parseVerdict reads a verdict and rejects refusals and malformed verdicts", async () => {
+  const { parseVerdict } = await import("../src/validation/layer3.js");
+  assert.deepEqual(parseVerdict(fakeMessage({ content: [{ type: "text", text: "{\"pass\":true,\"rationale\":\"ok\"}" }] })), { pass: true, rationale: "ok" });
+  assert.throws(() => parseVerdict(fakeMessage({ stop_reason: "refusal" })), /declined/);
+  assert.throws(() => parseVerdict(fakeMessage({ content: [{ type: "text", text: "{\"pass\":\"yes\",\"rationale\":\"ok\"}" }] })), /malformed verdict/);
+});
+
+test("dispatch reports the judge model from src/models.ts", async () => {
+  const { JUDGE_MODEL } = await import("../src/models.js");
+  const result = await dispatch("a walk-in clinic queue for small veterinary practices");
+  assert.equal(result.report.meta.judgeModel, JUDGE_MODEL);
+  assert.match(renderReport(result.report), new RegExp(`judge: ${JUDGE_MODEL}`));
 });

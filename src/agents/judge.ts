@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { trace } from "../trace.js";
 import { isStub } from "../stub.js";
+import { JUDGE_MODEL } from "../models.js";
 import { createMobileClient, type MobileClient } from "../mobile.js";
 import { runLayer1, type Layer1Result } from "../validation/layer1.js";
 import { runLayer2, type Layer2Mode, type Layer2Result } from "../validation/layer2.js";
@@ -92,7 +93,7 @@ export async function runJudge(input: JudgeInput): Promise<JudgeResult> {
     }
     layer3Summary = formatLayer3Summary(visualReport);
   } else {
-    trace("judge", "Layer 3 (semantic, Opus 4.7 vision judge) — visual config not provided; skipped");
+    trace("judge", `Layer 3 (semantic, ${JUDGE_MODEL} vision judge) — visual config not provided; skipped`);
   }
 
   const layer1Layer2Pass = reports.every((r) => r.layer1.pass && r.layer2.pass);
@@ -315,7 +316,7 @@ async function runStubJudge(): Promise<JudgeResult> {
   await delay(400);
   trace("judge", "Layer 2: PASS (scripted CRUD walk)");
   await delay(100);
-  trace("judge", "Layer 3 (semantic): Opus 4.7 judge, median of 3 runs");
+  trace("judge", `Layer 3 (semantic): ${JUDGE_MODEL} judge, median of 3 runs`);
   await delay(300);
   trace("judge", "Layer 3: PASS (semantic score above threshold)");
   return { overallPass: true, summary: "Layer 1/2/3 PASS" };

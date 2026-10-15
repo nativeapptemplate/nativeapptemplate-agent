@@ -11,7 +11,7 @@ export function slugToSnake(slug: string): string {
 }
 
 // Kebab-case, filesystem-safe, leading alphanumeric. Mirrors the planner's
-// DOMAIN_TOOL slug pattern so a derived/overridden slug obeys the same contract
+// DOMAIN_SPEC_SCHEMA slug rule so a derived/overridden slug obeys the same contract
 // the planner does (it drives the output dir, DB prefix, and Pascal project
 // name via slugToPascal).
 export function isValidSlug(slug: string): boolean {

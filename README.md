@@ -101,7 +101,7 @@ Three demo specs, both adapt and replace paths, all four validation layers green
 | `"a restaurant waitlist for casual dining"` | `Shop → Restaurant`, `Shopkeeper → Host` | adapt | Layer 1 3/3 · Layer 2 3/3 · Layer 3 2/2 · Reviewer PASS |
 | `"a personal task tracker with due dates"` | `ItemTag → Todo` (replaces queue entry entirely) | replace | Layer 1 3/3 · Layer 2 3/3 · Layer 3 2/2 · Reviewer PASS |
 
-Layer 2 ran in build mode — real `xcodebuild build` and `./gradlew assembleDebug`, full app builds installed on iPhone 17 Pro simulator and Android emulator. Layer 3 captured the home-screen via `xcrun simctl io booted screenshot` / `adb exec-out screencap` and judged against the rubric using Opus 4.7 vision (median of 3 samples per criterion). With `NATIVEAPPTEMPLATE_VISUAL=2`, Layer 2 additionally drives a scripted-CRUD walk-through via `mobile-mcp` against a live Rails server — Welcome → Sign Up → email-confirm via `bin/rails runner` → Sign In → drill into the auto-seeded sample — and Layer 3 then judges the post-walk screenshot against a domain-content rubric.
+Layer 2 ran in build mode — real `xcodebuild build` and `./gradlew assembleDebug`, full app builds installed on iPhone 17 Pro simulator and Android emulator. Layer 3 captured the home-screen via `xcrun simctl io booted screenshot` / `adb exec-out screencap` and judged against the rubric using Opus 5.5 vision (median of 3 samples per criterion). With `NATIVEAPPTEMPLATE_VISUAL=2`, Layer 2 additionally drives a scripted-CRUD walk-through via `mobile-mcp` against a live Rails server — Welcome → Sign Up → email-confirm via `bin/rails runner` → Sign In → drill into the auto-seeded sample — and Layer 3 then judges the post-walk screenshot against a domain-content rubric.
 
 The agent works on either the **free (MIT) edition** or the **paid edition** without code changes — the same pipeline handles both substrates; multi-tenant features (org switching, invitations, role permissions) survive the rename pipeline when targeting paid. The agent tests paid first because free is a strict subset of paid; running paid first catches regressions that wouldn't surface against free alone.
 
@@ -131,14 +131,14 @@ End-to-end wall-clock per run, measured from `report.json`'s `meta.durationMs` o
 
 Cold builds, first-run cocoapods/gradle dependency resolution, or unbooted simulators add a one-time minute or two. The self-repair loop (opt-in, hard-capped at 5 iterations) can extend a failing run substantially — budget for it if you set `NATIVEAPPTEMPLATE_REPAIR=on`.
 
-**Cost** scales with model usage, not wall-clock. The agent makes real `claude-opus-4-7` API calls (planner, workers, reviewer, judge) and a single VISUAL=2 run consumes tens of thousands of tokens across multiple sub-agents. Set a workspace spend cap (see [Security](#security)) as a backstop — the agent exits non-zero on validation failure, but doesn't gate on spend itself.
+**Cost** scales with model usage, not wall-clock. The agent makes real `claude-opus-5-5` API calls (the planner, the Layer 3 vision judge, and the opt-in self-repair agent) and a single VISUAL=2 run consumes tens of thousands of tokens across multiple sub-agents. Set a workspace spend cap (see [Security](#security)) as a backstop — the agent exits non-zero on validation failure, but doesn't gate on spend itself.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     Spec["Natural-language spec<br/>(e.g. walk-in clinic queue)"] --> Agent
-    subgraph Agent["Claude Code Agent · Opus 4.7"]
+    subgraph Agent["Claude Code Agent · Opus 5.5"]
       Planner --> Workers
       Workers --> Reviewer
       Reviewer --> Judge
@@ -219,8 +219,8 @@ The same generator also ships as an MCP server — `npx -y -p nativeapptemplate-
 ## Requirements
 
 - [Node.js](https://nodejs.org) 22+
-- [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) v0.2.111 or later (needed for Opus 4.7)
-- An [Anthropic API key](https://console.anthropic.com/settings/keys) with access to `claude-opus-4-7`, exported as `ANTHROPIC_API_KEY`:
+- [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) v0.3.286 or later and `@anthropic-ai/sdk` v0.131.0 or later (needed for Opus 5.5; both are installed as dependencies)
+- An [Anthropic API key](https://console.anthropic.com/settings/keys) with access to `claude-opus-5-5`, exported as `ANTHROPIC_API_KEY`:
   ```bash
   export ANTHROPIC_API_KEY="sk-ant-..."
   ```
@@ -237,7 +237,7 @@ The same generator also ships as an MCP server — `npx -y -p nativeapptemplate-
 
 ### Optional flags
 
-- `NATIVEAPPTEMPLATE_VISUAL=1` — opts the run into Stage 1 visual judging (Layer 3). When set, Layer 2 runs in **build mode** instead of fast mode (full `xcodebuild build` + `./gradlew assembleDebug`), then for each platform the agent installs the app on the booted sim/emulator, captures the home screen, and judges it with Opus 4.7 vision against `DEFAULT_STAGE1_RUBRIC`. Adds 60-180s per platform depending on cold-build time. Requires a sim/emulator booted for each platform you want judged. Off by default — `npm run dev` keeps the existing fast path.
+- `NATIVEAPPTEMPLATE_VISUAL=1` — opts the run into Stage 1 visual judging (Layer 3). When set, Layer 2 runs in **build mode** instead of fast mode (full `xcodebuild build` + `./gradlew assembleDebug`), then for each platform the agent installs the app on the booted sim/emulator, captures the home screen, and judges it with Opus 5.5 vision against `DEFAULT_STAGE1_RUBRIC`. Adds 60-180s per platform depending on cold-build time. Requires a sim/emulator booted for each platform you want judged. Off by default — `npm run dev` keeps the existing fast path.
 - `NATIVEAPPTEMPLATE_VISUAL=2` — implies `=1` and additionally runs **Stage 2**: the agent boots the generated Rails app under `mise exec -- bin/dev` (after `bundle install` + `bin/rails db:prepare` + `bin/rails db:seed_fu`), waits for it to listen, then drives the iOS sim and Android emulator through the parameterized queue scenario (Sign Up → email-confirm via `bin/rails runner` → Sign In → drill into auto-seeded sample). Layer 3 then judges the last captured screenshot against `DEFAULT_STAGE2_RUBRIC` (domain content + no substrate-token leak). Adds 2–4 minutes per platform on top of `=1`. Requires both sims/emulators booted and the substrate's `mise` toolchain installed for `bin/dev`.
 - `NATIVEAPPTEMPLATE_REPAIR` — opts into the bounded self-repair loop. Set `on` (or a positive integer N, hard-capped at 5) to enable. When the first validation pass fails on a **code-repairable** layer — Layer 1 leftover substrate tokens or Layer 2 build/compile errors — the agent runs a Claude Agent SDK repair pass scoped to the failing generated project (Read/Edit/Bash inside `out/<slug>/<platform>/` only), re-validates that platform, and repeats up to the cap. Each attempt is recorded in the validation report's self-repair table. Layer 3 (vision) and contract-reviewer misses are surfaced but not auto-repaired (a Layer 3 miss is usually environmental, not a source bug). Off by default; when the loop can't close the failures the agent still exits non-zero.
 - `NATIVEAPPTEMPLATE_BRIDGE=off` — skip writing to `~/.gradle/gradle.properties`. The agent normally mirrors `NATIVEAPPTEMPLATE_API_*` (HOST/PORT/SCHEME) into renamed-product variants (`<PRODUCT>_API_*`) at run time so the generated Android app picks them up via `gradle.properties` and the iOS sim launch picks them up via `SIMCTL_CHILD_*`. Set this to disable the file write (process.env injection still runs for child-spawn paths).
@@ -256,7 +256,7 @@ The agent doesn't just generate code and exit — it validates the output.
 
 1. **Structural.** `ripgrep` for leftover domain tokens; OpenAPI contract parity check between Rails, iOS networking, and Android repository layers. A silent rename inconsistency fails the run before any tests execute.
 2. **Runtime.** Verify the generated Rails app boots (`bin/rails runner 'puts OK'`); type-check or build the iOS and Android apps. With `NATIVEAPPTEMPLATE_VISUAL=1`, escalate to a full build (`xcodebuild build` + `./gradlew assembleDebug`) and install on the booted sim/emulator. With `=2`, additionally boot the live Rails server and drive a scripted CRUD walk-through via [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp). A walk step that doesn't reach its expected screen fails the run.
-3. **Semantic.** Opus 4.7 as judge — scores whether the generated code and rendered UI actually express the intended domain. Vision judges read simulator/emulator screenshots directly.
+3. **Semantic.** Opus 5.5 as judge — scores whether the generated code and rendered UI actually express the intended domain. Vision judges read simulator/emulator screenshots directly.
 
 See [`docs/SPEC.md`](./docs/SPEC.md) for the full design.
 
@@ -339,7 +339,7 @@ MIT. See [`LICENSE`](./LICENSE).
 
 ## Acknowledgments
 
-- [Anthropic](https://www.anthropic.com) for Claude Opus 4.7 and Claude Code
+- [Anthropic](https://www.anthropic.com) for Claude Opus (4.7 during the hackathon, 5.5 today) and Claude Code
 - [Cerebral Valley](https://cerebralvalley.ai) for running the hackathon
 - [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp) for making mobile UI automation actually workable from an agent
 - [MyTurnTag Creator](https://myturntag.com) users, whose real-world queue management taught me which abstractions survive and which don't

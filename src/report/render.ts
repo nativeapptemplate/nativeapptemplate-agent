@@ -159,7 +159,7 @@ function layer3Section(report: RunReport, assets: AssetMap): string {
     }
     return card(p.platform, l3.pass, parts.join("\n"));
   }).join("");
-  return `<section><h2>Layer 3 — semantic (Opus 4.7 vision judge)</h2>${cards}</section>`;
+  return `<section><h2>Layer 3 — semantic (vision judge: ${esc(report.meta.judgeModel)})</h2>${cards}</section>`;
 }
 
 function reviewerSection(report: RunReport): string {

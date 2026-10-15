@@ -1,9 +1,8 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import { trace } from "../trace.js";
 import { isStub } from "../stub.js";
 import type { DomainSpec, Platform } from "./types.js";
-
-const MODEL = "claude-opus-4-7";
+import { REPAIR_EFFORT, REPAIR_MODEL } from "../models.js";
 
 // Which validation layer this repair attempt targets. Layer 1 (leftover
 // substrate tokens) and Layer 2 (build/compile failures) are the
@@ -53,27 +52,16 @@ export async function runRepair(target: RepairTarget, domain: DomainSpec): Promi
 
   const response = query({
     prompt: buildPrompt(target, domain),
-    options: {
-      cwd: target.outDir,
-      model: MODEL,
-      systemPrompt: SYSTEM_PROMPT,
-      allowedTools,
-      permissionMode: "bypassPermissions",
-      allowDangerouslySkipPermissions: true,
-      maxTurns: target.layer === "layer2" ? 40 : 20,
-      // Hermetic: don't inherit the developer's ~/.claude settings, project
-      // CLAUDE.md / AGENTS.md, or custom agents — the repair agent runs only with the
-      // system prompt below.
-      settingSources: [],
-      env: { ...stringEnv(process.env), ANTHROPIC_API_KEY: apiKey },
-    },
+    options: buildRepairOptions(target, apiKey, allowedTools),
   });
 
   let action = `attempted ${target.layer} fix`;
   let turns = 0;
+  let cost = "";
   for await (const message of response) {
     if (message.type === "result") {
       turns = message.num_turns;
+      cost = ` ($${message.total_cost_usd.toFixed(4)}, ${message.usage.input_tokens} in / ${message.usage.output_tokens} out)`;
       if (message.subtype === "success" && !message.is_error) {
         action = firstLine(message.result) || action;
       } else {
@@ -82,8 +70,29 @@ export async function runRepair(target: RepairTarget, domain: DomainSpec): Promi
     }
   }
 
-  trace("repair", `${target.platform}/${target.layer}: ${turns} turns — ${action}`);
+  trace("repair", `${target.platform}/${target.layer}: ${turns} turns${cost} — ${action}`);
   return { action };
+}
+
+// Agent SDK options for one repair pass. Exported so tests can check them
+// without starting an agent. Thinking is left unset: Opus 5.5 always runs
+// adaptive thinking, and effort is the control.
+export function buildRepairOptions(target: RepairTarget, apiKey: string, allowedTools: string[]): Options {
+  return {
+    cwd: target.outDir,
+    model: REPAIR_MODEL,
+    effort: REPAIR_EFFORT,
+    systemPrompt: SYSTEM_PROMPT,
+    allowedTools,
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    maxTurns: target.layer === "layer2" ? 40 : 20,
+    // Hermetic: don't inherit the developer's ~/.claude settings, project
+    // CLAUDE.md / AGENTS.md, or custom agents — the repair agent runs only with the
+    // system prompt below.
+    settingSources: [],
+    env: { ...stringEnv(process.env), ANTHROPIC_API_KEY: apiKey },
+  };
 }
 
 const SYSTEM_PROMPT = `You are a repair agent for a generated three-platform SaaS project (Rails 8.1 API, SwiftUI iOS, Jetpack Compose Android). A generated project failed one validation layer; your job is to make the smallest correct edit that fixes it. You operate ONLY inside the current working directory (one generated platform project) — never touch any other path.

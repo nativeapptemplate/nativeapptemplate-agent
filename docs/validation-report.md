@@ -73,7 +73,7 @@ Screenshots originate in `tmp/screenshots/{ios-home,android-home}.png` (Stage 1)
 
 ## 4. Report content (sections, in order)
 
-1. **Header** — overall `PASS` / `PARTIAL` / `FAIL` badge (`PARTIAL`: nothing failed, but Layer 3 didn't judge every mobile UI), spec text, `displayName`, slug, timestamp, agent version (from `package.json`), judge model (`claude-opus-4-7`), `NATIVEAPPTEMPLATE_VISUAL` level, total run duration.
+1. **Header** — overall `PASS` / `PARTIAL` / `FAIL` badge (`PARTIAL`: nothing failed, but Layer 3 didn't judge every mobile UI), spec text, `displayName`, slug, timestamp, agent version (from `package.json`), judge model (`claude-opus-5-5`), `NATIVEAPPTEMPLATE_VISUAL` level, total run duration.
 2. **Gate strip** — four chips: Layer 1, Layer 2, Layer 3, Reviewer, each `x/3` (or `x/2` for L3) with pass/fail color. This is the existing `summary` string, made visual.
 3. **Platform × Layer matrix** — the headline. Rows `rails / ios / android`, columns `Layer 1 / Layer 2 / Layer 3`, each cell a pass/fail/skip mark. (Rails has no Layer 3 — render as "n/a".)
 4. **Layer 1 — Structural.** Per platform: pass + count. On failure, a findings table: `token | file:line | text excerpt`. Clean state shows an explicit "no leftover tokens" row.
@@ -101,7 +101,7 @@ export type RunReport = {
     slug: string;
     displayName: string;
     agentVersion: string;       // package.json version
-    judgeModel: string;         // "claude-opus-4-7"
+    judgeModel: string;         // "claude-opus-5-5"
     visualLevel: 0 | 1 | 2;     // from NATIVEAPPTEMPLATE_VISUAL
     startedAt: string;          // ISO
     finishedAt: string;         // ISO
