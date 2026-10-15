@@ -268,6 +268,28 @@ test("runLayer2 Android reports missing gradle wrapper", async () => {
   assert.equal(result.pass, false);
 });
 
+test("firstThenTogether finishes the first call before starting the rest, then runs the rest at once", async () => {
+  // The judge's first sample writes the screenshot's prompt cache; samples sent
+  // at the same time would each write it again instead of reading it.
+  const { firstThenTogether } = await import("../src/validation/layer3.js");
+  const events: string[] = [];
+  let inFlight = 0;
+  let maxInFlightAfterFirst = 0;
+  const results = await firstThenTogether([1, 2, 3, 4], async (n) => {
+    events.push(`start ${n}`);
+    inFlight++;
+    if (n !== 1) maxInFlightAfterFirst = Math.max(maxInFlightAfterFirst, inFlight);
+    await new Promise((r) => setTimeout(r, 5));
+    inFlight--;
+    events.push(`end ${n}`);
+    return n * 10;
+  });
+  assert.deepEqual(results, [10, 20, 30, 40]);
+  assert.deepEqual(events.slice(0, 2), ["start 1", "end 1"]);
+  assert.equal(maxInFlightAfterFirst, 3);
+  assert.deepEqual(await firstThenTogether([], async (n: number) => n), []);
+});
+
 test("runLayer3 returns synthetic pass for empty rubric in stub mode", async () => {
   const result = await runLayer3({
     screenshotPath: "/tmp/x.png",
