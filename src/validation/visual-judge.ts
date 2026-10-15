@@ -255,11 +255,18 @@ export async function judgeWithRetry(
 // judging. Adding a domain-match criterion here would false-fail any
 // substrate that ships with onboarding-before-domain-UI — which is the
 // substrate's intentional design.
+// The leak check judges the generated app's own pixels only. The OS draws
+// its own UI over the app: the iOS status bar shows a "◀ <previous app>"
+// back link when the app was opened from another app (on a shared simulator
+// that is often the substrate itself), and Android can show notification
+// icons. Those are not the app's text, so the judge must not fail on them.
+export const NO_SUBSTRATE_LEAK_QUESTION =
+  "Is the app's own content free of substrate-original tokens like 'Shop', 'Shopkeeper', 'ItemTag', 'NativeAppTemplate', or 'Number Tag'? Judge only what the app draws. Ignore the operating system's UI around it: the status bar (clock, signal, battery, and the iOS '◀ <app name>' link back to a previously open app), notification icons, and the home indicator.";
+
 export const DEFAULT_STAGE1_RUBRIC: readonly Layer3Criterion[] = [
   {
     id: "no-substrate-leak",
-    question:
-      "Is the screen free of substrate-original tokens like 'Shop', 'Shopkeeper', 'ItemTag', 'NativeAppTemplate', or 'Number Tag'?",
+    question: NO_SUBSTRATE_LEAK_QUESTION,
   },
   {
     id: "renders-cleanly",
