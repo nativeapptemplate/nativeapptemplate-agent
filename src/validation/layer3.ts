@@ -116,26 +116,38 @@ export async function runLayer3(input: Layer3Input): Promise<Layer3Result> {
   const apiKey = process.env['NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY'] ?? process.env['ANTHROPIC_API_KEY'];
   const client = new Anthropic({ apiKey });
 
-  const scores: Layer3Score[] = await Promise.all(
-    input.rubric.map(async (criterion) => {
-      const samples = await Promise.all(
-        Array.from({ length: samplesPerCriterion }, () =>
-          judgeOne(client, model, imageBase64, input.spec, criterion),
-        ),
-      );
-      const passCount = samples.filter((s) => s.pass).length;
-      const median = passCount > samplesPerCriterion / 2;
-      const winningSample = samples.find((s) => s.pass === median) ?? samples[0]!;
-      return {
-        criterionId: criterion.id,
-        pass: median,
-        rationale: winningSample.rationale,
-      };
-    }),
-  );
+  // Every sample shares the cached prefix (system prompt + screenshot); only
+  // the criterion text after the breakpoint differs. Calls sent at the same
+  // time all miss the cache and each write it, so judge one sample first to
+  // write it, then send the rest together to read it (0.1× input instead of
+  // 1.25×).
+  const judge = (criterion: Layer3Criterion) => judgeOne(client, model, imageBase64, input.spec, criterion);
+  const jobs = input.rubric.flatMap((criterion) => Array.from({ length: samplesPerCriterion }, () => criterion));
+  const verdicts = await firstThenTogether(jobs, judge);
+
+  const scores: Layer3Score[] = input.rubric.map((criterion, index) => {
+    const samples = verdicts.slice(index * samplesPerCriterion, (index + 1) * samplesPerCriterion);
+    const passCount = samples.filter((s) => s.pass).length;
+    const median = passCount > samplesPerCriterion / 2;
+    const winningSample = samples.find((s) => s.pass === median) ?? samples[0]!;
+    return {
+      criterionId: criterion.id,
+      pass: median,
+      rationale: winningSample.rationale,
+    };
+  });
 
   const pass = scores.every((s) => s.pass);
   return { pass, scores };
+}
+
+// Runs `run` on the first item alone, then on the rest at once; results keep
+// the input order. Lets the first call write a prompt cache the others read.
+export async function firstThenTogether<T, R>(items: readonly T[], run: (item: T) => Promise<R>): Promise<R[]> {
+  const [first, ...rest] = items;
+  if (first === undefined) return [];
+  const head = await run(first);
+  return [head, ...(await Promise.all(rest.map(run)))];
 }
 
 async function judgeOne(
