@@ -10,9 +10,11 @@ Project-wide instructions for AI coding agents (Claude Code, Codex, etc.). Keep 
 
 ## Model
 
-- Use `claude-opus-4-7` for all agent invocations.
-- Requires Claude Agent SDK `>= 0.2.111`.
-- Do not set `thinking.type.enabled` — use `thinking: {type: "adaptive"}` instead (Opus 4.7 uses adaptive thinking).
+- Use `claude-opus-5-5` for all agent invocations. Model ids and per-role effort live in `src/models.ts` — a model bump is a one-line change there.
+- Requires Claude Agent SDK `>= 0.3.286` and `@anthropic-ai/sdk >= 0.131.0`.
+- Opus 5.5 always thinks: do not send `thinking` (`disabled` and `budget_tokens` are 400s). Set `output_config.effort` explicitly — the default is `medium`.
+- Forced `tool_choice` (`any` / `tool`) is a 400: get JSON back with structured outputs (`output_config.format`) instead. No `temperature` / `top_p`, no assistant prefill.
+- Check `stop_reason` (`refusal`, `max_tokens`) before reading content. Messages API calls opt into server-side refusal fallbacks (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`).
 
 ## Stack
 
@@ -96,7 +98,7 @@ Three clean operations on the substrate (details in `docs/SPEC.md` section 4):
 
 1. **Structural** — ripgrep for leftover domain tokens + OpenAPI contract parity (Rails ↔ iOS ↔ Android).
 2. **Runtime** — Rails boots, iOS builds & launches, Android builds & launches (Stage 1); UI-driven CRUD scenario via mobile-mcp (Stage 2).
-3. **Semantic** — Opus 4.7 as judge (text + vision) scoring against a structured rubric. Three runs per screenshot, take the median.
+3. **Semantic** — Opus 5.5 as judge (text + vision) scoring against a structured rubric. Three runs per screenshot, take the median.
 
 ## Guardrails
 

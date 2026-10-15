@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { readFile } from "node:fs/promises";
 import { isStub } from "../stub.js";
+import { trace } from "../trace.js";
+import { FALLBACK_BETA, FALLBACKS, JUDGE_EFFORT, JUDGE_MODEL } from "../models.js";
+import { readStructuredJson, usageLine } from "../structured-output.js";
 
 export type Layer3Criterion = {
   id: string;
@@ -26,39 +29,86 @@ export type Layer3Result = {
   scores: Layer3Score[];
 };
 
-const DEFAULT_MODEL = "claude-opus-4-7";
 const DEFAULT_SAMPLES = 3;
-const MAX_TOKENS = 1024;
+// Opus 5.5 always thinks, and thinking counts toward max_tokens: leave room
+// for it on top of the short verdict JSON.
+const MAX_TOKENS = 8192;
 
 const SYSTEM_PROMPT = `You are a vision judge for a SaaS code generator. You receive a one-sentence natural-language spec describing a SaaS product and a screenshot of a generated app's home screen, and you assess one rubric criterion at a time.
 
 Score conservatively: when in doubt, answer No. Base the verdict ONLY on what is visible in the screenshot — do not assume features that aren't shown.`;
 
-const VERDICT_TOOL: Anthropic.Tool = {
-  name: "submit_verdict",
-  description: "Record the Yes/No verdict and one-sentence rationale for this rubric criterion.",
-  input_schema: {
-    type: "object",
-    properties: {
-      pass: {
-        type: "boolean",
-        description: "true if the criterion is met based on what is visible in the screenshot; false otherwise. Be conservative — when uncertain, answer false.",
-      },
-      rationale: {
-        type: "string",
-        description: "One-sentence rationale grounded in what is visible.",
-      },
+// JSON schema for the judge's structured output (output_config.format).
+// Opus 5.5 rejects forced tool_choice, so the verdict is the response body
+// instead of a submit_verdict tool call.
+export const VERDICT_SCHEMA = {
+  type: "object",
+  properties: {
+    pass: {
+      type: "boolean",
+      description: "true if the criterion is met based on what is visible in the screenshot; false otherwise. Be conservative — when uncertain, answer false.",
     },
-    required: ["pass", "rationale"],
-    additionalProperties: false,
+    rationale: {
+      type: "string",
+      description: "One-sentence rationale grounded in what is visible.",
+    },
   },
-};
+  required: ["pass", "rationale"],
+  additionalProperties: false,
+} as const;
+
+// The Messages API request for one judge sample. Exported so tests can check
+// its shape without a network call.
+export function buildJudgeRequest(
+  model: string,
+  imageBase64: string,
+  spec: string,
+  criterion: Layer3Criterion,
+): Anthropic.Beta.Messages.MessageCreateParamsNonStreaming {
+  return {
+    model,
+    max_tokens: MAX_TOKENS,
+    system: SYSTEM_PROMPT,
+    output_config: {
+      effort: JUDGE_EFFORT,
+      format: { type: "json_schema", schema: VERDICT_SCHEMA as unknown as Record<string, unknown> },
+    },
+    betas: [FALLBACK_BETA],
+    fallbacks: FALLBACKS,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/png", data: imageBase64 },
+            cache_control: { type: "ephemeral" },
+          },
+          {
+            type: "text",
+            text: `Spec: ${spec}\n\nCriterion: ${criterion.question}`,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+// Reads one verdict, failing loudly on a refusal, a truncated response, or a
+// malformed verdict.
+export function parseVerdict(response: Anthropic.Beta.Messages.BetaMessage): { pass: boolean; rationale: string } {
+  const verdict = readStructuredJson(response, "layer3 judge") as { pass: unknown; rationale: unknown };
+  if (typeof verdict.pass !== "boolean" || typeof verdict.rationale !== "string") {
+    throw new Error("layer3 judge: malformed verdict: " + JSON.stringify(verdict));
+  }
+  return { pass: verdict.pass, rationale: verdict.rationale };
+}
 
 export async function runLayer3(input: Layer3Input): Promise<Layer3Result> {
   if (isStub("judge")) return runStubLayer3(input);
 
   const samplesPerCriterion = input.samplesPerCriterion ?? DEFAULT_SAMPLES;
-  const model = input.model ?? DEFAULT_MODEL;
+  const model = input.model ?? JUDGE_MODEL;
 
   const png = await readFile(input.screenshotPath);
   const imageBase64 = png.toString("base64");
@@ -95,40 +145,9 @@ async function judgeOne(
   spec: string,
   criterion: Layer3Criterion,
 ): Promise<{ pass: boolean; rationale: string }> {
-  const response = await client.messages.create({
-    model,
-    max_tokens: MAX_TOKENS,
-    system: SYSTEM_PROMPT,
-    tools: [VERDICT_TOOL],
-    tool_choice: { type: "tool", name: "submit_verdict" },
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: "image/png", data: imageBase64 },
-            cache_control: { type: "ephemeral" },
-          },
-          {
-            type: "text",
-            text: `Spec: ${spec}\n\nCriterion: ${criterion.question}`,
-          },
-        ],
-      },
-    ],
-  });
-
-  const toolUse = response.content.find((c) => c.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") {
-    throw new Error("layer3 judge: expected tool_use in response, got: " + JSON.stringify(response.content));
-  }
-
-  const verdict = toolUse.input as { pass: boolean; rationale: string };
-  if (typeof verdict.pass !== "boolean" || typeof verdict.rationale !== "string") {
-    throw new Error("layer3 judge: malformed verdict: " + JSON.stringify(verdict));
-  }
-  return verdict;
+  const response = await client.beta.messages.create(buildJudgeRequest(model, imageBase64, spec, criterion));
+  trace("judge", `layer3 ${criterion.id}: ${usageLine(response, model)}`);
+  return parseVerdict(response);
 }
 
 async function runStubLayer3(input: Layer3Input): Promise<Layer3Result> {

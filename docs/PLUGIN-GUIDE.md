@@ -84,7 +84,7 @@ server (`nativeapptemplate-agent`) and `mobile-mcp` for device automation.
 
 - **Node.js 22+** — the generator and both MCP servers run on Node. Check with
   `node -v`.
-- **An Anthropic API key with access to `claude-opus-4-7`**, exported as
+- **An Anthropic API key with access to `claude-opus-5-5`**, exported as
   `ANTHROPIC_API_KEY` (or the dedicated `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` —
   see [§9](#9-flags-and-environment-variables--full-reference)):
   ```bash
@@ -303,7 +303,7 @@ The validation layers:
 - **Layer 2 — runtime.** Rails boots / iOS builds / Android builds. `mode: "build"`
   means a full build was run (visual mode); `mode: "fast"` is the default
   type-check/boot path.
-- **Layer 3 — semantic.** Opus 4.7 vision judge scoring the rendered UI against a
+- **Layer 3 — semantic.** Opus 5.5 vision judge scoring the rendered UI against a
   rubric. Present **only** when `visualLevel > 0`.
 
 The skill leads with the headline (`verdict` — PASS / PARTIAL / FAIL — + `summary` + total time), then a
@@ -528,10 +528,10 @@ The barbershop walk-in-queue spec is the canonical demo:
 
 | Variable | Purpose |
 |---|---|
-| `ANTHROPIC_API_KEY` | Your Anthropic key (needs `claude-opus-4-7`). The only sensitive secret the agent requires. |
+| `ANTHROPIC_API_KEY` | Your Anthropic key (needs `claude-opus-5-5`). The only sensitive secret the agent requires. |
 | `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` | Optional dedicated workspace key; preferred over `ANTHROPIC_API_KEY` when set, so a runaway loop hits the workspace cap instead of your tier limit. |
 | `NATIVEAPPTEMPLATE_API` / `_IOS` / `_ANDROID` | Paths to the three substrate repos. Required — there is no default. Point at the free repos for an OSS-reproducible run, or at the paid repos if you have them. |
-| `NATIVEAPPTEMPLATE_VISUAL=1` | Stage-1 visual judging: Layer 2 runs in **build mode** (full `xcodebuild build` + `./gradlew assembleDebug`), installs on the booted sim/emulator, captures the home screen, and judges it with Opus 4.7 vision. Requires a sim/emulator booted per platform. Adds ~60–180s per platform. |
+| `NATIVEAPPTEMPLATE_VISUAL=1` | Stage-1 visual judging: Layer 2 runs in **build mode** (full `xcodebuild build` + `./gradlew assembleDebug`), installs on the booted sim/emulator, captures the home screen, and judges it with Opus 5.5 vision. Requires a sim/emulator booted per platform. Adds ~60–180s per platform. |
 | `NATIVEAPPTEMPLATE_VISUAL=2` | Implies `=1` and additionally runs **Stage 2**: boots the generated Rails app, drives a scripted CRUD walk-through via `mobile-mcp` (Sign Up → email-confirm → Sign In → drill into seeded sample), then judges the post-walk screenshot. Requires both sims/emulators booted + the substrate's `mise` toolchain. Adds 2–4 min/platform. |
 | `NATIVEAPPTEMPLATE_REPAIR` | Opts into the bounded self-repair loop. `on` (or a positive integer N, hard-capped at 5). On a code-repairable failure (Layer 1 leftover tokens or Layer 2 build errors) the agent runs a repair pass scoped to the failing project and re-validates, up to the cap. Layer 3 + reviewer misses are surfaced, not auto-repaired. Off by default. |
 | `NATIVEAPPTEMPLATE_BRIDGE=off` | Skip writing `<PRODUCT>_API_*` into `~/.gradle/gradle.properties` (process.env injection still runs for child-spawn paths). |

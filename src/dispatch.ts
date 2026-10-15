@@ -19,6 +19,7 @@ import type { RepairAttempt, RunReport } from "./report/model.js";
 import type { JudgeResult, Platform, PlatformDetail, RenamePair, WorkerResult } from "./agents/types.js";
 import { applyJapaneseOverrides, applyRenameOverrides, describeKeptTarget, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
 import { reservedTargets, type ReservedTarget } from "./reserved-words.js";
+import { JUDGE_MODEL } from "./models.js";
 import { isValidSlug, slugToPascal, projectNameToSlug, projectNameToDisplayName } from "./slug.js";
 
 export type DispatchReportOptions = {
@@ -285,7 +286,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     judge,
     reviewer,
     agentVersion: readPackageVersion(),
-    judgeModel: "claude-opus-4-7",
+    judgeModel: JUDGE_MODEL,
     visualLevel: visualLevel as 0 | 1 | 2,
     startedAt,
     finishedAt: Date.now(),

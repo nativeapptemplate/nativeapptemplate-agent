@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 #
-# Aggregate token usage from tmp/trace/*.log and estimate Opus 4.7 cost.
+# Aggregate token usage from tmp/trace/*.log and estimate Claude Opus 5.5 cost.
 # Each sub-agent emits lines like:
 #   [02:09:29] usage: 1897 in / 656 out
 # This script sums those per agent, prints a table, and estimates USD.
 #
 # Usage: scripts/cost.sh   (or: npm run cost)
-# Opus 4.7 rates: $15/Mtok input, $75/Mtok output.
+# Claude Opus 5.5 rates: $4/Mtok input, $20/Mtok output (src/models.ts).
+# Thinking tokens are billed as output and included in the out counts.
 
 set -euo pipefail
 
@@ -44,7 +45,7 @@ awk '
     total_calls = 0; total_in = 0; total_out = 0; total_cost = 0
     for (i = 1; i <= n_agents; i++) {
       a = order[i]
-      cost = sum_in[a] * 15 / 1000000 + sum_out[a] * 75 / 1000000
+      cost = sum_in[a] * 4 / 1000000 + sum_out[a] * 20 / 1000000
       printf "%-12s %6d %12d %12d %12s\n", a, calls[a], sum_in[a], sum_out[a], sprintf("$%.4f", cost)
       total_calls += calls[a]
       total_in += sum_in[a]

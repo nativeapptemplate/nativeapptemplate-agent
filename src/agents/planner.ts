@@ -3,9 +3,13 @@ import { trace } from "../trace.js";
 import { isStub } from "../stub.js";
 import type { DomainSpec } from "./types.js";
 import { BILLING_RESERVED, ERROR_MONITORING_RESERVED, STDLIB_RESERVED, SUBSTRATE_RESERVED } from "../reserved-words.js";
+import { FALLBACK_BETA, FALLBACKS, PLANNER_EFFORT, PLANNER_MODEL } from "../models.js";
+import { isValidSlug } from "../slug.js";
+import { readStructuredJson, usageLine } from "../structured-output.js";
 
-const MODEL = "claude-opus-4-7";
-const MAX_TOKENS = 4096;
+// Opus 5.5 always thinks, and thinking counts toward max_tokens: leave room
+// for it on top of the DomainSpec JSON.
+const MAX_TOKENS = 16000;
 
 export const SYSTEM_PROMPT = `You are a domain modeler for a three-platform SaaS code generator. You receive a one-sentence natural-language specification of a SaaS product and output a structured DomainSpec that drives code generation across Rails 8.1 (API), SwiftUI (iOS), and Jetpack Compose (Android).
 
@@ -43,69 +47,102 @@ Never emit identity rename pairs (from === to). If the target happens to equal t
 
 slug must be kebab-case and filesystem-safe. Keep entities tight (2-4 per spec). Keep jsonApiContract minimal — a later reviewer sub-agent expands it.`;
 
-const DOMAIN_TOOL: Anthropic.Messages.Tool = {
-  name: "submit_domain_spec",
-  description: "Submit the parsed DomainSpec for downstream code generation.",
-  input_schema: {
-    type: "object",
-    properties: {
-      slug: {
-        type: "string",
-        pattern: "^[a-z0-9][a-z0-9-]*$",
-        description: "kebab-case filesystem slug, e.g. 'clinic-queue'",
-      },
-      displayName: {
-        type: "string",
-        description: "Human-readable name, e.g. 'Clinic Queue'",
-      },
-      entities: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            name: { type: "string", description: "Entity name in PascalCase" },
-            replaces: { type: "string", description: "Which substrate type this replaces: Shop, Shopkeeper, or ItemTag" },
-            fields: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  type: { type: "string", enum: ["string", "integer", "boolean", "datetime", "reference"] },
-                  references: { type: "string", description: "If type=reference, the target entity name" },
-                },
-                required: ["name", "type"],
-              },
-            },
-            states: {
-              type: "array",
-              items: { type: "string" },
-              description: "Optional state-machine states for this entity",
-            },
-          },
-          required: ["name", "replaces", "fields"],
-        },
-      },
-      renamePlan: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            from: { type: "string", description: "Substrate token, e.g. 'Shop'" },
-            to: { type: "string", description: "Replacement token, e.g. 'Clinic'" },
-            toJa: { type: "string", description: "Shop and ItemTag only: the Japanese noun for the target, e.g. '医院'" },
-          },
-          required: ["from", "to"],
-        },
-      },
-      jsonApiContract: {
+// JSON schema for the planner's structured output (output_config.format).
+// Structured outputs need additionalProperties: false on every object and
+// don't support `pattern`, so the slug rule lives in the description and is
+// checked after parsing (isValidSlug).
+export const DOMAIN_SPEC_SCHEMA = {
+  type: "object",
+  properties: {
+    slug: {
+      type: "string",
+      description: "kebab-case filesystem slug matching ^[a-z0-9][a-z0-9-]*$, e.g. 'clinic-queue'",
+    },
+    displayName: {
+      type: "string",
+      description: "Human-readable name, e.g. 'Clinic Queue'",
+    },
+    entities: {
+      type: "array",
+      items: {
         type: "object",
-        description: "Placeholder JSON:API contract object; can be empty {} for now",
+        properties: {
+          name: { type: "string", description: "Entity name in PascalCase" },
+          replaces: { type: "string", description: "Which substrate type this replaces: Shop, Shopkeeper, or ItemTag" },
+          fields: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                type: { type: "string", enum: ["string", "integer", "boolean", "datetime", "reference"] },
+                references: { type: "string", description: "If type=reference, the target entity name" },
+              },
+              required: ["name", "type"],
+              additionalProperties: false,
+            },
+          },
+          states: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional state-machine states for this entity",
+          },
+        },
+        required: ["name", "replaces", "fields"],
+        additionalProperties: false,
       },
     },
-    required: ["slug", "displayName", "entities", "renamePlan", "jsonApiContract"],
+    renamePlan: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          from: { type: "string", description: "Substrate token, e.g. 'Shop'" },
+          to: { type: "string", description: "Replacement token, e.g. 'Clinic'" },
+          toJa: { type: "string", description: "Shop and ItemTag only: the Japanese noun for the target, e.g. '医院'" },
+        },
+        required: ["from", "to"],
+        additionalProperties: false,
+      },
+    },
+    jsonApiContract: {
+      type: "object",
+      description: "Placeholder JSON:API contract object; empty {} for now (a later reviewer sub-agent expands it)",
+      properties: {},
+      additionalProperties: false,
+    },
   },
-};
+  required: ["slug", "displayName", "entities", "renamePlan", "jsonApiContract"],
+  additionalProperties: false,
+} as const;
+
+// The Messages API request the planner sends. Exported so tests can check
+// its shape without a network call. Opus 5.5 rejects forced tool_choice, so
+// the DomainSpec comes back as structured output instead of a tool call.
+export function buildPlannerRequest(spec: string): Anthropic.Beta.Messages.MessageCreateParamsNonStreaming {
+  return {
+    model: PLANNER_MODEL,
+    max_tokens: MAX_TOKENS,
+    system: SYSTEM_PROMPT,
+    output_config: {
+      effort: PLANNER_EFFORT,
+      format: { type: "json_schema", schema: DOMAIN_SPEC_SCHEMA as unknown as Record<string, unknown> },
+    },
+    betas: [FALLBACK_BETA],
+    fallbacks: FALLBACKS,
+    messages: [{ role: "user", content: spec }],
+  };
+}
+
+// Turns the planner's response into a DomainSpec, failing loudly on a
+// refusal, a truncated response, or a slug that breaks the contract.
+export function parsePlannerResponse(response: Anthropic.Beta.Messages.BetaMessage): DomainSpec {
+  const domain = readStructuredJson(response, "planner") as DomainSpec;
+  if (typeof domain.slug !== "string" || !isValidSlug(domain.slug)) {
+    throw new Error(`planner: invalid slug ${JSON.stringify(domain.slug)} (must match ^[a-z0-9][a-z0-9-]*$)`);
+  }
+  return domain;
+}
 
 export async function runPlanner(spec: string): Promise<DomainSpec> {
   trace("planner", `received spec: "${spec}"`);
@@ -120,27 +157,14 @@ export async function runPlanner(spec: string): Promise<DomainSpec> {
   // single-key default path.
   const apiKey = process.env['NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY'] ?? process.env['ANTHROPIC_API_KEY'];
   const client = new Anthropic({ apiKey });
-  trace("planner", `calling ${MODEL} to extract domain`);
+  trace("planner", `calling ${PLANNER_MODEL} (effort ${PLANNER_EFFORT}) to extract domain`);
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    system: SYSTEM_PROMPT,
-    tools: [DOMAIN_TOOL],
-    tool_choice: { type: "tool", name: "submit_domain_spec" },
-    messages: [{ role: "user", content: spec }],
-  });
-
-  const toolUse = response.content.find((c) => c.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") {
-    throw new Error("planner: expected tool_use in response, got: " + JSON.stringify(response.content));
-  }
-
-  const domain = toolUse.input as DomainSpec;
+  const response = await client.beta.messages.create(buildPlannerRequest(spec));
+  const domain = parsePlannerResponse(response);
   trace("planner", `derived slug: ${domain.slug}`);
   trace("planner", `rename plan: ${domain.renamePlan.map((r) => `${r.from}->${r.to}${r.toJa ? ` (${r.toJa})` : ""}`).join(", ")}`);
   trace("planner", `entities: ${domain.entities.map((e) => e.name).join(", ")}`);
-  trace("planner", `usage: ${response.usage.input_tokens} in / ${response.usage.output_tokens} out`);
+  trace("planner", usageLine(response, PLANNER_MODEL));
   trace("planner", "done");
 
   return domain;
