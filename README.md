@@ -123,15 +123,22 @@ Both screenshots are real captures from the booted iOS Simulator and Android emu
 
 End-to-end wall-clock per run, measured from `report.json`'s `meta.durationMs` on a 2021 M1 Max with both simulators pre-booted:
 
-| `NATIVEAPPTEMPLATE_VISUAL` | What runs | Observed time | Approx cost |
+| `NATIVEAPPTEMPLATE_VISUAL` | What runs | Observed time | Approx cost (Opus 5.5, 2026-10-15) |
 |---|---|---|---|
-| `0` (default) | Layer 1 (ripgrep) + Layer 2 *fast* (Rails boot probe, iOS/Android type-check) + reviewer | ~2–3 min | ~$0.05 |
-| `1` | + full `xcodebuild build` + `./gradlew assembleDebug` + home-screen capture + Stage 1 vision judge | ~2.5 min (barbershop-queue · 2026-05-24) | — |
-| `2` | + Rails server boot + scripted-CRUD walk via `mobile-mcp` + Stage 2 vision judge | ~7–8 min (sentova / sushi / task-tracker · 2026-05-23) | — |
+| `0` (default) | Layer 1 (ripgrep) + Layer 2 *fast* (Rails boot probe, iOS/Android type-check) + reviewer | ~2–3 min | ~$0.02 (planner only, measured) |
+| `1` | + full `xcodebuild build` + `./gradlew assembleDebug` + home-screen capture + Stage 1 vision judge | ~2.5 min (barbershop-queue · 2026-05-24) | ~$0.32 (derived) |
+| `2` | + Rails server boot + scripted-CRUD walk via `mobile-mcp` + Stage 2 vision judge | ~7–8 min (sentova / sushi / task-tracker · 2026-05-23) | ~$0.62 (derived) |
 
 Cold builds, first-run cocoapods/gradle dependency resolution, or unbooted simulators add a one-time minute or two. The self-repair loop (opt-in, hard-capped at 5 iterations) can extend a failing run substantially — budget for it if you set `NATIVEAPPTEMPLATE_REPAIR=on`.
 
-**Cost** scales with model usage, not wall-clock. The agent makes real `claude-opus-5-5` API calls (the planner, the Layer 3 vision judge, and the opt-in self-repair agent) and a single VISUAL=2 run consumes tens of thousands of tokens across multiple sub-agents. Set a workspace spend cap (see [Security](#security)) as a backstop — the agent exits non-zero on validation failure, but doesn't gate on spend itself.
+**Cost.** The agent makes real `claude-opus-5-5` API calls ($4 / $20 per million input / output tokens; 5-minute cache writes $5, cache reads $0.40; rates in [`src/models.ts`](./src/models.ts)). How the numbers above were made, on 2026-10-15:
+
+- **Measured, per call:** the planner ("a walk-in queue for a barbershop") used 2,722 in / 446 out = **$0.020**. One vision-judge call on a phone screenshot used ~150 in / ~100–230 out / ~4,300 cache-write tokens = **~$0.025**. The screenshot is cached, but a rubric's samples run in parallel, so every call writes the cache and none reads it.
+- **Measured, per platform:** a judge pass is 2 criteria × 3 samples = 6 calls: **$0.15** for Stage 1 (iOS home screen), **$0.15** for Stage 2 (a list screen).
+- **Derived, per run:** VISUAL=1 = planner + Stage 1 on iOS and Android ≈ $0.32; VISUAL=2 adds Stage 2 on both ≈ $0.62. A judge retry after a transient render failure adds ~$0.15 per retried platform.
+- **Self-repair** (`NATIVEAPPTEMPLATE_REPAIR`): a toy fix converged in 3 turns for ~$0.10 (measured). A real Compose/Hilt build fix can take many more turns (up to 40); estimate ~$0.10–$1 per attempt, at most 5 attempts per run. Re-validation after a repair does not re-run the judge.
+
+**Check your own spend:** clear `tmp/trace/`, run the agent, then `npm run cost` prints per-agent tokens (including cache writes/reads) and estimated USD; repair uses the Agent SDK's own `total_cost_usd`. For billed amounts, see usage per API key in the Claude Console, and set a workspace spend cap (see [Security](#security)) as a backstop — the agent exits non-zero on validation failure, but doesn't gate on spend itself.
 
 ## Architecture
 

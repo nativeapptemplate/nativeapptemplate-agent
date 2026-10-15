@@ -30,7 +30,24 @@ export function readStructuredJson(response: BetaMessage, label: string): unknow
 
 // One trace line per call: tokens, plus the model that actually answered
 // (differs from the requested one when a refusal fallback served it).
+// Cache writes/reads are billed separately from input_tokens (the judge's
+// screenshot is cached, so most of its tokens land there); scripts/cost.sh
+// parses this exact shape, so keep all four fields even when zero.
 export function usageLine(response: BetaMessage, requestedModel: string): string {
   const servedBy = response.model !== requestedModel ? ` (served by ${response.model})` : "";
-  return `usage: ${response.usage.input_tokens} in / ${response.usage.output_tokens} out${servedBy}`;
+  return `usage: ${tokenCounts(response.usage)}${servedBy}`;
+}
+
+export type TokenUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+};
+
+// "<in> in / <out> out / <write> cache-write / <read> cache-read"
+export function tokenCounts(usage: TokenUsage): string {
+  const write = usage.cache_creation_input_tokens ?? 0;
+  const read = usage.cache_read_input_tokens ?? 0;
+  return `${usage.input_tokens} in / ${usage.output_tokens} out / ${write} cache-write / ${read} cache-read`;
 }
