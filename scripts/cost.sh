@@ -9,6 +9,9 @@
 # and its USD is the SDK's own total_cost_usd, counted once and not re-priced.
 #
 # Usage: scripts/cost.sh [trace_dir]   (or: npm run cost)
+# The agent writes traces to tmp/trace/ under the directory it ran in, so the
+# default is that directory's tmp/trace/: INIT_CWD under `npm run cost` (npm
+# runs scripts from the package root), else the current directory.
 # Thinking tokens are billed as output and included in the out counts.
 # Trace logs append across runs: clear tmp/trace/ first to cost a single run.
 
@@ -22,7 +25,7 @@ RATE_OUT=20
 RATE_CACHE_WRITE=5
 RATE_CACHE_READ=0.4
 
-trace_dir="${1:-$(cd "$(dirname "$0")/.." && pwd)/tmp/trace}"
+trace_dir="${1:-${INIT_CWD:-$PWD}/tmp/trace}"
 
 if [[ ! -d "$trace_dir" ]] || ! compgen -G "$trace_dir/*.log" >/dev/null; then
   echo "no trace files at $trace_dir — run \`npm run dev -- \"...\"\` first"

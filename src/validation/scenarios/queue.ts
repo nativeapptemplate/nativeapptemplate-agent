@@ -117,9 +117,13 @@ export function buildQueueScenario(
 
     { kind: "tap_below_text", text: "Password" },
     // submit:true dismisses the on-screen keyboard after the last
-    // field — without it, the keyboard occludes the bottom Sign Up
-    // button and tap_text "Sign Up" hits the keyboard area instead.
-    { kind: "type", text: inputs.password, submit: true },
+    // field on iOS — without it, the keyboard occludes the bottom Sign
+    // Up button and tap_text "Sign Up" hits the keyboard area instead.
+    // NOT on Android: mobile-mcp types a literal "\n" into the field
+    // there, so the account is created with password "<pw>\n" and the
+    // later Sign In (typed without it) gets 401. The press_button
+    // "BACK" below dismisses the Android keyboard instead.
+    { kind: "type", text: inputs.password, submit: platform === "ios" },
 
     // Dismiss the on-screen keyboard before tapping Sign Up. On
     // iOS the keychain dialog handler below catches things; on

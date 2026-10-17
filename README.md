@@ -127,7 +127,7 @@ End-to-end wall-clock per run, measured from `report.json`'s `meta.durationMs` o
 |---|---|---|---|
 | `0` (default) | Layer 1 (ripgrep) + Layer 2 *fast* (Rails boot probe, iOS/Android type-check) + reviewer | ~2–3 min | ~$0.02 (planner only, measured) |
 | `1` | + full `xcodebuild build` + `./gradlew assembleDebug` + home-screen capture + Stage 1 vision judge | ~2.5 min (barbershop-queue · 2026-05-24) | ~$0.13 (derived) |
-| `2` | + Rails server boot + scripted-CRUD walk via `mobile-mcp` + Stage 2 vision judge | ~7–8 min (sentova / sushi / task-tracker · 2026-05-23) | ~$0.24 (derived) |
+| `2` | + Rails server boot + scripted-CRUD walk via `mobile-mcp` + Stage 2 vision judge | ~7–8 min (sentova / sushi / task-tracker · 2026-05-23; orange-baton 7m 12s · 2026-10-17) | ~$0.22 (orange-baton, measured 2026-10-17) |
 
 Cold builds, first-run cocoapods/gradle dependency resolution, or unbooted simulators add a one-time minute or two. The self-repair loop (opt-in, hard-capped at 5 iterations) can extend a failing run substantially — budget for it if you set `NATIVEAPPTEMPLATE_REPAIR=on`.
 
@@ -136,9 +136,10 @@ Cold builds, first-run cocoapods/gradle dependency resolution, or unbooted simul
 - **Measured, per call:** the planner ("a walk-in queue for a barbershop") used 2,722 in / 446 out = **$0.020**. The vision judge caches the screenshot: its first call writes the cache (~150 in / ~110 out / ~4,400 cache-write tokens = **~$0.025**), then the remaining samples run in parallel and read it (~160 in / ~90–260 out / ~4,400 cache-read tokens = **~$0.006** each).
 - **Measured, per platform:** a judge pass is 2 criteria × 3 samples = 6 calls: **$0.054** for Stage 1 (iOS home screen). Stage 2 sends the same shape of request on a list screen; before the cache warm-up it measured the same as Stage 1 ($0.15 each), so it is taken as ~$0.054 too.
 - **Derived, per run:** VISUAL=1 = planner + Stage 1 on iOS and Android ≈ $0.13; VISUAL=2 adds Stage 2 on both ≈ $0.24. A judge retry after a transient render failure adds ~$0.05 per retried platform.
+- **Measured, per run (2026-10-17):** a passing paid-edition VISUAL=2 run of the Orange Baton spec (see [Validation report](#validation-report)) cost **$0.223** — planner 2,761 in / 874 out = $0.029, plus 24 judge calls (Stage 1 + Stage 2 on iOS and Android) = 3,456 in / 2,976 out / 17,320 cache-write / 86,600 cache-read = $0.195. That's in line with the derived ~$0.24.
 - **Self-repair** (`NATIVEAPPTEMPLATE_REPAIR`): a toy fix converged in 3 turns for ~$0.10 (measured). A real Compose/Hilt build fix can take many more turns (up to 40); estimate ~$0.10–$1 per attempt, at most 5 attempts per run. Re-validation after a repair does not re-run the judge.
 
-**Check your own spend:** clear `tmp/trace/`, run the agent, then `npm run cost` prints per-agent tokens (including cache writes/reads) and estimated USD; repair uses the Agent SDK's own `total_cost_usd`. For billed amounts, see usage per API key in the Claude Console, and set a workspace spend cap (see [Security](#security)) as a backstop — the agent exits non-zero on validation failure, but doesn't gate on spend itself.
+**Check your own spend:** clear `tmp/trace/` in the directory you run the agent from, run the agent, then from that same directory `npm --prefix <path-to-this-repo> run cost` (or `bash <path-to-this-repo>/scripts/cost.sh [trace_dir]`) prints per-agent tokens (including cache writes/reads) and estimated USD; repair uses the Agent SDK's own `total_cost_usd`. For billed amounts, see usage per API key in the Claude Console, and set a workspace spend cap (see [Security](#security)) as a backstop — the agent exits non-zero on validation failure, but doesn't gate on spend itself.
 
 ## Architecture
 
@@ -271,9 +272,9 @@ See [`docs/SPEC.md`](./docs/SPEC.md) for the full design.
 
 Every run writes a report of the validation results to the output directory:
 
-[![Example validation report (free edition): a self-contained HTML page showing the overall PASS verdict, a platform×layer matrix, per-layer detail, embedded iOS + Android home-screen captures with the vision judge's rationales, the contract-parity check, and the domain rename plan](./docs/images/validation-report.png)](./docs/images/validation-report.png)
+[![Example validation report (paid edition, VISUAL=2): a self-contained HTML page showing the overall PASS verdict, a platform×layer matrix, per-layer detail, embedded iOS + Android home-screen captures with the vision judge's rationales, the Stage 2 walk-through filmstrip, the contract-parity check, and the domain rename plan](./docs/images/validation-report.png)](./docs/images/validation-report.png)
 
-*Example report from a free-edition run of `"a walk-in queue for small veterinary clinics"` — all three layers green. Click to view full size; the real artifact is a live, self-contained HTML file you open in a browser.*
+*Example report from a paid-edition `NATIVEAPPTEMPLATE_VISUAL=2` run of `"a job hand-off tracker for small field-service companies: each project always has exactly one open baton held by one teammate; finishing it means choosing the next stage and the next holder"` with `--project-name="Orange Baton" --rename Shop=Project --rename ItemTag=Baton --rename Shopkeeper=Teammate` — all three layers green, Stage 2 walked 46/46 steps on iOS and 48/48 on Android, 7m 12s, $0.22. Click to view full size; the real artifact is a live, self-contained HTML file you open in a browser.*
 
 - **`out/<slug>/validation-report.html`** — a self-contained HTML report (screenshots base64-embedded, no external assets, no JavaScript) you can open in a browser, attach to a PR, or drop into a demo. It shows the overall verdict — **PASS**, **FAIL**, or **PARTIAL** (nothing failed, but Layer 3 didn't judge the UI, as in a default `NATIVEAPPTEMPLATE_VISUAL=0` run) — a platform×layer matrix, Layer 1 leftover-token findings, Layer 2 build commands + `stderr`, Layer 3 home-screen screenshots with the vision judge's per-criterion rationales (plus the Stage 2 filmstrip when `NATIVEAPPTEMPLATE_VISUAL=2`), the reviewer's contract diff, and the domain rename plan.
 - **`out/<slug>/report.json`** — the same data, machine-readable, for CI gating or programmatic use. The full schema lives in [`docs/validation-report.md`](./docs/validation-report.md).
