@@ -8,7 +8,7 @@ import { renderReport } from "../src/report/render.js";
 import { buildRunReport, writeReport, collectScreenshotPaths } from "../src/report/collect.js";
 import type { DomainSpec, JudgeResult, ReviewerResult, Platform, PlatformDetail } from "../src/agents/types.js";
 import { runRepairLoop, REPAIR_ITERATION_CAP, type RepairLoopDeps, type RevalidateResult } from "../src/repair-loop.js";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -3335,4 +3335,51 @@ test("judge screenshot cache uses the default 5-minute TTL that cost.sh prices",
   const image = (req.messages[0]!.content as unknown as Array<Record<string, unknown>>)[0]!;
   // No ttl field = 5 minutes; a "1h" TTL bills writes at 2x input instead.
   assert.deepEqual(image["cache_control"], { type: "ephemeral" });
+});
+
+// --- the template developer's Firebase config must not reach generated apps (#147) ---
+
+test("Android copy carries google-services.json as the template commits it, never the developer's own", async () => {
+  const { copySubstrate } = await import("../src/agents/workers/copy.js");
+  const { ANDROID_SKIP_RULES } = await import("../src/agents/workers/android.js");
+  const base = mkdtempSync(join(tmpdir(), "copy-gms-"));
+  const src = join(base, "src");
+  mkdirSync(join(src, "app"), { recursive: true });
+  // The paid template commits placeholder values and its AGENTS.md tells the
+  // developer to drop their real file in under `git update-index
+  // --skip-worktree` — the working tree then differs from the commit.
+  const placeholder = '{"project_info":{"project_number":"YourProjectId","project_id":"abc"}}\n';
+  const developers = '{"project_info":{"project_number":"915745750384","project_id":"nativeapptemplate"}}\n';
+  writeFileSync(join(src, "app", "google-services.json"), placeholder);
+  writeFileSync(join(src, "app", "build.gradle.kts"), "plugins {}\n");
+  gitIn(src, "init", "-q");
+  gitIn(src, "add", ".");
+  gitIn(src, "commit", "-q", "-m", "init");
+  writeFileSync(join(src, "app", "google-services.json"), developers);
+  gitIn(src, "update-index", "--skip-worktree", "app/google-services.json");
+
+  const dest = join(base, "dest");
+  await copySubstrate(src, dest, ANDROID_SKIP_RULES);
+  assert.equal(readFileSync(join(dest, "app", "google-services.json"), "utf8"), placeholder);
+  assert.equal(existsSync(join(dest, "app", "build.gradle.kts")), true);
+
+  // Same without skip-worktree: an uncommitted edit is still the developer's.
+  gitIn(src, "update-index", "--no-skip-worktree", "app/google-services.json");
+  const dest2 = join(base, "dest2");
+  await copySubstrate(src, dest2, ANDROID_SKIP_RULES);
+  assert.equal(readFileSync(join(dest2, "app", "google-services.json"), "utf8"), placeholder);
+});
+
+test("Android copy of a non-git substrate leaves google-services.json out (nothing tells the placeholder from the real one)", async () => {
+  const { copySubstrate } = await import("../src/agents/workers/copy.js");
+  const { ANDROID_SKIP_RULES } = await import("../src/agents/workers/android.js");
+  const base = mkdtempSync(join(tmpdir(), "copy-gms-nogit-"));
+  const src = join(base, "src");
+  mkdirSync(join(src, "app"), { recursive: true });
+  writeFileSync(join(src, "app", "google-services.json"), '{"project_info":{"project_number":"915745750384"}}\n');
+  writeFileSync(join(src, "app", "build.gradle.kts"), "plugins {}\n");
+  const dest = join(base, "dest");
+  await copySubstrate(src, dest, ANDROID_SKIP_RULES);
+  assert.equal(existsSync(join(dest, "app", "google-services.json")), false);
+  assert.equal(existsSync(join(dest, "app", "build.gradle.kts")), true);
 });

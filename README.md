@@ -190,6 +190,10 @@ The paid iOS and Android templates and the Rails API include optional [Sentry](h
 
 To turn it on, follow the template's README section "Error monitoring (Sentry)" with your own Sentry project.
 
+### Push notifications (Firebase) in the paid Android template
+
+The paid Android template sends push notifications through Firebase Cloud Messaging, configured by `app/google-services.json`. The template commits that file with **placeholder** values (the `com.google.gms.google-services` Gradle plugin fails the build without it) and its developer keeps their own Firebase project's file in the working tree under `git update-index --skip-worktree`. The agent never carries that file over: the generated app gets the file as the template commits it, so it builds, but FCM can't issue it a token and no device is registered with the API until you replace `android/app/google-services.json` with the one from your own Firebase project (register the generated app's package name there). A substrate that isn't a git checkout gets no `google-services.json` at all, and the Android build fails with "File google-services.json is missing" until you add yours. The free Android template has no Firebase.
+
 ## Usage
 
 ```bash

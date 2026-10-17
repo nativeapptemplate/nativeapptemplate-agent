@@ -17,6 +17,12 @@ type RenameStats = {
   files_renamed: number;
 };
 
+// app/google-services.json: the paid template commits placeholder values (the
+// google-services Gradle plugin fails the build without the file) and the
+// developer keeps their own Firebase project's file in the working tree under
+// skip-worktree. Copied from the working tree, the generated app would ship
+// the template's Firebase config, which can't issue it FCM tokens; the
+// placeholder builds the same and leaves Firebase to the app's own developer.
 export const ANDROID_SKIP_RULES: CopySkipRules = {
   anySegment: [
     ...SENTRY_CREDENTIAL_FILES,
@@ -31,6 +37,7 @@ export const ANDROID_SKIP_RULES: CopySkipRules = {
   ],
   // Gradle's sdk.dir, written by Android Studio and gitignored.
   keepIgnored: ["local.properties"],
+  committedOnly: ["app/google-services.json"],
 };
 
 export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult> {

@@ -1,6 +1,6 @@
-import { cp, lstat } from "node:fs/promises";
+import { cp, lstat, mkdir, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { scrubbedEnv } from "../../env.js";
 
 export type CopySkipRules = {
@@ -14,6 +14,12 @@ export type CopySkipRules = {
   // ignores them (local config the developer set up, e.g. API.local.xcconfig).
   // Still subject to the skip rules above.
   keepIgnored?: readonly string[];
+  // Root-relative files carried as the substrate's git has them staged,
+  // never as its working tree has them: the template commits placeholder
+  // values there and the developer may drop their own in locally (e.g.
+  // under `git update-index --skip-worktree`). Left out entirely when the
+  // substrate isn't in git or doesn't track the file.
+  committedOnly?: readonly string[];
 };
 
 // Sentry's local credentials, gitignored in the templates: sentry-cli's auth
@@ -33,6 +39,7 @@ export async function copySubstrate(src: string, dest: string, rules: CopySkipRu
   const anySegment = new Set(rules.anySegment ?? []);
   const anySuffix = rules.anySuffix ?? [];
   const keepIgnored = rules.keepIgnored ?? [];
+  const committedOnly = rules.committedOnly ?? [];
   const root = resolve(src);
   const committable = await gitCommittablePaths(root);
   await cp(root, dest, {
@@ -44,6 +51,7 @@ export async function copySubstrate(src: string, dest: string, rules: CopySkipRu
     filter: async (source: string) => {
       const segments = relative(root, source).split(sep).filter(Boolean);
       const rel = segments.join("/");
+      if (committedOnly.includes(rel)) return false;
       if (rootPaths.some((p) => rel === p || rel.startsWith(`${p}/`))) return false;
       if (segments.some((seg) => anySegment.has(seg))) return false;
       if (segments.some((seg) => anySuffix.some((suffix) => seg.endsWith(suffix)))) return false;
@@ -59,6 +67,16 @@ export async function copySubstrate(src: string, dest: string, rules: CopySkipRu
       return true;
     },
   });
+  for (const rel of committedOnly) {
+    if (!committable?.has(rel)) continue;
+    // "./" makes git resolve the path from cwd, which may sit below the
+    // repository root.
+    const staged = await gitBytes(root, ["show", `:./${rel}`]);
+    if (staged === null) continue;
+    const target = join(dest, ...rel.split("/"));
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, staged);
+  }
 }
 
 // Every committable file under root plus each directory on the way to one, as
@@ -75,12 +93,17 @@ async function gitCommittablePaths(root: string): Promise<Set<string> | null> {
   return paths;
 }
 
-function gitOutput(cwd: string, args: readonly string[]): Promise<string | null> {
+async function gitOutput(cwd: string, args: readonly string[]): Promise<string | null> {
+  const bytes = await gitBytes(cwd, args);
+  return bytes === null ? null : bytes.toString("utf8");
+}
+
+function gitBytes(cwd: string, args: readonly string[]): Promise<Buffer | null> {
   return new Promise((done) => {
     const child = spawn("git", [...args], { cwd, env: scrubbedEnv(), stdio: ["ignore", "pipe", "ignore"] });
     const chunks: Buffer[] = [];
     child.stdout.on("data", (c: Buffer) => chunks.push(c));
     child.on("error", () => done(null));
-    child.on("close", (code) => done(code === 0 ? Buffer.concat(chunks).toString("utf8") : null));
+    child.on("close", (code) => done(code === 0 ? Buffer.concat(chunks) : null));
   });
 }
