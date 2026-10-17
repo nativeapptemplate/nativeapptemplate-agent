@@ -332,6 +332,7 @@ The agent strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `NATIVEAPPTEMP
 ## Project docs
 
 - [`docs/SPEC.md`](./docs/SPEC.md) — full technical specification
+- [`docs/OUTPUT-CHECKLIST.md`](./docs/OUTPUT-CHECKLIST.md) — what to check on a generated app beyond the validation report (tests, linters, leftover substrate config, multi-user and forced-update flows)
 - [`ROADMAP.md`](./ROADMAP.md) — where this project is headed, OSS vs hosted, what stays out of scope
 - [`AGENTS.md`](./AGENTS.md) — AI coding agent instructions (read if you're running Claude Code, Codex, etc. against this repo; `CLAUDE.md` imports it)
 
