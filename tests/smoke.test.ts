@@ -579,6 +579,26 @@ test("buildQueueScenario dismisses iOS system dialogs (Keychain + notification) 
   assert.ok(notifDismiss < sampleWait, "notification dismiss precedes the Sample wait");
 });
 
+test("buildQueueScenario never submits a typed password on Android (mobile-mcp types a literal newline)", async () => {
+  const { buildQueueScenario } = await import("../src/validation/scenarios/queue.js");
+  const build = (platform: "ios" | "android") =>
+    buildQueueScenario(
+      { slug: "vet-clinic", displayName: "Vet Clinic", entities: [], renamePlan: [{ from: "Shop", to: "Clinic" }, { from: "Shopkeeper", to: "Vet" }], jsonApiContract: {} },
+      { fullName: "T", email: "x@y.z", password: "p", primaryResourceName: "Acme", railsOutDir: "/tmp/r" },
+      platform,
+    );
+  const passwordTypes = (platform: "ios" | "android") =>
+    build(platform).steps.filter((s) => s.kind === "type" && s.text === "p") as { submit?: boolean }[];
+
+  // Sign Up + Sign In each type the password once.
+  assert.equal(passwordTypes("android").length, 2);
+  // Observed 2026-10-17: Sign Up typed "p\n", so the account's password had a
+  // trailing newline and the later Sign In got 401.
+  assert.ok(passwordTypes("android").every((s) => !s.submit), "no Android password step submits");
+  // iOS still submits at Sign Up to dismiss the keyboard over the Sign Up button.
+  assert.equal(passwordTypes("ios")[0]?.submit, true);
+});
+
 test("runStage2Scenario walks a simple step list against a fake mobile-mcp", async () => {
   const { tmpdir } = await import("node:os");
   const { mkdtempSync } = await import("node:fs");
@@ -808,6 +828,78 @@ test("runStage2Visual walks scenario + Layer 3 against a fake mobile-mcp", async
   assert.equal(result.ios?.layer3Scores?.length, DEFAULT_STAGE2_RUBRIC.length);
   // #4: the app was foregrounded (launched) before the walk, with the app id.
   assert.equal((launchedWith as { packageName?: unknown } | null)?.packageName, "com.example.app");
+
+  await mobile.close();
+  await fake.close();
+});
+
+test("runStage2Visual relaunches the app when the first launch leaves the iOS springboard up", async () => {
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { runStage2Visual, DEFAULT_STAGE2_RUBRIC } = await import("../src/validation/stage2-judge.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
+
+  // The app only comes to front on the second launch; until then the screen
+  // is the springboard (app icons, type "Icon"), as observed 2026-10-17.
+  let launches = 0;
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async () => ({ content: [{ type: "text", text: JSON.stringify([{ name: "iPhone 17", platform: "ios" }]) }] }),
+  );
+  fake.registerTool(
+    "mobile_list_elements_on_screen",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [{
+        type: "text",
+        text: JSON.stringify(
+          launches >= 2
+            ? [{ label: "Welcome to Vet Clinic", x: 60, y: 650, width: 280, height: 100 }]
+            : [{ type: "Icon", label: "Vet Clinic", x: 200, y: 290, width: 99, height: 90 }],
+        ),
+      }],
+    }),
+  );
+  fake.registerTool(
+    "mobile_save_screenshot",
+    { description: "fake", inputSchema: { saveTo: z.string() } },
+    async () => ({ content: [] }),
+  );
+  fake.registerTool(
+    "mobile_launch_app",
+    { description: "fake", inputSchema: { device: z.string(), packageName: z.string() } },
+    async () => { launches++; return { content: [] }; },
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  const result = await runStage2Visual({
+    spec: "a vet clinic queue",
+    iosScenario: {
+      name: "smoke",
+      steps: [
+        { kind: "wait_for_text", text: "Welcome to", timeoutMs: 500 },
+        { kind: "screenshot", label: "01-welcome" },
+      ],
+    },
+    rubric: DEFAULT_STAGE2_RUBRIC,
+    screenshotDir: mkdtempSync(join(tmpdir(), "stage2-relaunch-")),
+    iosAppId: "com.example.app",
+    iosClient: mobile,
+  });
+
+  assert.equal(launches, 2);
+  assert.equal(result.ios?.stepsPassed, 2, result.ios?.error);
 
   await mobile.close();
   await fake.close();
@@ -3207,6 +3299,22 @@ test("cost.sh prices cache writes/reads and adds the repair agent's SDK cost onc
   assert.match(out, /^repair\s+1\s+12\s+3400\s+15000\s+90000\s+\$0\.1000$/m);
   // total = 0.0142 + 0.0140 + 0.1000 = $0.1282
   assert.match(out, /^Total\s+4\s+1212\s+4300\s+16000\s+91000\s+\$0\.1282$/m);
+});
+
+test("cost.sh with no argument reads tmp/trace/ of the directory npm run cost was invoked from", () => {
+  // trace() writes to process.cwd()/tmp/trace, i.e. wherever the agent ran
+  // (an app workspace, not this repo). npm runs scripts from the package
+  // root but keeps the caller's directory in INIT_CWD.
+  const workspace = mkdtempSync(join(tmpdir(), "cost-workspace-"));
+  mkdirSync(join(workspace, "tmp/trace"), { recursive: true });
+  writeFileSync(
+    join(workspace, "tmp/trace/judge.log"),
+    "[01:00:00] layer3 renders-cleanly: usage: 100 in / 200 out / 1000 cache-write / 0 cache-read\n",
+  );
+  const r = spawnSync("bash", ["scripts/cost.sh"], { encoding: "utf8", env: { ...process.env, INIT_CWD: workspace } });
+  assert.equal(r.status, 0, r.stderr);
+  // 100*$4 + 200*$20 + 1000*$5 = 400 + 4000 + 5000 = 9400 µ$ = $0.0094
+  assert.match(r.stdout, /^judge\s+1\s+100\s+200\s+1000\s+0\s+\$0\.0094$/m);
 });
 
 test("cost.sh rates match OPUS_PRICE_PER_MTOK in src/models.ts", async () => {

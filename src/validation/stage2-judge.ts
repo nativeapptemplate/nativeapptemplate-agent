@@ -6,6 +6,7 @@ import { runLayer3, type Layer3Criterion } from "./layer3.js";
 import { NO_SUBSTRATE_LEAK_QUESTION } from "./visual-judge.js";
 import { createMobileClient, type MobileClient, type ScreenElement } from "../mobile.js";
 import type { Stage2PlatformReport } from "../agents/types.js";
+import { trace } from "../trace.js";
 
 // Layer 2 Stage 2 visual judge: pairs the scripted-CRUD scenario runner
 // with the Layer 3 vision judge so the agent can score post-CRUD
@@ -154,13 +155,14 @@ async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
     // surface a clear error if the app still isn't up.
     if (args.appId) {
       try {
-        await client.launchApp(args.appId);
-        await sleep(2_000); // let it come to front + render before the first poll
+        await foregroundApp(client, args.platform, args.appId);
         // If the launch hit the intermittent "Something went wrong" error
         // screen, tap "Back to Start Screen" (logs out → welcome) before walking.
         if (await recoverFromErrorScreen(client)) await sleep(1_500);
-      } catch {
-        // ignore — scenario steps below report if the app isn't foregrounded
+      } catch (err) {
+        // Don't abort — the scenario's polling reports if the app isn't
+        // foregrounded — but leave the cause in the trace.
+        trace("judge", `Stage 2 ${args.platform}: foreground ${args.appId} failed: ${errorText(err)}`);
       }
     }
 
@@ -197,6 +199,37 @@ async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
   } finally {
     if (ownsClient) await client.close();
   }
+}
+
+// Launches the app and checks it actually came to front. Observed on iOS:
+// Stage 2 step 0 still saw the springboard (17 "Icon" elements) after the
+// launch, with nothing recorded about why. So: retry once if the launch
+// throws or the screen still looks like the springboard, and trace what
+// was seen so the next failure is diagnosable.
+async function foregroundApp(client: MobileClient, platform: "ios" | "android", appId: string): Promise<void> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await client.launchApp(appId);
+    } catch (err) {
+      trace("judge", `Stage 2 ${platform}: launch ${appId} (attempt ${attempt}) threw: ${errorText(err)}`);
+      if (attempt === 2) throw err;
+      await sleep(2_000);
+      continue;
+    }
+    await sleep(2_000); // let it come to front + render before the first poll
+    const elements = await client.listElements();
+    if (!looksLikeHomeScreen(elements)) return;
+    trace("judge", `Stage 2 ${platform}: still on the home screen after launch attempt ${attempt} (${elements.length} elements)`);
+  }
+}
+
+// The iOS springboard lists app icons as type "Icon"; no app screen does.
+function looksLikeHomeScreen(elements: readonly ScreenElement[]): boolean {
+  return elements.some((el) => el.type === "Icon");
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 // Picks the mobile-mcp device for a platform and sets it as active on
