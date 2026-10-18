@@ -92,7 +92,7 @@ Three clean operations on the substrate (details in `docs/SPEC.md` section 4):
 
 1. **Rename the skeleton** — Shop → Clinic, Shopkeeper → Staff, propagated coherently across Rails + Swift + Kotlin.
 2. **Adapt or replace the domain module** — keep ItemTag for queue variants; strip and insert a new resource for non-queue SaaS.
-3. **Drive the build green** — Rails tests + xcodebuild + gradlew must all pass.
+3. **Drive the build green** — Rails tests + xcodebuild + gradlew must all pass. Layer 2 only builds; the test suites run when `NATIVEAPPTEMPLATE_TESTS=1` (`src/validation/test-suites.ts`).
 
 ## Validation (three layers, gated)
 

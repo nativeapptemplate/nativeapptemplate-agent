@@ -134,8 +134,16 @@ Don't just say "it failed." Pull the exact evidence and propose a fix:
   `NATIVEAPPTEMPLATE_REPAIR=on` (targets Layer 1/2, hard-capped at 5 iterations).
 - **reviewer parity fail** → list `reviewer.diffs` (Rails ↔ iOS ↔ Android
   contract drift).
+- **test suite fail** (only with `NATIVEAPPTEMPLATE_TESTS=1`) → show
+  `tests.summary` and `tests.outputTail` for the failing platform.
+- **formatter issues left** (`format.status: "fail"`, reported, not gated) →
+  show `format.outputTail`; the rename shifted alignment or import order in a
+  way the autocorrect couldn't fix.
 - For semantic checks, mention `NATIVEAPPTEMPLATE_VISUAL=1` (build + home-screen
   judge) or `=2` (full mobile-mcp walk-through) as opt-in deeper validation.
+- The apps' own test suites don't run by default; mention
+  `NATIVEAPPTEMPLATE_TESTS=1` (`bin/rails test`, `xcodebuild test`,
+  `./gradlew testDebugUnitTest`) when the user wants them.
 
 ## 7. Hand off to the rest of the session
 

@@ -1700,6 +1700,155 @@ test("renderReport shows formatter results, with what was left after autocorrect
   assert.doesNotMatch(without, /Formatters —/);
 });
 
+// --- opt-in test suites (#150, SPEC §4 Operation 3) ---
+
+test("testsEnabled follows NATIVEAPPTEMPLATE_TESTS and is off by default", async () => {
+  const { testsEnabled } = await import("../src/validation/test-suites.js");
+  const saved = process.env['NATIVEAPPTEMPLATE_TESTS'];
+  try {
+    delete process.env['NATIVEAPPTEMPLATE_TESTS'];
+    assert.equal(testsEnabled(), false);
+    for (const on of ["1", "on", "true", " TRUE "]) {
+      process.env['NATIVEAPPTEMPLATE_TESTS'] = on;
+      assert.equal(testsEnabled(), true, on);
+    }
+    for (const off of ["0", "off", "", "2"]) {
+      process.env['NATIVEAPPTEMPLATE_TESTS'] = off;
+      assert.equal(testsEnabled(), false, off);
+    }
+  } finally {
+    if (saved !== undefined) process.env['NATIVEAPPTEMPLATE_TESTS'] = saved;
+    else delete process.env['NATIVEAPPTEMPLATE_TESTS'];
+  }
+});
+
+test("runTestSuite rails prepares the test DB, runs bin/rails test and keeps Minitest's summary", async () => {
+  const { runTestSuite } = await import("../src/validation/test-suites.js");
+  const dir = mkdtempSync(join(tmpdir(), "tests-rails-"));
+  mkdirSync(join(dir, "bin"));
+  fakeTool(join(dir, "bin", "rails"), 'echo "$@" >> calls.txt\nif [ "$1" = test ]; then echo "Failure: JSONAPIDocumentTest"; echo "643 runs, 2108 assertions, 1 failures, 0 errors, 0 skips"; exit 1; fi\nexit 0');
+  const r = await runTestSuite("rails", dir, { useMise: false });
+  assert.equal(readFileSync(join(dir, "calls.txt"), "utf8"), "db:test:prepare\ntest\n");
+  assert.equal(r.status, "fail");
+  assert.equal(r.command, "bin/rails test");
+  assert.equal(r.summary, "643 runs, 2108 assertions, 1 failures, 0 errors, 0 skips");
+  assert.match(r.outputTail ?? "", /JSONAPIDocumentTest/);
+
+  // A failing db:test:prepare stops before the suite.
+  fakeTool(join(dir, "bin", "rails"), 'echo "$@" >> calls2.txt\n[ "$1" = db:test:prepare ] && exit 1\nexit 0');
+  const prep = await runTestSuite("rails", dir, { useMise: false });
+  assert.equal(prep.status, "fail");
+  assert.equal(prep.command, "bin/rails db:test:prepare");
+  assert.equal(readFileSync(join(dir, "calls2.txt"), "utf8"), "db:test:prepare\n");
+});
+
+test("runTestSuite android runs testDebugUnitTest; ios runs xcodebuild test on the Layer 2 scheme + destination", async () => {
+  const { runTestSuite } = await import("../src/validation/test-suites.js");
+  const android = mkdtempSync(join(tmpdir(), "tests-android-"));
+  fakeTool(join(android, "gradlew"), 'echo "$@" > args.txt\necho "BUILD SUCCESSFUL in 1m 2s"\nexit 0');
+  const a = await runTestSuite("android", android);
+  assert.equal(a.status, "pass");
+  assert.equal(readFileSync(join(android, "args.txt"), "utf8").trim(), "testDebugUnitTest --no-daemon");
+  assert.equal(a.summary, "BUILD SUCCESSFUL in 1m 2s");
+
+  const ios = mkdtempSync(join(tmpdir(), "tests-ios-"));
+  mkdirSync(join(ios, "OrangeBaton.xcodeproj"));
+  const bin = mkdtempSync(join(tmpdir(), "tests-ios-bin-"));
+  fakeTool(join(bin, "xcodebuild"), 'echo "$@" > args.txt\necho "Executed 1117 tests, with 1 failure (0 unexpected) in 85.2 (86.0) seconds"\necho "** TEST FAILED **"\nexit 65');
+  const savedDest = process.env['NATIVEAPPTEMPLATE_IOS_DESTINATION'];
+  process.env['NATIVEAPPTEMPLATE_IOS_DESTINATION'] = "platform=iOS Simulator,name=iPhone 16";
+  try {
+    const i = await runTestSuite("ios", ios, { env: { PATH: `${bin}:/usr/bin:/bin` } });
+    assert.equal(i.status, "fail");
+    assert.equal(i.exitCode, 65);
+    assert.equal(i.command, "xcodebuild test -scheme OrangeBaton");
+    assert.equal(
+      readFileSync(join(ios, "args.txt"), "utf8").trim(),
+      "-project OrangeBaton.xcodeproj -scheme OrangeBaton -destination platform=iOS Simulator,name=iPhone 16 -configuration Debug test",
+    );
+    assert.equal(i.summary, "Executed 1117 tests, with 1 failure (0 unexpected) in 85.2 (86.0) seconds");
+  } finally {
+    if (savedDest !== undefined) process.env['NATIVEAPPTEMPLATE_IOS_DESTINATION'] = savedDest;
+    else delete process.env['NATIVEAPPTEMPLATE_IOS_DESTINATION'];
+  }
+
+  const empty = mkdtempSync(join(tmpdir(), "tests-empty-"));
+  for (const p of ["rails", "ios", "android"] as const) {
+    assert.equal((await runTestSuite(p, empty, { useMise: false })).status, "skipped", p);
+  }
+});
+
+test("applyTestResults fails the run on a failing suite, ignores skipped ones, and the report shows them", async () => {
+  const { applyTestResults } = await import("../src/validation/test-suites.js");
+  const base: JudgeResult = {
+    overallPass: true,
+    summary: "Layer 1 3/3 pass · Layer 2 3/3 pass · Layer 3 2/2 pass · reviewer PASS",
+    platforms: (["rails", "ios", "android"] as const).map((platform) => ({
+      platform,
+      layer1: { pass: true, findings: [] },
+      layer2: { pass: true, command: "build", mode: "build" as const, exitCode: 0, durationMs: 1 },
+    })),
+  };
+  const pass = { status: "pass" as const, command: "bin/rails test", exitCode: 0, durationMs: 60_000, summary: "643 runs, 2108 assertions, 0 failures, 0 errors, 0 skips" };
+  const fail = { status: "fail" as const, command: "xcodebuild test -scheme OrangeBaton", exitCode: 65, durationMs: 90_000, summary: "** TEST FAILED **", outputTail: "JSONAPIDocumentTest.unknownTypeHasNoEntityType failed" };
+  const skip = { status: "skipped" as const, command: "./gradlew testDebugUnitTest", exitCode: null, durationMs: 0, note: "no ./gradlew wrapper in the generated app" };
+
+  const allGreen = applyTestResults(base, { rails: pass, ios: pass, android: skip });
+  assert.equal(allGreen.overallPass, true);
+  assert.match(allGreen.summary, / · tests 2\/2 pass$/);
+
+  const red = applyTestResults(base, { rails: pass, ios: fail, android: skip });
+  assert.equal(red.overallPass, false);
+  assert.match(red.summary, / · tests 1\/2 pass$/);
+  assert.equal(red.platforms?.[1]?.tests?.status, "fail");
+
+  const report = buildRunReport({
+    spec: "a job hand-off tracker",
+    domain: reportDomain,
+    judge: red,
+    reviewer: { contractParity: "pass", diffs: [] },
+    agentVersion: "0.0.0",
+    judgeModel: "claude-opus-5-5",
+    visualLevel: 2,
+    testsEnabled: true,
+    startedAt: 0,
+    finishedAt: 1000,
+  });
+  assert.equal(report.verdict, "fail");
+  assert.equal(report.meta.tests, true);
+  const html = renderReport(report);
+  assert.match(html, /Test suites \(NATIVEAPPTEMPLATE_TESTS=1\)/);
+  assert.match(html, /unknownTypeHasNoEntityType/);
+  assert.match(html, /643 runs, 2108 assertions/);
+  assert.match(html, /<div class="label">Test suites<\/div><div class="value">1\/2 pass<\/div>/);
+  assert.match(html, /NATIVEAPPTEMPLATE_VISUAL=2 NATIVEAPPTEMPLATE_TESTS=1 npx/);
+
+  const off = renderReport(buildRunReport({
+    spec: "a job hand-off tracker",
+    domain: reportDomain,
+    judge: base,
+    reviewer: { contractParity: "pass", diffs: [] },
+    agentVersion: "0.0.0",
+    judgeModel: "claude-opus-5-5",
+    visualLevel: 0,
+    startedAt: 0,
+    finishedAt: 1000,
+  }));
+  assert.doesNotMatch(off, /Test suites/);
+  assert.doesNotMatch(off, /tests: on/);
+});
+
+test("runStep keeps only the end of a very large output", async () => {
+  const { runStep } = await import("../src/validation/run-step.js");
+  const dir = mkdtempSync(join(tmpdir(), "step-big-"));
+  // ~3.9 MB of output, then a last line that must survive.
+  fakeTool(join(dir, "loud"), 'i=0; while [ $i -lt 30000 ]; do echo "........................................................................................................................................"; i=$((i+1)); done; echo "LAST LINE"');
+  const r = await runStep(dir, ["./loud"], { timeoutMs: 30_000 });
+  assert.equal(r.exitCode, 0);
+  assert.ok(r.output.length <= 2_000_000, `kept ${r.output.length} bytes`);
+  assert.match(r.output, /LAST LINE\n$/);
+});
+
 test("writeReport emits a self-contained report.json + HTML with embedded screenshot", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "report-test-"));
   const shotPath = join(tmp, "ios-home.png");

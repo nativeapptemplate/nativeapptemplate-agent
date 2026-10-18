@@ -14,6 +14,7 @@ export function renderReport(report: RunReport, assets: AssetMap = {}): string {
     layer1Section(report),
     layer2Section(report),
     formatSection(report),
+    testsSection(report),
     layer3Section(report, assets),
     reviewerSection(report),
     repairSection(report),
@@ -53,7 +54,7 @@ ${badge}
 <span>slug: ${esc(m.slug)}</span>
 <span>agent v${esc(m.agentVersion)}</span>
 <span>judge: ${esc(m.judgeModel)}</span>
-<span>visual: ${visual}</span>
+<span>visual: ${visual}</span>${m.tests ? "\n<span>tests: on</span>" : ""}
 <span>${fmtDuration(m.durationMs)}</span>
 <span>${esc(m.finishedAt)}</span>
 </div>
@@ -77,7 +78,16 @@ function computeGates(report: RunReport): Gate[] | null {
       ? gateOf("Layer 3 · semantic", l3, l3plats.length)
       : { label: "Layer 3 · semantic", value: "skipped", cls: "muted" as const },
     { label: "Reviewer · contract", value: reviewerPass ? "Pass" : "Fail", cls: reviewerPass ? "pass" : "fail" },
+    ...testsGate(plats),
   ];
+}
+
+function testsGate(plats: RunReport["platforms"]): Gate[] {
+  const withTests = plats.filter((p) => p.tests !== undefined);
+  if (withTests.length === 0) return [];
+  const ran = withTests.filter((p) => p.tests!.status !== "skipped");
+  if (ran.length === 0) return [{ label: "Test suites", value: "skipped", cls: "muted" }];
+  return [gateOf("Test suites", ran.filter((p) => p.tests!.status === "pass").length, ran.length)];
 }
 
 function gateOf(label: string, pass: number, total: number): Gate {
@@ -152,6 +162,22 @@ function formatSection(report: RunReport): string {
   return `<section><h2>Formatters — autocorrect after the rename (reported, not gated)</h2>${cards}</section>`;
 }
 
+function testsSection(report: RunReport): string {
+  const plats = report.platforms.filter((p) => p.tests !== undefined);
+  if (plats.length === 0) return "";
+  const cards = plats.map((p) => {
+    const t = p.tests!;
+    const kv = t.status === "skipped"
+      ? `<p class="kv">command: <b>${esc(t.command)}</b><br>skipped: ${esc(t.note ?? "")}</p>`
+      : `<p class="kv">command: <b>${esc(t.command)}</b><br>exit: <b>${t.exitCode === null ? "—" : t.exitCode}</b> · <b>${fmtDuration(t.durationMs)}</b>${t.note ? ` · ${esc(t.note)}` : ""}${t.summary ? `<br>result: <b>${esc(t.summary)}</b>` : ""}</p>`;
+    const output = t.outputTail && t.status === "fail"
+      ? `<details open><summary>output tail</summary><pre>${esc(t.outputTail)}</pre></details>`
+      : "";
+    return statusCard(p.platform, t.status, kv + output, "fail");
+  }).join("");
+  return `<section><h2>Test suites (NATIVEAPPTEMPLATE_TESTS=1)</h2>${cards}</section>`;
+}
+
 function layer3Section(report: RunReport, assets: AssetMap): string {
   const plats = report.platforms.filter((p): p is PlatformDetail & { layer3: NonNullable<PlatformDetail["layer3"]> } => p.layer3 !== undefined);
   if (plats.length === 0) return "";
@@ -220,7 +246,8 @@ ${ents}</section>`;
 
 function footer(report: RunReport): string {
   const visualPrefix = report.meta.visualLevel > 0 ? `NATIVEAPPTEMPLATE_VISUAL=${report.meta.visualLevel} ` : "";
-  const cmd = `${visualPrefix}npx nativeapptemplate-agent ${JSON.stringify(report.meta.spec)}`;
+  const testsPrefix = report.meta.tests ? "NATIVEAPPTEMPLATE_TESTS=1 " : "";
+  const cmd = `${visualPrefix}${testsPrefix}npx nativeapptemplate-agent ${JSON.stringify(report.meta.spec)}`;
   return `<footer>
 <p>Reproduce this run:</p>
 <pre>${esc(cmd)}</pre>
@@ -235,8 +262,8 @@ function card(title: string, pass: boolean, inner: string): string {
   return `<div class="card"><h3>${esc(title)} ${pill}</h3>${inner}</div>`;
 }
 
-function statusCard(title: string, status: "pass" | "fail" | "skipped", inner: string): string {
-  const pill = status === "skipped" ? `<span class="pill skipped">skipped</span>` : status === "pass" ? `<span class="pill pass">pass</span>` : `<span class="pill fail">issues left</span>`;
+function statusCard(title: string, status: "pass" | "fail" | "skipped", inner: string, failLabel = "issues left"): string {
+  const pill = status === "skipped" ? `<span class="pill skipped">skipped</span>` : status === "pass" ? `<span class="pill pass">pass</span>` : `<span class="pill fail">${esc(failLabel)}</span>`;
   return `<div class="card"><h3>${esc(title)} ${pill}</h3>${inner}</div>`;
 }
 
