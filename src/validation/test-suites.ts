@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { JudgeResult, Platform, StepResult } from "../agents/types.js";
 import { iosSimulatorDestination } from "./ios-destination.js";
 import { commandAvailable, runStep, tailLines, withMisePrefix, type StepRun } from "./run-step.js";
+import { testsFromEnv } from "../run-options.js";
 
 // SPEC §4 Operation 3: the generated apps' own test suites must pass. Layer 2
 // only builds, and the suites take minutes (Rails ~650 tests, iOS ~1,100,
@@ -23,8 +24,7 @@ export type TestSuiteOptions = {
 };
 
 export function testsEnabled(): boolean {
-  const raw = (process.env['NATIVEAPPTEMPLATE_TESTS'] ?? "").trim().toLowerCase();
-  return raw === "1" || raw === "on" || raw === "true";
+  return testsFromEnv();
 }
 
 export async function runTestSuite(platform: Platform, outDir: string, options: TestSuiteOptions = {}): Promise<StepResult> {

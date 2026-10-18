@@ -45,6 +45,14 @@ Optional overrides the user may include, passed straight through to the CLI:
 - `--rename-ja Shop=動物病院` (repeatable) — the Japanese noun that replaces 店舗
   (Shop) or アイテムタグ (ItemTag) in the Rails API's Japanese messages. Use it
   when the user wants a specific Japanese name; otherwise the planner picks one.
+- `--visual=0|1|2` — how much of the UI to validate on this run (overrides
+  `NATIVEAPPTEMPLATE_VISUAL`; without the flag the environment decides, default
+  `0`). `1` builds both apps and has the vision model judge their home screens on
+  the booted iOS simulator and Android emulator; `2` also boots the generated
+  Rails API and walks sign-up / sign-in through both apps.
+- `--tests` — also run the generated apps' own test suites (`bin/rails test`,
+  `xcodebuild test`, `./gradlew testDebugUnitTest`); overrides
+  `NATIVEAPPTEMPLATE_TESTS` (`--no-tests` turns them off when it is set).
 
 The user may say these in plain language; map them to the flags:
 - "project name is Vet Clinic" → `--project-name="Vet Clinic"`
@@ -55,12 +63,31 @@ The user may say these in plain language; map them to the flags:
   starting with a digit), the CLI exits with `error: --domain "…" …` before
   generating anything: relay that message and ask for a bare domain such as
   `vetclinic.app`.
+- "visual 2", "visual validation", "check the UI too", "walk through the app",
+  "画面も確認して" → `--visual=2`. "visual 1", "just check the home screen" →
+  `--visual=1`. "visual 0", "skip the UI check", "quick run" → `--visual=0`.
+- "run the tests", "with tests", "テストも回して" → `--tests`.
 
 ## 2. Set expectations before running
 
 Tell the user, briefly, before you start:
-- This makes real Anthropic API calls and takes ~3–5 minutes (longer with visual
-  validation). It needs `ANTHROPIC_API_KEY` in the environment.
+- This makes real Anthropic API calls and needs `ANTHROPIC_API_KEY` in the
+  environment. Time and cost by visual level (README "Runtime"; measured on an M1
+  Max with the devices pre-booted): `0` ~2–3 min, ~$0.02; `1` ~2.5 min (full
+  builds), ~$0.13; `2` ~7–8 min, ~$0.22. Cold builds add a minute or two; `--tests`
+  adds several minutes per platform.
+- Prerequisites for the level you're running — say them before you start, and
+  for `--visual=1`/`2` ask the user to confirm they're ready: `1` and `2` need a
+  **booted iOS simulator** (Xcode; the build targets iPhone 17 Pro / iOS 26.2
+  unless `NATIVEAPPTEMPLATE_IOS_DESTINATION` says otherwise) **and a running
+  Android emulator** (or attached device); `2` also needs **`mise`** with the
+  template's Ruby (it boots the generated Rails API) and WebDriverAgent for the iOS
+  walk. `--tests` needs the same simulator for `xcodebuild test`.
+- With `--visual=1`/`2` the CLI checks the devices (and `mise`) first and, if one
+  is missing, exits 2 with `error: visual level N needs a few things that aren't
+  ready:` and a list, before generating anything or making an API call. Relay the
+  list and offer to retry once the user has booted the device, or to run at a
+  lower level.
 - Output lands in `./out/<slug>/{rails,ios,android}/` in the current directory,
   each an independent git-initialized project.
 - Substrate selection comes from the environment (`NATIVEAPPTEMPLATE_API` /
@@ -91,6 +118,8 @@ Pass the spec as a **single quoted argument**, then append any flags. Example:
 node dist/index.js "a walk-in queue for a barbershop" --report-format=both --exit-zero
 # or, outside this repo:
 npx -y nativeapptemplate-agent "a restaurant waitlist" --report-format=both --exit-zero
+# "…, check the UI too and run the tests":
+npx -y nativeapptemplate-agent "a restaurant waitlist" --visual=2 --tests --report-format=both --exit-zero
 ```
 
 The run prints a `report: file://…/out/<slug>/validation-report.html` line on
@@ -136,7 +165,7 @@ means a full build was run), **Layer 3** = semantic vision judge (only when
 Lead with the headline (`verdict` + `summary` + total time from
 `meta.durationMs`). Say PARTIAL plainly when `verdict` is `"partial"`: Layer 1/2
 and the reviewer passed, but the UI was not judged (Layer 3 didn't run) — offer a
-`NATIVEAPPTEMPLATE_VISUAL=1` re-run for a full verdict. Then a compact per-platform table — Layer 1 / Layer 2 (/
+re-run with `--visual=1` (or `--visual=2` for the full walk) for a full verdict. Then a compact per-platform table — Layer 1 / Layer 2 (/
 Layer 3 if present) as ✅/❌ for rails, ios, android — plus reviewer contract
 parity. Then the app's domain and store IDs (`meta.appDomain`: domain, iOS
 bundle ID, Android applicationId) — if `androidRemapped` is present, say which
@@ -156,16 +185,17 @@ Don't just say "it failed." Pull the exact evidence and propose a fix:
   `NATIVEAPPTEMPLATE_REPAIR=on` (targets Layer 1/2, hard-capped at 5 iterations).
 - **reviewer parity fail** → list `reviewer.diffs` (Rails ↔ iOS ↔ Android
   contract drift).
-- **test suite fail** (only with `NATIVEAPPTEMPLATE_TESTS=1`) → show
+- **test suite fail** (only with `--tests` / `NATIVEAPPTEMPLATE_TESTS=1`) → show
   `tests.summary` and `tests.outputTail` for the failing platform.
 - **formatter issues left** (`format.status: "fail"`, reported, not gated) →
   show `format.outputTail`; the rename shifted alignment or import order in a
   way the autocorrect couldn't fix.
-- For semantic checks, mention `NATIVEAPPTEMPLATE_VISUAL=1` (build + home-screen
-  judge) or `=2` (full mobile-mcp walk-through) as opt-in deeper validation.
-- The apps' own test suites don't run by default; mention
-  `NATIVEAPPTEMPLATE_TESTS=1` (`bin/rails test`, `xcodebuild test`,
-  `./gradlew testDebugUnitTest`) when the user wants them.
+- For semantic checks, offer a re-run with `--visual=1` (build + home-screen
+  judge) or `--visual=2` (full mobile-mcp walk-through), with the time and
+  prerequisites from step 2.
+- The apps' own test suites don't run by default; offer a re-run with `--tests`
+  (`bin/rails test`, `xcodebuild test`, `./gradlew testDebugUnitTest`) when the
+  user wants them.
 
 ## 7. Hand off to the rest of the session
 

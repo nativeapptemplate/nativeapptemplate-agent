@@ -32,8 +32,8 @@ plugin/
 - **`/nativeapptemplate-agent:walk-app <slug> ios|android`** — launches a generated
   app on a **booted simulator/emulator** and drives `mobile-mcp` to capture the
   home screen and walk the UI conversationally, surfacing screenshots inline.
-  Needs a booted device + an installed build (easiest via a
-  `NATIVEAPPTEMPLATE_VISUAL=1` generate run — see the skill for details).
+  Needs a booted device + an installed build (easiest via a `--visual=1`
+  generate run, e.g. "…, check the UI too" — see the skill for details).
 - **Bundled MCP servers** (`/mcp` to check): the generator server
   (`nativeapptemplate-agent`, wired as
   `npx -y -p nativeapptemplate-agent@latest nativeapptemplate-agent-mcp`) and
@@ -86,6 +86,13 @@ Add `domain is sentova.app.` to choose the app's web domain too: it replaces the
 template's domain (`api.sentova.app`, `support@sentova.app`) and sets the iOS bundle
 ID (`app.sentova.Sentova.ios`) and Android applicationId (`app.sentova.sentova`).
 Without it they are `sentova.com`, `com.sentova.Sentova.ios` and `com.sentova.sentova`.
+
+Say how deep to validate in the same way: `check the UI too` (or `visual 2`, `画面も確認して`)
+runs the full scripted walk on the booted iOS simulator and Android emulator (`--visual=2`,
+about 7–8 minutes instead of 2–3; needs both booted and `mise`), `visual 1` judges just the
+home screens, and `run the tests` (`テストも回して`) adds the apps' own test suites (`--tests`).
+The skill states the time and prerequisites before it starts, and the run stops before
+generating anything if a simulator, emulator or `mise` is missing.
 
 The `project name is Sentova` clause sets the display name and output slug
 (`out/sentova/`, `Sentova.xcodeproj`, `Sentova API`) independently of the domain
