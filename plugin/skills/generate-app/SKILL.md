@@ -36,9 +36,25 @@ Optional overrides the user may include, passed straight through to the CLI:
   Customer…), its error monitoring layer's (Sentry, ErrorReporter, Event…) or a
   Swift/Kotlin/Ruby stdlib type (Task, List, Result…). If the
   user asks for one, suggest a nearby noun instead.
+- `--domain=orangebaton.app` — the app's web domain. It replaces the template's
+  `nativeapptemplate.com` (subdomains and email addresses included) and, reversed,
+  sets the iOS bundle ID (`app.orangebaton.OrangeBaton.ios`) and the Android
+  applicationId / package (`app.orangebaton.orangebaton`). Without it the app gets
+  `<project name>.com` and `com.<project name>…`. Mention it when the user plans
+  to ship: neither ID can change after the first store release.
 - `--rename-ja Shop=動物病院` (repeatable) — the Japanese noun that replaces 店舗
   (Shop) or アイテムタグ (ItemTag) in the Rails API's Japanese messages. Use it
   when the user wants a specific Japanese name; otherwise the planner picks one.
+
+The user may say these in plain language; map them to the flags:
+- "project name is Vet Clinic" → `--project-name="Vet Clinic"`
+- "domain is vetclinic.app" (or "use the domain vetclinic.app") →
+  `--domain=vetclinic.app`. Pass what they wrote; the CLI lowercases it and
+  checks it. If it isn't a domain with at least two labels (e.g. just
+  `vetclinic`, a URL with `https://` or a path, an email address, a label
+  starting with a digit), the CLI exits with `error: --domain "…" …` before
+  generating anything: relay that message and ask for a bare domain such as
+  `vetclinic.app`.
 
 ## 2. Set expectations before running
 
@@ -87,7 +103,10 @@ Read `out/<slug>/report.json`. Its shape:
 
 ```jsonc
 {
-  "meta": { "spec", "slug", "displayName", "visualLevel" /* 0|1|2 */, "durationMs", ... },
+  "meta": { "spec", "slug", "displayName", "visualLevel" /* 0|1|2 */, "durationMs", ...,
+            "appDomain": { "domain", "custom" /* --domain given */, "bundleIdPrefix", "androidPackagePrefix",
+                           "androidRemapped"? /* labels written differently in the Android package */,
+                           "iosBundleId"?, "androidApplicationId"? } },
   "overallPass": true,       // nothing failed (drives the exit code)
   "verdict": "pass"|"partial"|"fail", // "partial" = nothing failed, but Layer 3 didn't judge every mobile UI (e.g. visualLevel 0)
   "summary": "one-line human summary",
@@ -119,7 +138,10 @@ Lead with the headline (`verdict` + `summary` + total time from
 and the reviewer passed, but the UI was not judged (Layer 3 didn't run) — offer a
 `NATIVEAPPTEMPLATE_VISUAL=1` re-run for a full verdict. Then a compact per-platform table — Layer 1 / Layer 2 (/
 Layer 3 if present) as ✅/❌ for rails, ios, android — plus reviewer contract
-parity. Then the domain mapping the planner chose (`domain.renamePlan`, e.g.
+parity. Then the app's domain and store IDs (`meta.appDomain`: domain, iOS
+bundle ID, Android applicationId) — if `androidRemapped` is present, say which
+labels the Android package spells differently (e.g. `orange-baton` →
+`orange_baton`) and why (not a valid Java/Kotlin package segment). Then the domain mapping the planner chose (`domain.renamePlan`, e.g.
 `Shop → Clinic`, `Shopkeeper → Vet`) and the entities. Finish with the path to
 `validation-report.html` and offer to open it (`open <path>` on macOS).
 

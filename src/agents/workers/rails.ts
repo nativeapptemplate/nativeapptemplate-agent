@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
+import { renameAppDomainInput, type RenameAppDomain } from "../../app-domain.js";
 import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
 import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
 import { runFormatter, traceFormat } from "../../validation/autoformat.js";
@@ -48,9 +49,9 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
   const plan = renamePlan.map((p) => `${p.from}->${p.to}`).join(", ");
   trace("rails", `running scripts/ruby/rename.rb: ${plan}`);
 
-  const renameStats = await runRuby<{ renamePlan: readonly RenamePair[]; japaneseRenamePlan: readonly RenamePair[]; root: string }, RenameStats>(
+  const renameStats = await runRuby<{ renamePlan: readonly RenamePair[]; japaneseRenamePlan: readonly RenamePair[]; appDomain?: RenameAppDomain; root: string }, RenameStats>(
     "rename.rb",
-    { renamePlan, japaneseRenamePlan: japaneseRenamePairs(renamePlan), root: outDir },
+    { renamePlan, japaneseRenamePlan: japaneseRenamePairs(renamePlan), ...renameAppDomainInput(domain.slug, domain.appDomain), root: outDir },
   );
 
   trace(

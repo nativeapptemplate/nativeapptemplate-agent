@@ -82,6 +82,11 @@ full session, including a **custom project name passed in plain language**:
 /nativeapptemplate-agent:walk-app sentova android
 ```
 
+Add `domain is sentova.app.` to choose the app's web domain too: it replaces the
+template's domain (`api.sentova.app`, `support@sentova.app`) and sets the iOS bundle
+ID (`app.sentova.Sentova.ios`) and Android applicationId (`app.sentova.sentova`).
+Without it they are `sentova.com`, `com.sentova.Sentova.ios` and `com.sentova.sentova`.
+
 The `project name is Sentova` clause sets the display name and output slug
 (`out/sentova/`, `Sentova.xcodeproj`, `Sentova API`) independently of the domain
 rename the planner chooses. This spec is an **adapt** of the queue toggle — it

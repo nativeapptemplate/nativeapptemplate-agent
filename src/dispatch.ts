@@ -21,6 +21,7 @@ import type { JudgeResult, Platform, PlatformDetail, RenamePair, StepResult, Wor
 import { applyJapaneseOverrides, applyRenameOverrides, describeKeptTarget, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
 import { reservedTargets, type ReservedTarget } from "./reserved-words.js";
 import { JUDGE_MODEL } from "./models.js";
+import { appIdentifiers, describeAppIdentifiers, validateAppDomain, type AppIdentifiers } from "./app-domain.js";
 import { isValidSlug, slugToPascal, projectNameToSlug, projectNameToDisplayName } from "./slug.js";
 
 export type DispatchReportOptions = {
@@ -43,6 +44,11 @@ export type DispatchOptions = {
   // env-bridge token, Pascal project name across all three platforms) and the
   // display name are derived. Ignored if it yields no valid slug.
   projectName?: string;
+  // The app's own domain (CLI --domain), e.g. "orangebaton.app": replaces
+  // nativeapptemplate.com and, reversed, the com.nativeapptemplate prefix of
+  // the iOS bundle ID and Android package (src/app-domain.ts). Invalid throws;
+  // the CLI and MCP validate it first to report the error themselves.
+  domain?: string;
 };
 
 export type DispatchResult = JudgeResult & {
@@ -53,10 +59,17 @@ export type DispatchResult = JudgeResult & {
   // Planned targets that collide with a reserved word (src/reserved-words.ts).
   // The planner is told to avoid them; a hit here usually means a build error.
   reservedTargets: readonly ReservedTarget[];
+  appIdentifiers: AppIdentifiers;
 };
 
 export async function dispatch(spec: string, options: DispatchOptions = {}): Promise<DispatchResult> {
   const startedAt = Date.now();
+  let appDomain: string | undefined;
+  if (options.domain !== undefined) {
+    const check = validateAppDomain(options.domain);
+    if (!check.ok) throw new Error(check.error);
+    appDomain = check.domain;
+  }
   let domain = await runPlanner(spec);
 
   // Manual project name (CLI --project-name). Derive the slug + display name
@@ -110,6 +123,10 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     }
     domain = { ...domain, renamePlan: merged.plan };
   }
+
+  if (appDomain !== undefined) domain = { ...domain, appDomain };
+  const ids = appIdentifiers(domain.slug, domain.appDomain);
+  for (const line of describeAppIdentifiers(ids)) trace("dispatch", line);
 
   const reserved = reservedTargets(domain.renamePlan);
   for (const r of reserved) trace("dispatch", `warning: rename target ${r.from}->${r.to} collides with a reserved word (${r.reason})`);
@@ -316,6 +333,10 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     startedAt,
     finishedAt: Date.now(),
     repairAttempts,
+    appIds: {
+      ...(ios.appId ? { ios: ios.appId } : {}),
+      ...(android.appId ? { android: android.appId } : {}),
+    },
   });
 
   // Default off in stub mode so the test suite never writes into ./out.
@@ -333,7 +354,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     if (written.length > 0) trace("dispatch", `report: wrote ${written.join(", ")}`);
   }
 
-  return { ...judge, report, reportPaths, renameOverrideOutcomes, japaneseOverrideOutcomes, reservedTargets: reserved };
+  return { ...judge, report, reportPaths, renameOverrideOutcomes, japaneseOverrideOutcomes, reservedTargets: reserved, appIdentifiers: ids };
 }
 
 // NATIVEAPPTEMPLATE_REPAIR control: unset / "0" / "off" / "false" → disabled;

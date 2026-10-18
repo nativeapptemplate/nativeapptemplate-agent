@@ -3,6 +3,9 @@
 # Apply a rename plan to a Rails project tree.
 # Stdin:  { "renamePlan": [{"from":"Shop","to":"Clinic"}, ...],
 #          "japaneseRenamePlan": [{"from":"店舗","to":"医院"}, ...],  (optional)
+#          "appDomain": {"domain":"orangebaton.app",                 (optional)
+#                        "bundleIdPrefix":"app.orangebaton",
+#                        "androidPackagePrefix":"app.orangebaton"},
 #          "root": "/abs/path" }
 # Stdout: { "files_scanned": N, "files_changed": N, "substitutions": N, "files_renamed": N }
 #
@@ -15,10 +18,12 @@
 # them from their (un-renamed) sources, e.g. Turbo's VisitState.completed.
 
 require "json"
+require "fileutils"
 
 input = JSON.parse($stdin.read)
 plan  = input.fetch("renamePlan")
 japanese_plan = input.fetch("japaneseRenamePlan", [])
+app_domain = input["appDomain"]
 root  = input.fetch("root")
 
 stats = { files_scanned: 0, files_changed: 0, substitutions: 0, files_renamed: 0 }
@@ -187,7 +192,32 @@ japanese_patterns = japanese_plan
   .sort_by { |p| -p.fetch("from").length }
   .map { |p| [/#{Regexp.escape(p.fetch("from"))}/, p.fetch("to")] }
 
-all_patterns = japanese_patterns + plan.flat_map { |p| build_patterns(p.fetch("from"), p.fetch("to")) }
+# The template's domain and reverse-DNS prefix, when the app has a domain of
+# its own (src/app-domain.ts). Matched whole before any product-name pattern
+# can reach the `nativeapptemplate` inside them; the single-pass substitution
+# below then renames what follows the prefix
+# (com.nativeapptemplate.NativeAppTemplate.ios -> app.orangebaton.OrangeBaton.ios)
+# and never re-scans the replaced text. The Android package (the lowercase
+# product after the prefix, also in google-services.json and the API's FCM
+# test) takes the Java-safe prefix; every other com.nativeapptemplate (iOS
+# bundle IDs, keychain services, log subsystems) the plain reverse domain. Without appDomain these are absent and
+# the flat product rule turns both into <flat product>.com / com.<flat product>.
+def domain_patterns(app_domain)
+  return [] unless app_domain
+
+  domain  = app_domain.fetch("domain")
+  bundle  = app_domain.fetch("bundleIdPrefix")
+  package = app_domain.fetch("androidPackagePrefix")
+  android_product = "nativeapptemplate[a-z0-9]*(?![A-Za-z0-9_])"
+  [
+    [/(?<![A-Za-z0-9_-])nativeapptemplate\.com(?![A-Za-z0-9_-]|\.[A-Za-z0-9])/, domain],
+    [/(?<![A-Za-z0-9_.-])com\.nativeapptemplate(?=\.#{android_product})/, package],
+    [/(?<![A-Za-z0-9_-])com\/nativeapptemplate(?=\/#{android_product})/, package.tr(".", "/")],
+    [/(?<![A-Za-z0-9_.-])com\.nativeapptemplate(?![A-Za-z0-9_-])/, bundle],
+  ]
+end
+
+all_patterns = domain_patterns(app_domain) + japanese_patterns + plan.flat_map { |p| build_patterns(p.fetch("from"), p.fetch("to")) }
 
 # One combined regex, applied in a single pass, so a replacement is never
 # re-scanned by a later pair: with NativeAppTemplate→PetShop and Shop→Store,
@@ -284,10 +314,44 @@ Dir.glob("#{root}/**/*", File::FNM_DOTMATCH).each do |path|
   stats[:substitutions] += local_subst
 end
 
+# Pass 1.5 — move the Android package directories (<source root>/com/
+# nativeapptemplate/nativeapptemplate) under the app's package prefix
+# (app/orangebaton/nativeapptemplate; Pass 2 then renames the last segment).
+# The directories made for the prefix are pinned so Pass 2 leaves them as they
+# are even when a domain label happens to be a rename token (shop.example).
+pinned = {}
+if app_domain
+  package_dirs = app_domain.fetch("androidPackagePrefix").split(".")
+  Dir.glob("#{root}/**/com/nativeapptemplate", File::FNM_DOTMATCH).sort.each do |template_dir|
+    next if skip?(template_dir, root)
+    next unless File.directory?(template_dir) && !File.symlink?(template_dir)
+    next unless Dir.children(template_dir).any? { |c| c.match?(/\Anativeapptemplate[a-z0-9]*\z/) }
+
+    source_root = File.dirname(File.dirname(template_dir))
+    target = File.join(source_root, *package_dirs)
+    if File.exist?(target)
+      warn "rename.rb: not moving #{template_dir}: #{target} already exists"
+      next
+    end
+    FileUtils.mkdir_p(File.dirname(target))
+    File.rename(template_dir, target)
+    stats[:files_renamed] += 1
+    com_dir = File.dirname(template_dir)
+    # Finder's .DS_Store alone doesn't keep the template's com/ directory.
+    leftovers = Dir.children(com_dir)
+    if leftovers.all? { |c| c == ".DS_Store" }
+      leftovers.each { |c| File.delete(File.join(com_dir, c)) }
+      Dir.rmdir(com_dir)
+    end
+    package_dirs.each_index { |i| pinned[File.join(source_root, *package_dirs[0..i])] = true }
+  end
+end
+
 # Pass 2 — rename paths. Deepest-first so renaming a parent directory
 # doesn't invalidate paths we haven't visited yet.
 Dir.glob("#{root}/**/*", File::FNM_DOTMATCH).sort_by { |p| -p.length }.each do |path|
   next if skip?(path, root)
+  next if pinned[path]
   next unless File.exist?(path)
 
   old_name = File.basename(path)

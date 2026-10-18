@@ -21,6 +21,7 @@ Legend: **[static]** check by reading files, **[cmd]** run a command, **[device]
 | 1.3 | The display name, not the Pascal name, in user-facing copy (mails, web pages, permission prompts) | [static] [device] read a confirmation mail and an invitation mail. *Orange Baton: mails said "OrangeBaton"* |
 | 1.4 | Brand assets replaced: app icons, the logo on the API's web pages (password reset, confirmation result) | [device] open a password-reset link in a browser. *Orange Baton: the reset page still shows the NativeAppTemplate "N"* |
 | 1.5 | Non-domain identifiers not renamed (SUBSTRATE-CONTRACT rule 5), e.g. the agent's own name in comments | [static] `rg -i '<slug>-agent'` |
+| 1.6 | The app's domain and store IDs are the ones you want (`--domain`, #157): no `nativeapptemplate.com` left; iOS bundle ID and Android applicationId follow the domain's reverse; no `com/<flat>` package directories left behind with a custom domain. The API's APNs `topic` lives in its credentials, not in the copied files: set it to the iOS bundle ID | [static] `rg -n 'nativeapptemplate\.com\|com\.nativeapptemplate' out/<slug>`, `rg -n PRODUCT_BUNDLE_IDENTIFIER out/<slug>/ios`, `rg -n applicationId out/<slug>/android/app/build.gradle.kts`; compare with the report's "App identifiers" |
 
 ## 2. Substrate setup that must not carry over
 
