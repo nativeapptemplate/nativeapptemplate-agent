@@ -71,8 +71,10 @@ The user may say these in plain language; map them to the flags:
 ## 2. Set expectations before running
 
 Tell the user, briefly, before you start:
-- This makes real Anthropic API calls and needs `ANTHROPIC_API_KEY` in the
-  environment. Time and cost by visual level (README "Runtime"; measured on an M1
+- This makes real Anthropic API calls and needs an API key in the environment:
+  `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` (a dedicated workspace key, preferred
+  when set) or `ANTHROPIC_API_KEY`. Either one is enough — check both before
+  asking the user for a key. Time and cost by visual level (README "Runtime"; measured on an M1
   Max with the devices pre-booted): `0` ~2–3 min, ~$0.02; `1` ~2.5 min (full
   builds), ~$0.13; `2` ~7–8 min, ~$0.22. Cold builds add a minute or two; `--tests`
   adds several minutes per platform.
