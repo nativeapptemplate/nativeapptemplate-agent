@@ -79,6 +79,7 @@ Screenshots originate in `tmp/screenshots/{ios-home,android-home}.png` (Stage 1)
 4. **Layer 1 — Structural.** Per platform: pass + count. On failure, a findings table: `token | file:line | text excerpt`. Clean state shows an explicit "no leftover tokens" row.
 5. **Layer 2 — Runtime.** Per platform: `command`, mode (`fast`/`build`), `exitCode`, `durationMs`. On failure, `stderrTail` in a native `<details>` (collapsed).
 5a. **Formatters** (when present: `platforms[].format`). The autocorrecting formatter run after the rename (`bin/rubocop -a`, `./gradlew spotlessApply`, `swiftformat`): status `pass` / `fail` (issues left) / `skipped` (with the reason), command, exit code, duration, and on `fail` the output tail. Reported only — not part of the verdict.
+5b. **Test suites** (when present: `platforms[].tests`, only with `NATIVEAPPTEMPLATE_TESTS=1`; `meta.tests` is `true`). Per platform: status, command, exit code, duration, the runner's summary line (`643 runs, … 0 failures`, `Executed 1117 tests, with 1 failure`, `BUILD SUCCESSFUL`), output tail on failure. Adds a "Test suites" chip to the gate strip; a failing suite makes the verdict FAIL.
 6. **Layer 3 — Semantic (vision judge).** Per platform (ios/android):
    - **Stage 1:** home-screen screenshot thumbnail + rubric table (`question | pass/fail | rationale`). Note "median of 3 samples per criterion" (`DEFAULT_SAMPLES = 3`).
    - **Stage 2** (when `VISUAL=2`): scenario name, `stepsPassed/stepCount`, a screenshot filmstrip (`screenshots[]`), and the post-toggle Layer 3 scores (`layer3Scores`).

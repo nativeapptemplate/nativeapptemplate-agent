@@ -14,6 +14,7 @@ export type BuildRunReportInput = {
   agentVersion: string;
   judgeModel: string;
   visualLevel: 0 | 1 | 2;
+  testsEnabled?: boolean;
   startedAt: number;
   finishedAt: number;
   repairAttempts?: readonly RepairAttempt[];
@@ -30,6 +31,7 @@ export function buildRunReport(input: BuildRunReportInput): RunReport {
       agentVersion: input.agentVersion,
       judgeModel: input.judgeModel,
       visualLevel: input.visualLevel,
+      ...(input.testsEnabled ? { tests: true } : {}),
       startedAt: new Date(input.startedAt).toISOString(),
       finishedAt: new Date(input.finishedAt).toISOString(),
       durationMs: input.finishedAt - input.startedAt,

@@ -119,6 +119,8 @@ The planner sub-agent decides which path to run based on the NL spec.
 
 **Operation 3 — Drive the build green.** `bin/rails test`, `xcodebuild test`, and `./gradlew test` must all pass on the generated code before the agent exits. Failures feed into the self-repair loop (section 6).
 
+*As shipped:* the test suites take minutes per platform, so they **don't run by default** — Layer 2 only boots Rails and builds (or, in fast mode, resolves) the mobile projects. `NATIVEAPPTEMPLATE_TESTS=1` opts in: Layer 2 switches to build mode and, after the visual phase and any self-repair, the agent runs `bin/rails db:test:prepare` + `bin/rails test` (under `mise exec` when available), `xcodebuild test` (same project, scheme, destination and Debug configuration as the Layer 2 build) and `./gradlew testDebugUnitTest`. A failing suite fails the run; results are in `platforms[].tests` of `report.json`, the report's "Test suites" section and gate, and the trace. Test failures are not fed to the self-repair loop.
+
 ## 5. Opus 4.7 capabilities used
 
 Three Opus 4.7 capabilities are essential, and the project is specifically designed to showcase them.

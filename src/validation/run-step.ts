@@ -20,6 +20,10 @@ export type StepOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
+// Only the end of the output is ever reported; `xcodebuild test` alone can
+// print tens of megabytes.
+const MAX_OUTPUT_BYTES = 1_000_000;
+
 export function runStep(cwd: string, argv: readonly string[], options: StepOptions): Promise<StepRun> {
   const [command, ...rest] = options.useMise ? ["mise", "exec", "--", ...argv] : argv;
   const start = Date.now();
@@ -27,11 +31,21 @@ export function runStep(cwd: string, argv: readonly string[], options: StepOptio
     // Never inherit stdout/stdin: under the MCP server those are the
     // JSON-RPC channel.
     const child = spawn(command!, rest, { cwd, stdio: ["ignore", "pipe", "pipe"], env: scrubbedEnv(options.env) });
-    const chunks: Buffer[] = [];
+    let chunks: Buffer[] = [];
+    let size = 0;
+    const collect = (c: Buffer): void => {
+      chunks.push(c);
+      size += c.length;
+      if (size > MAX_OUTPUT_BYTES * 2) {
+        const all = Buffer.concat(chunks);
+        chunks = [all.subarray(all.length - MAX_OUTPUT_BYTES)];
+        size = MAX_OUTPUT_BYTES;
+      }
+    };
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); }, options.timeoutMs);
-    child.stdout?.on("data", (c: Buffer) => chunks.push(c));
-    child.stderr?.on("data", (c: Buffer) => chunks.push(c));
+    child.stdout?.on("data", collect);
+    child.stderr?.on("data", collect);
     const finish = (exitCode: number | null, extra = ""): void => {
       clearTimeout(timer);
       done({ exitCode, durationMs: Date.now() - start, timedOut, output: Buffer.concat(chunks).toString("utf8") + extra });

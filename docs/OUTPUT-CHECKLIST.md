@@ -35,7 +35,7 @@ Legend: **[static]** check by reading files, **[cmd]** run a command, **[device]
 
 ## 3. Tests and linters
 
-The agent builds the apps but does not run their test suites or linters. It does run their autocorrecting formatters after the rename (`bin/rubocop -a`, `./gradlew spotlessApply`, `swiftformat`, #149) and lists what they couldn't fix in the report's "Formatters" section; the lint checks below still catch the rest (SwiftLint, Android Lint). A rename changes identifier lengths and alphabetical order, and can make two distinct substrate words the same word, so run all of them.
+The agent builds the apps but does not run their test suites or linters unless you set `NATIVEAPPTEMPLATE_TESTS=1` (#150), which runs `bin/rails test`, `xcodebuild test` and `./gradlew testDebugUnitTest` and fails the run if one fails. It does run their autocorrecting formatters after the rename (`bin/rubocop -a`, `./gradlew spotlessApply`, `swiftformat`, #149) and lists what they couldn't fix in the report's "Formatters" section; the lint checks below still catch the rest (SwiftLint, Android Lint). A rename changes identifier lengths and alphabetical order, and can make two distinct substrate words the same word, so run all of them.
 
 | # | Check | How |
 |---|---|---|

@@ -15,8 +15,9 @@ import { runRepairLoop, REPAIR_ITERATION_CAP, type RepairLoopDeps } from "./repa
 import { runRepair } from "./agents/repair.js";
 import { runLayer1 } from "./validation/layer1.js";
 import { runLayer2, type Layer2Mode } from "./validation/layer2.js";
+import { applyTestResults, runTestSuite, testsEnabled } from "./validation/test-suites.js";
 import type { RepairAttempt, RunReport } from "./report/model.js";
-import type { JudgeResult, Platform, PlatformDetail, RenamePair, WorkerResult } from "./agents/types.js";
+import type { JudgeResult, Platform, PlatformDetail, RenamePair, StepResult, WorkerResult } from "./agents/types.js";
 import { applyJapaneseOverrides, applyRenameOverrides, describeKeptTarget, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
 import { reservedTargets, type ReservedTarget } from "./reserved-words.js";
 import { JUDGE_MODEL } from "./models.js";
@@ -164,9 +165,11 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
   const visualLevelRaw = process.env['NATIVEAPPTEMPLATE_VISUAL'] ?? "";
   const visualLevel = visualLevelRaw === "2" ? 2 : visualLevelRaw === "1" ? 1 : 0;
   // Visual levels force build mode so Stage 1 has an artifact to launch;
-  // level 0 stays in the cheaper fast mode. The repair loop re-validates
-  // Layer 2 in the same mode the judge used.
-  const layer2Mode: Layer2Mode = visualLevel >= 1 ? "build" : "fast";
+  // so does NATIVEAPPTEMPLATE_TESTS=1 (the suites run in build mode, after
+  // Layer 2's build). Otherwise Layer 2 stays in the cheaper fast mode. The
+  // repair loop re-validates Layer 2 in the same mode the judge used.
+  const runTests = testsEnabled();
+  const layer2Mode: Layer2Mode = visualLevel >= 1 || runTests ? "build" : "fast";
   const visual: VisualJudgeConfig | undefined = visualLevel >= 1
     ? {
         iosDir: resolve(process.cwd(), ios.outDir),
@@ -281,6 +284,26 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     trace("dispatch", `self-repair: ${loop.attempts.length} attempt(s), ${resolved} resolved — overall now ${loop.overallPass ? "PASS" : "FAIL"}`);
   }
 
+  // NATIVEAPPTEMPLATE_TESTS=1: the generated apps' own test suites (SPEC §4
+  // Operation 3). After the visual phase, so `xcodebuild test` doesn't
+  // fight Stage 1/2 for the simulator, and after self-repair, so they test
+  // the final code. Skipped in stub mode (no generated projects).
+  if (runTests && judge.platforms && judge.platforms.length > 0 && !isStub("judge")) {
+    const workers: Record<Platform, WorkerResult> = { rails, ios, android };
+    trace("dispatch", "test suites: NATIVEAPPTEMPLATE_TESTS=1 — bin/rails test, xcodebuild test, ./gradlew testDebugUnitTest");
+    const results: Partial<Record<Platform, StepResult>> = {};
+    await Promise.all(judge.platforms.map(async (p) => {
+      const result = await runTestSuite(p.platform, resolve(process.cwd(), workers[p.platform].outDir));
+      results[p.platform] = result;
+      const what = result.status === "skipped" ? `skipped (${result.note ?? ""})` : result.status === "pass" ? "PASS" : "FAIL";
+      trace("dispatch", `test suites ${p.platform}: ${what} [${result.command}]${result.summary ? ` — ${result.summary}` : ""}`);
+      if (result.status === "fail") {
+        for (const line of (result.outputTail ?? "").split("\n")) trace(p.platform, `  ${line}`);
+      }
+    }));
+    judge = applyTestResults(judge, results);
+  }
+
   const report = buildRunReport({
     spec,
     domain,
@@ -289,6 +312,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     agentVersion: readPackageVersion(),
     judgeModel: JUDGE_MODEL,
     visualLevel: visualLevel as 0 | 1 | 2,
+    testsEnabled: runTests,
     startedAt,
     finishedAt: Date.now(),
     repairAttempts,

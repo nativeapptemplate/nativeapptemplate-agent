@@ -35,6 +35,8 @@ export type RunMeta = {
   agentVersion: string;
   judgeModel: string;
   visualLevel: 0 | 1 | 2;
+  // NATIVEAPPTEMPLATE_TESTS=1: the apps' test suites ran (platforms[].tests).
+  tests?: boolean;
   startedAt: string;
   finishedAt: string;
   durationMs: number;

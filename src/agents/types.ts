@@ -51,6 +51,9 @@ export type StepResult = {
   durationMs: number;
   outputTail?: string;
   note?: string;
+  // The tool's own one-line result, when it prints one (e.g. "643 runs,
+  // 2108 assertions, 0 failures, 0 errors, 0 skips").
+  summary?: string;
 };
 
 export type ReviewerResult = {
@@ -84,6 +87,9 @@ export type PlatformDetail = {
   // Post-rename formatter: "fail" means offenses were left that it could
   // not autocorrect. Reported, not part of overallPass.
   format?: StepResult;
+  // The app's own test suite, run when NATIVEAPPTEMPLATE_TESTS=1
+  // (src/validation/test-suites.ts). Part of overallPass when present.
+  tests?: StepResult;
 };
 
 export type VisualJudgeReport = {
