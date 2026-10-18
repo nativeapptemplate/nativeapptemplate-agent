@@ -2,7 +2,8 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import type { DomainSpec, JudgeResult, ReviewerResult } from "../agents/types.js";
 import { renderReport } from "./render.js";
-import type { AssetMap, RepairAttempt, RunReport, Verdict } from "./model.js";
+import type { AssetMap, RepairAttempt, RunAppDomain, RunReport, Verdict } from "./model.js";
+import { appIdentifiers } from "../app-domain.js";
 
 export type ReportFormat = "html" | "json" | "both";
 
@@ -18,6 +19,8 @@ export type BuildRunReportInput = {
   startedAt: number;
   finishedAt: number;
   repairAttempts?: readonly RepairAttempt[];
+  // Store identifiers read back from the generated projects (WorkerResult.appId).
+  appIds?: { ios?: string; android?: string };
 };
 
 // Pure assembly: fold the run's pieces into the single RunReport
@@ -35,6 +38,7 @@ export function buildRunReport(input: BuildRunReportInput): RunReport {
       startedAt: new Date(input.startedAt).toISOString(),
       finishedAt: new Date(input.finishedAt).toISOString(),
       durationMs: input.finishedAt - input.startedAt,
+      appDomain: runAppDomain(input.domain, input.appIds),
     },
     overallPass: input.judge.overallPass,
     verdict: verdictOf(input.judge),
@@ -60,6 +64,19 @@ export function buildRunReport(input: BuildRunReportInput): RunReport {
     ...(input.repairAttempts && input.repairAttempts.length > 0
       ? { repairAttempts: input.repairAttempts }
       : {}),
+  };
+}
+
+function runAppDomain(domain: DomainSpec, appIds: BuildRunReportInput["appIds"]): RunAppDomain {
+  const ids = appIdentifiers(domain.slug, domain.appDomain);
+  return {
+    domain: ids.domain,
+    custom: ids.custom,
+    bundleIdPrefix: ids.bundleIdPrefix,
+    androidPackagePrefix: ids.androidPackagePrefix,
+    ...(ids.androidRemapped.length > 0 ? { androidRemapped: ids.androidRemapped } : {}),
+    ...(appIds?.ios ? { iosBundleId: appIds.ios } : {}),
+    ...(appIds?.android ? { androidApplicationId: appIds.android } : {}),
   };
 }
 

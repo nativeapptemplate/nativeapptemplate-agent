@@ -7,6 +7,7 @@ import { z } from "zod";
 import { dispatch } from "./dispatch.js";
 import { loadDotenvIfPresent } from "./env.js";
 import { readPackageVersion } from "./version.js";
+import { validateAppDomain } from "./app-domain.js";
 
 // MCP surface (MONETIZATION.md §"MCP as a distribution surface"):
 // thin wrapper around dispatch() so any MCP-compatible AI assistant
@@ -54,10 +55,23 @@ export function createMcpServer(): McpServer {
           .describe(
             'Optional project name (e.g. "Vet Clinic" or "VetClinic"). Overrides the planner\'s name; the slug — which sets the output directory, DB prefix, and the Pascal project name across all three platforms — and the display name are derived from it. Ignored if it yields no valid slug.',
           ),
+        domain: z
+          .string()
+          .optional()
+          .describe(
+            'Optional domain of the app, e.g. "orangebaton.app" (at least two labels). Replaces the template\'s nativeapptemplate.com, subdomains and email addresses included, and its reverse sets the iOS bundle ID (app.orangebaton.OrangeBaton.ios) and the Android applicationId / package (app.orangebaton.orangebaton). A label that isn\'t a valid Java/Kotlin package segment is written differently there (hyphens become underscores, a keyword gets a trailing underscore). Default: <project name, flat lowercase>.com.',
+          ),
       },
     },
-    async ({ spec, renameOverrides, japaneseOverrides, projectName }) => {
+    async ({ spec, renameOverrides, japaneseOverrides, projectName, domain }) => {
+      let appDomain: string | undefined;
+      if (domain !== undefined) {
+        const check = validateAppDomain(domain);
+        if (!check.ok) return { content: [{ type: "text", text: `error: ${check.error}` }], isError: true };
+        appDomain = check.domain;
+      }
       const result = await dispatch(spec, {
+        ...(appDomain !== undefined ? { domain: appDomain } : {}),
         ...(renameOverrides ? { renameOverrides } : {}),
         ...(japaneseOverrides ? { japaneseOverrides } : {}),
         ...(projectName !== undefined ? { projectName } : {}),

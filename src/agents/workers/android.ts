@@ -1,10 +1,11 @@
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { scrubbedEnv } from "../../env.js";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
+import { applicationIdFromGradle, renameAppDomainInput, type RenameAppDomain } from "../../app-domain.js";
 import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
 import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
 import { runFormatter, traceFormat } from "../../validation/autoformat.js";
@@ -62,9 +63,9 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
   const plan = renamePlan.map((p) => `${p.from}->${p.to}`).join(", ");
   trace("android", `running scripts/ruby/rename.rb: ${plan}`);
 
-  const renameStats = await runRuby<{ renamePlan: readonly RenamePair[]; japaneseRenamePlan: readonly RenamePair[]; root: string }, RenameStats>(
+  const renameStats = await runRuby<{ renamePlan: readonly RenamePair[]; japaneseRenamePlan: readonly RenamePair[]; appDomain?: RenameAppDomain; root: string }, RenameStats>(
     "rename.rb",
-    { renamePlan, japaneseRenamePlan: japaneseRenamePairs(renamePlan), root: outDir },
+    { renamePlan, japaneseRenamePlan: japaneseRenamePairs(renamePlan), ...renameAppDomainInput(domain.slug, domain.appDomain), root: outDir },
   );
 
   trace(
@@ -72,6 +73,8 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
     `scanned ${renameStats.files_scanned} files, changed ${renameStats.files_changed}, ${renameStats.substitutions} substitutions, ${renameStats.files_renamed} file/dir renames`,
   );
 
+  const appId = await readApplicationId(outDir);
+  if (appId) trace("android", `applicationId: ${appId}`);
   const format = await runFormatter("android", outDir);
   traceFormat("android", format);
   await initGit(outDir);
@@ -83,7 +86,16 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
     renamedFrom: renamedTokens(renamePlan),
     format,
+    ...(appId ? { appId } : {}),
   };
+}
+
+async function readApplicationId(outDir: string): Promise<string | undefined> {
+  try {
+    return applicationIdFromGradle(await readFile(join(outDir, "app", "build.gradle.kts"), "utf8"));
+  } catch {
+    return undefined;
+  }
 }
 
 function buildProductRenamePairs(slug: string): readonly RenamePair[] {

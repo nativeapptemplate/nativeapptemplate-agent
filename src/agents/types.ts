@@ -6,6 +6,9 @@ export type DomainSpec = {
   entities: readonly Entity[];
   renamePlan: readonly RenamePair[];
   jsonApiContract: unknown;
+  // The app's own domain (CLI --domain), validated by src/app-domain.ts.
+  // Unset: the rename's default, <flat product>.com.
+  appDomain?: string;
 };
 
 export type Entity = {
@@ -40,6 +43,9 @@ export type WorkerResult = {
   renamedFrom: readonly string[];
   // The autocorrecting formatter run after the rename (src/validation/autoformat.ts).
   format?: StepResult;
+  // The generated app's store identifier as the renamed project has it: the
+  // iOS bundle ID or the Android applicationId (src/app-domain.ts).
+  appId?: string;
 };
 
 // A command run in a generated project that is reported but doesn't gate

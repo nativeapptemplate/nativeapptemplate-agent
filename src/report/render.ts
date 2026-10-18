@@ -51,7 +51,7 @@ ${badge}
 <h1>${esc(m.displayName)}</h1>
 <p class="spec">spec: <b>${esc(m.spec)}</b></p>
 <div class="meta">
-<span>slug: ${esc(m.slug)}</span>
+<span>slug: ${esc(m.slug)}</span>${m.appDomain ? `\n<span>domain: ${esc(m.appDomain.domain)}${m.appDomain.custom ? "" : " (default)"}</span>` : ""}
 <span>agent v${esc(m.agentVersion)}</span>
 <span>judge: ${esc(m.judgeModel)}</span>
 <span>visual: ${visual}</span>${m.tests ? "\n<span>tests: on</span>" : ""}
@@ -241,7 +241,23 @@ function domainSection(report: RunReport): string {
       }).join("");
   return `<section><h2>Domain plan</h2>
 <div class="card"><h3>Rename plan</h3>${rename}</div>
-${ents}</section>`;
+${appIdentifiersCard(report)}${ents}</section>`;
+}
+
+function appIdentifiersCard(report: RunReport): string {
+  const d = report.meta.appDomain;
+  if (!d) return "";
+  const row = (label: string, value: string): string =>
+    `<tr><td>${esc(label)}</td><td><code class="inline">${esc(value)}</code></td></tr>`;
+  const rows = [
+    row(d.custom ? "Domain (--domain)" : "Domain (default)", d.domain),
+    row(d.iosBundleId ? "iOS bundle ID" : "iOS bundle ID prefix", d.iosBundleId ?? d.bundleIdPrefix),
+    row(d.androidApplicationId ? "Android applicationId / package" : "Android package prefix", d.androidApplicationId ?? d.androidPackagePrefix),
+  ].join("");
+  const remapped = (d.androidRemapped ?? []).map((m) =>
+    `<p class="kv">Android package: <code class="inline">${esc(m.label)}</code> → <code class="inline">${esc(m.segment)}</code> (not a valid Java/Kotlin package segment as is)</p>`).join("");
+  return `<div class="card"><h3>App identifiers</h3><table class="rename"><tbody>${rows}</tbody></table>${remapped}</div>
+`;
 }
 
 function footer(report: RunReport): string {

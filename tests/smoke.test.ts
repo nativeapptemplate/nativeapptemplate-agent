@@ -8,7 +8,7 @@ import { renderReport } from "../src/report/render.js";
 import { buildRunReport, writeReport, collectScreenshotPaths } from "../src/report/collect.js";
 import type { DomainSpec, JudgeResult, ReviewerResult, Platform, PlatformDetail } from "../src/agents/types.js";
 import { runRepairLoop, REPAIR_ITERATION_CAP, type RepairLoopDeps, type RevalidateResult } from "../src/repair-loop.js";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -2518,14 +2518,14 @@ test("copySubstrate keeps relative symlinks relative so they never point back in
 
 // --- rename.rb edge cases ---
 
-async function runRenameFixture(files: Record<string, string | Buffer>, renamePlan: { from: string; to: string }[]) {
+async function runRenameFixture(files: Record<string, string | Buffer>, renamePlan: { from: string; to: string }[], extra: Record<string, unknown> = {}) {
   const { runRuby } = await import("../src/ruby.js");
   const root = mkdtempSync(join(tmpdir(), "rename-"));
   for (const [rel, content] of Object.entries(files)) {
     mkdirSync(join(root, rel, ".."), { recursive: true });
     writeFileSync(join(root, rel), content);
   }
-  await runRuby("rename.rb", { renamePlan, root });
+  await runRuby("rename.rb", { renamePlan, root, ...extra });
   return root;
 }
 
@@ -2615,6 +2615,242 @@ test("rename.rb still renames file and directory paths next to protected referen
     readFileSync(join(root, "OrangeBaton", "ProjectView.swift"), "utf8"),
     "// https://github.com/nativeapptemplate/NativeAppTemplate-iOS\nstruct ProjectView {}\n",
   );
+});
+
+// --- app domain (#157, src/app-domain.ts, rename.rb appDomain) ---
+
+// Excerpts of the three templates, as they spell the domain and the reverse-DNS
+// prefix (config/settings.yml, devices_controller_test.rb, project.pbxproj,
+// Constants.swift, build.gradle.kts, Kotlin sources in app/ and model/, the
+// datastore protos, google-services.json).
+const DOMAIN_FIXTURE: Record<string, string> = {
+  "config/settings.yml": "domain: nativeapptemplate.com\nurl: https://nativeapptemplate.com\nsupport_with_name: Native App Template <support@nativeapptemplate.com>\napi: api.nativeapptemplate.com\n",
+  "test/devices_controller_test.rb": 'apple = "com.nativeapptemplate.example"\ngoogle = "com.nativeapptemplate.nativeapptemplate"\n',
+  "README.md": "[repo](https://github.com/nativeapptemplate/NativeAppTemplate-Android) · mail support@nativeapptemplate.com.\n",
+  "NativeAppTemplate.xcodeproj/project.pbxproj": 'PRODUCT_BUNDLE_IDENTIFIER = "com.nativeapptemplate.NativeAppTemplate.ios${SAMPLE_CODE_DISAMBIGUATOR}";\nPRODUCT_BUNDLE_IDENTIFIER = com.nativeapptemplate.NativeAppTemplateTests;\n',
+  "NativeAppTemplate/Constants.swift": 'let keychainService = "com.nativeapptemplate.NativeAppTemplate.DevicePushIdService"\nlet subsystem = "com.nativeapptemplate"\nlet production = "api.nativeapptemplate.com"\n',
+  "app/build.gradle.kts": 'applicationId = "com.nativeapptemplate.nativeapptemplate"\nnamespace = "com.nativeapptemplate.nativeapptemplate"\nval domain = "api.nativeapptemplate.com"\n',
+  "model/build.gradle.kts": 'namespace = "com.nativeapptemplate.nativeapptemplate.model"\n',
+  "app/src/main/kotlin/com/nativeapptemplate/nativeapptemplate/ui/shops/ShopListView.kt": "package com.nativeapptemplate.nativeapptemplate.ui.shops\n\nimport com.nativeapptemplate.nativeapptemplate.model.Shop\n",
+  "app/src/test/kotlin/com/nativeapptemplate/nativeapptemplate/HardcodedUiStringsTest.kt": 'package com.nativeapptemplate.nativeapptemplate\nval uiSources = File("src/main/kotlin/com/nativeapptemplate/nativeapptemplate/ui")\n',
+  "app/src/androidTest/kotlin/com/nativeapptemplate/nativeapptemplate/LaunchTest.kt": "package com.nativeapptemplate.nativeapptemplate\n",
+  "model/src/main/kotlin/com/nativeapptemplate/nativeapptemplate/model/Shop.kt": "package com.nativeapptemplate.nativeapptemplate.model\n",
+  "datastore-proto/src/main/proto/user_preferences.proto": 'option java_package = "com.nativeapptemplate.nativeapptemplate";\n',
+  "app/google-services.json": '{ "package_name": "com.nativeapptemplate.nativeapptemplate" }\n',
+  // Finder litters a template working tree with these.
+  "app/src/main/kotlin/com/.DS_Store": "",
+};
+
+function readTree(root: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (dir: string, rel: string): void => {
+    for (const name of readdirSync(dir).sort()) {
+      const full = join(dir, name);
+      const r = rel ? `${rel}/${name}` : name;
+      if (statSync(full).isDirectory()) walk(full, r);
+      else out[r] = readFileSync(full, "utf8");
+    }
+  };
+  walk(root, "");
+  return out;
+}
+
+async function renameAppDomainInputFor(domain: string) {
+  const { renameAppDomainInput } = await import("../src/app-domain.js");
+  return renameAppDomainInput("orange-baton", domain);
+}
+
+test("validateAppDomain lowercases a domain and rejects what isn't one, with the reason", async () => {
+  const { validateAppDomain } = await import("../src/app-domain.js");
+  assert.deepEqual(validateAppDomain(" OrangeBaton.App "), { ok: true, domain: "orangebaton.app" });
+  assert.deepEqual(validateAppDomain("api.orange-baton.co.uk"), { ok: true, domain: "api.orange-baton.co.uk" });
+  const reasons: Array<[string, RegExp]> = [
+    ["", /empty/],
+    ["orangebaton", /at least two labels/],
+    ["https://orangebaton.app", /bare domain/],
+    ["orangebaton.app/path", /bare domain/],
+    ["support@orangebaton.app", /bare domain/],
+    ["orange..app", /an empty label/],
+    ["orangebaton.app.", /an empty label/],
+    ["-orange.app", /label "-orange"/],
+    ["orange-.app", /label "orange-"/],
+    ["orange_baton.app", /label "orange_baton"/],
+    [`${"a".repeat(64)}.app`, /label "a{64}"/],
+    ["10.0.0.1", /numeric label/],
+    ["1password.com", /starts with a digit/],
+  ];
+  for (const [raw, reason] of reasons) {
+    const check = validateAppDomain(raw);
+    assert.equal(check.ok, false, raw);
+    if (!check.ok) assert.match(check.error, reason, raw);
+  }
+});
+
+test("javaPackageSegment maps a DNS label to a Java/Kotlin package segment", async () => {
+  const { javaPackageSegment } = await import("../src/app-domain.js");
+  // JLS §6.1: hyphen -> underscore, reserved word -> trailing underscore.
+  assert.equal(javaPackageSegment("orangebaton"), "orangebaton");
+  assert.equal(javaPackageSegment("orange-baton"), "orange_baton");
+  assert.equal(javaPackageSegment("native"), "native_");
+  assert.equal(javaPackageSegment("int"), "int_");
+  assert.equal(javaPackageSegment("true"), "true_");
+  // Kotlin hard keyword: `package app.fun.x` doesn't compile.
+  assert.equal(javaPackageSegment("fun"), "fun_");
+  assert.equal(javaPackageSegment("app"), "app");
+});
+
+test("appIdentifiers derives the reverse-DNS prefixes, and the default from the project name", async () => {
+  const { appIdentifiers } = await import("../src/app-domain.js");
+  assert.deepEqual(appIdentifiers("orange-baton"), {
+    domain: "orangebaton.com", custom: false, bundleIdPrefix: "com.orangebaton", androidPackagePrefix: "com.orangebaton", androidRemapped: [],
+  });
+  assert.deepEqual(appIdentifiers("orange-baton", "orangebaton.app"), {
+    domain: "orangebaton.app", custom: true, bundleIdPrefix: "app.orangebaton", androidPackagePrefix: "app.orangebaton", androidRemapped: [],
+  });
+  assert.deepEqual(appIdentifiers("orange-baton", "orange-baton.native.app"), {
+    domain: "orange-baton.native.app",
+    custom: true,
+    bundleIdPrefix: "app.native.orange-baton",
+    androidPackagePrefix: "app.native_.orange_baton",
+    androidRemapped: [{ label: "native", segment: "native_" }, { label: "orange-baton", segment: "orange_baton" }],
+  });
+});
+
+test("bundleIdFromPbxproj / applicationIdFromGradle read the app's identifier back", async () => {
+  const { bundleIdFromPbxproj, applicationIdFromGradle } = await import("../src/app-domain.js");
+  assert.equal(
+    bundleIdFromPbxproj('PRODUCT_BUNDLE_IDENTIFIER = app.orangebaton.OrangeBatonTests;\nPRODUCT_BUNDLE_IDENTIFIER = "app.orangebaton.OrangeBaton.ios${SAMPLE_CODE_DISAMBIGUATOR}";\n'),
+    "app.orangebaton.OrangeBaton.ios",
+  );
+  assert.equal(applicationIdFromGradle('    applicationId = "app.orangebaton.orangebaton"\n'), "app.orangebaton.orangebaton");
+  assert.equal(applicationIdFromGradle("android {}"), undefined);
+});
+
+test("rename.rb without appDomain keeps the default domain and reverse-DNS prefix (#157)", { skip: !RUBY_AVAILABLE }, async () => {
+  // Today's rename: the flat product rule turns nativeapptemplate into orangebaton.
+  const root = await runRenameFixture(DOMAIN_FIXTURE, ORANGE_BATON_PLAN);
+  const tree = readTree(root);
+  assert.match(tree["config/settings.yml"]!, /^domain: orangebaton\.com$/m);
+  assert.match(tree["config/settings.yml"]!, /<support@orangebaton\.com>/);
+  assert.match(tree["OrangeBaton.xcodeproj/project.pbxproj"]!, /"com\.orangebaton\.OrangeBaton\.ios\$\{SAMPLE_CODE_DISAMBIGUATOR\}"/);
+  assert.match(tree["app/build.gradle.kts"]!, /applicationId = "com\.orangebaton\.orangebaton"/);
+  assert.ok(tree["app/src/main/kotlin/com/orangebaton/orangebaton/ui/projects/ProjectListView.kt"]);
+  // A domain equal to the default one renames exactly as no domain does.
+  const same = await runRenameFixture(DOMAIN_FIXTURE, ORANGE_BATON_PLAN, await renameAppDomainInputFor("orangebaton.com"));
+  assert.deepEqual(readTree(same), tree);
+});
+
+test("rename.rb with appDomain replaces the domain, subdomains and emails, and the iOS / Android identifiers (#157)", { skip: !RUBY_AVAILABLE }, async () => {
+  const root = await runRenameFixture(DOMAIN_FIXTURE, ORANGE_BATON_PLAN, await renameAppDomainInputFor("orangebaton.app"));
+  const tree = readTree(root);
+  // Expected values: the issue's table with orangebaton.app -> app.orangebaton, the
+  // rest of each identifier renamed as usual (NativeAppTemplate -> OrangeBaton,
+  // flat nativeapptemplate -> orangebaton, shop(s) -> project(s), Shopkeeper untouched).
+  assert.equal(tree["config/settings.yml"], "domain: orangebaton.app\nurl: https://orangebaton.app\nsupport_with_name: Orange Baton <support@orangebaton.app>\napi: api.orangebaton.app\n");
+  assert.equal(tree["test/devices_controller_test.rb"], 'apple = "app.orangebaton.example"\ngoogle = "app.orangebaton.orangebaton"\n');
+  assert.equal(tree["README.md"], "[repo](https://github.com/nativeapptemplate/NativeAppTemplate-Android) · mail support@orangebaton.app.\n");
+  assert.equal(tree["OrangeBaton.xcodeproj/project.pbxproj"], 'PRODUCT_BUNDLE_IDENTIFIER = "app.orangebaton.OrangeBaton.ios${SAMPLE_CODE_DISAMBIGUATOR}";\nPRODUCT_BUNDLE_IDENTIFIER = app.orangebaton.OrangeBatonTests;\n');
+  assert.equal(tree["OrangeBaton/Constants.swift"], 'let keychainService = "app.orangebaton.OrangeBaton.DevicePushIdService"\nlet subsystem = "app.orangebaton"\nlet production = "api.orangebaton.app"\n');
+  assert.equal(tree["app/build.gradle.kts"], 'applicationId = "app.orangebaton.orangebaton"\nnamespace = "app.orangebaton.orangebaton"\nval domain = "api.orangebaton.app"\n');
+  assert.equal(tree["model/build.gradle.kts"], 'namespace = "app.orangebaton.orangebaton.model"\n');
+  assert.equal(tree["app/src/main/kotlin/app/orangebaton/orangebaton/ui/projects/ProjectListView.kt"], "package app.orangebaton.orangebaton.ui.projects\n\nimport app.orangebaton.orangebaton.model.Project\n");
+  assert.equal(tree["app/src/test/kotlin/app/orangebaton/orangebaton/HardcodedUiStringsTest.kt"], 'package app.orangebaton.orangebaton\nval uiSources = File("src/main/kotlin/app/orangebaton/orangebaton/ui")\n');
+  assert.equal(tree["app/src/androidTest/kotlin/app/orangebaton/orangebaton/LaunchTest.kt"], "package app.orangebaton.orangebaton\n");
+  assert.equal(tree["model/src/main/kotlin/app/orangebaton/orangebaton/model/Project.kt"], "package app.orangebaton.orangebaton.model\n");
+  assert.equal(tree["datastore-proto/src/main/proto/user_preferences.proto"], 'option java_package = "app.orangebaton.orangebaton";\n');
+  assert.equal(tree["app/google-services.json"], '{ "package_name": "app.orangebaton.orangebaton" }\n');
+  // The template's com/ package directories are gone, not left empty (nor holding only a .DS_Store).
+  assert.ok(!existsSync(join(root, "app/src/main/kotlin/com")));
+  assert.ok(!existsSync(join(root, "model/src/main/kotlin/com")));
+  const layer1 = await runLayer1({ projectDir: root, forbiddenTokens: ORANGE_BATON_PLAN.map((p) => p.from) });
+  assert.deepEqual(layer1.findings, []);
+});
+
+test("rename.rb writes the Android package with Java-safe segments and keeps hyphens in the iOS bundle ID (#157)", { skip: !RUBY_AVAILABLE }, async () => {
+  const root = await runRenameFixture(DOMAIN_FIXTURE, ORANGE_BATON_PLAN, await renameAppDomainInputFor("orange-baton.app"));
+  const tree = readTree(root);
+  assert.match(tree["OrangeBaton.xcodeproj/project.pbxproj"]!, /"app\.orange-baton\.OrangeBaton\.ios\$/);
+  assert.equal(tree["app/build.gradle.kts"], 'applicationId = "app.orange_baton.orangebaton"\nnamespace = "app.orange_baton.orangebaton"\nval domain = "api.orange-baton.app"\n');
+  assert.equal(tree["app/src/main/kotlin/app/orange_baton/orangebaton/ui/projects/ProjectListView.kt"], "package app.orange_baton.orangebaton.ui.projects\n\nimport app.orange_baton.orangebaton.model.Project\n");
+  assert.match(tree["app/src/test/kotlin/app/orange_baton/orangebaton/HardcodedUiStringsTest.kt"]!, /"src\/main\/kotlin\/app\/orange_baton\/orangebaton\/ui"/);
+  assert.equal(tree["test/devices_controller_test.rb"], 'apple = "app.orange-baton.example"\ngoogle = "app.orange_baton.orangebaton"\n');
+});
+
+test("rename.rb doesn't rename a domain label that happens to be a rename token (#157)", { skip: !RUBY_AVAILABLE }, async () => {
+  // shop.example with Shop -> Project: the domain is the user's, so example.shop stays.
+  const root = await runRenameFixture(DOMAIN_FIXTURE, ORANGE_BATON_PLAN, await renameAppDomainInputFor("shop.example"));
+  const tree = readTree(root);
+  assert.equal(tree["app/src/main/kotlin/example/shop/orangebaton/ui/projects/ProjectListView.kt"], "package example.shop.orangebaton.ui.projects\n\nimport example.shop.orangebaton.model.Project\n");
+  assert.match(tree["config/settings.yml"]!, /^api: api\.shop\.example$/m);
+  assert.match(tree["OrangeBaton.xcodeproj/project.pbxproj"]!, /"example\.shop\.OrangeBaton\.ios\$/);
+});
+
+test("parseArgs takes --domain, lowercased, and reports an invalid one as an error", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  assert.equal(parseArgs(["a queue", "--domain=OrangeBaton.app"]).domain, "orangebaton.app");
+  assert.equal(parseArgs(["a queue", "--domain", "orangebaton.app"]).domain, "orangebaton.app");
+  assert.equal(parseArgs(["a queue"]).domain, undefined);
+  const bad = parseArgs(["a queue", "--domain=orangebaton"]);
+  assert.equal(bad.domain, undefined);
+  assert.equal(bad.errors.length, 1);
+  assert.match(bad.errors[0]!, /--domain "orangebaton" needs at least two labels/);
+});
+
+test("generate_app rejects an invalid domain with the same message, and passes a valid one through", async () => {
+  const { createMcpServer } = await import("../src/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const server = createMcpServer();
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+  const bad = await client.callTool({ name: "generate_app", arguments: { spec: "a queue", domain: "https://orangebaton.app" } });
+  assert.equal(bad.isError, true);
+  assert.match(JSON.stringify(bad.content), /--domain \\"https:\/\/orangebaton.app\\" is not a bare domain/);
+
+  const good = await client.callTool({ name: "generate_app", arguments: { spec: "a queue", projectName: "Orange Baton", domain: "Orange-Baton.app" } });
+  const sc = good.structuredContent as { report?: { meta?: { appDomain?: unknown } } };
+  assert.deepEqual(sc.report?.meta?.appDomain, {
+    domain: "orange-baton.app",
+    custom: true,
+    bundleIdPrefix: "app.orange-baton",
+    androidPackagePrefix: "app.orange_baton",
+    androidRemapped: [{ label: "orange-baton", segment: "orange_baton" }],
+  });
+  await client.close();
+  await server.close();
+});
+
+test("renderReport shows the app's domain and identifiers", () => {
+  const report = buildRunReport({
+    spec: "a vet clinic queue",
+    domain: { ...reportDomain, appDomain: "vet-clinic.app" },
+    judge: mixedJudge(),
+    reviewer: failReviewer,
+    agentVersion: "9.9.9",
+    judgeModel: "claude-opus-5-5",
+    visualLevel: 0,
+    startedAt: 1000,
+    finishedAt: 4000,
+    appIds: { ios: "app.vet-clinic.VetClinic.ios", android: "app.vet_clinic.vetclinic" },
+  });
+  assert.deepEqual(report.meta.appDomain, {
+    domain: "vet-clinic.app",
+    custom: true,
+    bundleIdPrefix: "app.vet-clinic",
+    androidPackagePrefix: "app.vet_clinic",
+    androidRemapped: [{ label: "vet-clinic", segment: "vet_clinic" }],
+    iosBundleId: "app.vet-clinic.VetClinic.ios",
+    androidApplicationId: "app.vet_clinic.vetclinic",
+  });
+  const html = renderReport(report);
+  assert.match(html, /<span>domain: vet-clinic\.app<\/span>/);
+  assert.match(html, /iOS bundle ID<\/td><td><code class="inline">app\.vet-clinic\.VetClinic\.ios</);
+  assert.match(html, /Android applicationId \/ package<\/td><td><code class="inline">app\.vet_clinic\.vetclinic</);
+  assert.match(html, /vet-clinic<\/code> → <code class="inline">vet_clinic/);
+  const byDefault = buildRunReport({ spec: "x", domain: reportDomain, judge: mixedJudge(), reviewer: failReviewer, agentVersion: "9", judgeModel: "m", visualLevel: 0, startedAt: 0, finishedAt: 0 });
+  assert.match(renderReport(byDefault), /<span>domain: vetclinic\.com \(default\)<\/span>/);
 });
 
 test("runRuby rejects (instead of crashing the process) when ruby is not on PATH", async () => {

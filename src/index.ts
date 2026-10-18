@@ -7,13 +7,14 @@ import { loadDotenvIfPresent } from "./env.js";
 import { describeRenameOverride, parseRenamePair } from "./rename-overrides.js";
 import { projectNameToSlug, slugToPascal, isValidSlug } from "./slug.js";
 import { readPackageVersion } from "./version.js";
+import { describeAppIdentifiers, validateAppDomain } from "./app-domain.js";
 import type { RenamePair } from "./agents/types.js";
 import type { RunReport } from "./report/model.js";
 
 loadDotenvIfPresent();
 
 const USAGE =
-  'Usage: nativeapptemplate-agent "your spec here" [--project-name="Vet Clinic"] [--rename From=To]... [--rename-ja From=名前]... [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]\n' +
+  'Usage: nativeapptemplate-agent "your spec here" [--project-name="Vet Clinic"] [--rename From=To]... [--rename-ja From=名前]... [--domain=orangebaton.app] [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]\n' +
   '       nativeapptemplate-agent --version | --help';
 
 export type ParsedArgs = {
@@ -26,6 +27,7 @@ export type ParsedArgs = {
   renameOverrides: RenamePair[];
   japaneseOverrides: RenamePair[];
   projectName?: string;
+  domain?: string;
 };
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -36,6 +38,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   let open = false;
   let exitZero = false;
   let projectName: string | undefined;
+  let domain: string | undefined;
   let action: ParsedArgs["action"];
   const errors: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -69,13 +72,18 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       // derived in dispatch. Reject only if it yields no valid slug at all.
       if (raw && isValidSlug(projectNameToSlug(raw))) projectName = raw;
       else console.error(`warning: ignoring invalid --project-name "${raw ?? ""}" (e.g. --project-name="Vet Clinic")`);
+    } else if (arg === "--domain" || arg.startsWith("--domain=")) {
+      const raw = arg === "--domain" ? argv[++i] : arg.slice("--domain=".length);
+      const check = validateAppDomain(raw ?? "");
+      if (check.ok) domain = check.domain;
+      else errors.push(check.error);
     } else if (/^-./.test(arg)) {
       errors.push(`unknown option "${arg}"`);
     } else {
       specParts.push(arg);
     }
   }
-  return { ...(action !== undefined ? { action } : {}), errors, spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, japaneseOverrides, ...(projectName !== undefined ? { projectName } : {}) };
+  return { ...(action !== undefined ? { action } : {}), errors, spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, japaneseOverrides, ...(projectName !== undefined ? { projectName } : {}), ...(domain !== undefined ? { domain } : {}) };
 }
 
 export function overallLine(report: RunReport): string {
@@ -116,11 +124,16 @@ export async function main(spec?: string): Promise<void> {
     renameOverrides: parsed.renameOverrides,
     japaneseOverrides: parsed.japaneseOverrides,
     ...(parsed.projectName !== undefined ? { projectName: parsed.projectName } : {}),
+    ...(parsed.domain !== undefined ? { domain: parsed.domain } : {}),
   });
 
   if (parsed.projectName !== undefined) {
     const finalSlug = result.report.meta.slug;
     console.log(`project: ${slugToPascal(finalSlug)} (output out/${finalSlug}/)`);
+  }
+
+  if (parsed.domain !== undefined) {
+    for (const line of describeAppIdentifiers(result.appIdentifiers)) console.log(line);
   }
 
   const renamable = result.report.domain.renamePlan.map((p) => p.from);

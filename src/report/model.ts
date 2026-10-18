@@ -40,6 +40,21 @@ export type RunMeta = {
   startedAt: string;
   finishedAt: string;
   durationMs: number;
+  appDomain?: RunAppDomain;
+};
+
+// The app's domain and the store identifiers derived from it
+// (src/app-domain.ts). custom: chosen with --domain, else the rename's default.
+export type RunAppDomain = {
+  domain: string;
+  custom: boolean;
+  bundleIdPrefix: string;
+  androidPackagePrefix: string;
+  // Domain labels written differently in the Android package (orange-baton -> orange_baton).
+  androidRemapped?: readonly { label: string; segment: string }[];
+  // As the generated projects have them, when the workers could read them.
+  iosBundleId?: string;
+  androidApplicationId?: string;
 };
 
 export type RunReportEntity = {

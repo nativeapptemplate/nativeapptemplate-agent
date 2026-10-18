@@ -52,6 +52,8 @@ Generated output appears under `./out/<slug>/`. See [Usage](#usage) for rename o
 
 > **Pass a project name.** `--project-name` (or "project name is …" in the plugin) pins the Pascal project name, output slug (`out/vet-clinic/`), Xcode scheme, and display name across all three platforms. Omit it and the planner picks one — fine for one-off exploration, but it'll differ across re-runs.
 
+> **Pass a domain if the app will ship.** `--domain=vetclinic.app` (or "domain is …" in the plugin) sets the app's web domain and, from its reverse, the iOS bundle ID (`app.vetclinic.VetClinic.ios`) and the Android applicationId / package (`app.vetclinic.vetclinic`). Neither ID can change after the first store release. Omit it and you get `<project name>.com` (`vetclinic.com`, `com.vetclinic.…`).
+
 > Using Cursor, Cline, Goose, or another MCP-capable editor? The generator also ships as an MCP server: `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` exposes a `generate_app` tool you can wire into your editor's MCP config.
 
 ---
@@ -78,7 +80,7 @@ It will:
 
 1. **Parse the spec** into a structured domain (entities, fields, relationships, state machines).
 2. **Copy the free-edition substrate** (three MIT-licensed repos covering Rails + iOS + Android) into `./out/<spec-slug>/{rails,ios,android}/`.
-3. **Rename the skeleton** — `Shop → Clinic`, `Shopkeeper → Vet`, etc. — consistently across Ruby migrations, Swift models, Kotlin data classes, policies, tests, and localized copy. Links to the template's own repos (`github.com/nativeapptemplate/...`) and the name `nativeapptemplate-agent` are left as they are, so the generated docs keep working links; the template's domain (`nativeapptemplate.com`) becomes your app's.
+3. **Rename the skeleton** — `Shop → Clinic`, `Shopkeeper → Vet`, etc. — consistently across Ruby migrations, Swift models, Kotlin data classes, policies, tests, and localized copy. Links to the template's own repos (`github.com/nativeapptemplate/...`) and the name `nativeapptemplate-agent` are left as they are, so the generated docs keep working links; the template's domain (`nativeapptemplate.com`) becomes your app's (`<project name>.com`, or the one you pass with `--domain`).
 4. **Adapt or replace the domain module** — keep `ItemTag` for walk-in queue variants; strip and insert a new resource for non-queue SaaS. Then run each app's autocorrecting formatter (`bin/rubocop -a`, `./gradlew spotlessApply`, `swiftformat <Product>`), since the rename shifts alignment and import order; whatever they can't fix is listed in the validation report.
 5. **Drive the build green** — every platform must pass before the agent exits. By default this is a fast gate: Rails routes load (`bin/rails routes`) and the iOS/Android projects resolve (`xcodebuild -list`, `./gradlew --version`). With `NATIVEAPPTEMPLATE_VISUAL=1`+ it escalates to full builds — Rails boots (`bin/rails db:prepare` + `bin/rails runner`), iOS builds (`xcodebuild build`), Android builds (`./gradlew assembleDebug`). The generated apps' **test suites don't run by default**; `NATIVEAPPTEMPLATE_TESTS=1` adds `bin/rails test`, `xcodebuild test` and `./gradlew testDebugUnitTest`.
 6. **Validate the output** across three layers (structural, runtime, semantic) and write a self-contained HTML + JSON [validation report](#validation-report). Details in [`docs/SPEC.md`](./docs/SPEC.md) section 6.
@@ -210,6 +212,11 @@ npx nativeapptemplate-agent "a personal task tracker with due dates"
 npx nativeapptemplate-agent "a two-device home monitor for household pest detection" --project-name="Sentova"
 # → out/sentova/ · Sentova.xcodeproj · "Sentova API"; adapts ItemTag (e.g. Shop→Household, ItemTag→Sighting)
 
+# Choose the app's domain ("…domain is sentova.app." in the plugin/MCP path, mapped
+# to the domain argument). Without it: sentova.com, com.sentova.Sentova.ios, com.sentova.sentova.
+npx nativeapptemplate-agent "a two-device home monitor for household pest detection" --project-name="Sentova" --domain=sentova.app
+# → api.sentova.app · support@sentova.app · iOS app.sentova.Sentova.ios · Android app.sentova.sentova
+
 # Generated output appears under ./out/<slug>/
 tree ./out/clinic-queue/
 # ├── rails/                   ← Rails 8.1 API, git-initialized, buildable
@@ -297,6 +304,7 @@ Naming flags:
 |---|---|---|
 | `--project-name="Vet Clinic"` | planner's pick | Name the project. Accepts a human name (`"Vet Clinic"`), PascalCase (`VetClinic`), or kebab (`vet-clinic`); from it the agent derives the Pascal project name (`NativeAppTemplate → VetClinic` across all three platforms), the slug/output dir (`out/vet-clinic/`), the DB prefix + env-bridge token, and the display name. Invalid (no derivable slug) is reported and skipped. |
 | `--rename From=To` | planner's pick | Override one of the planner's domain rename targets (repeatable). `From` is a substrate token (`Shop`, `Shopkeeper`, `ItemTag`); the planner fills in everything else. An override that matches no planned rename is reported and skipped, and so is one whose target is a [reserved name](#reserved-rename-targets) (the current target is kept: the planner's pick, or an earlier `--rename` for the same token). Example: `--rename Shopkeeper=Vet --rename Shop=Clinic` |
+| `--domain=orangebaton.app` | `<project name, flat lowercase>.com` | The app's web domain. Replaces the template's `nativeapptemplate.com` everywhere it appears — bare, with subdomains (`api.nativeapptemplate.com` → `api.orangebaton.app`), in URLs and in email addresses — and its reverse replaces the template's `com.nativeapptemplate` prefix: iOS bundle ID `app.orangebaton.OrangeBaton.ios` (plus the test target, keychain services and log subsystem), Android `app.orangebaton.orangebaton` (`applicationId`, `namespace`, `package` / `import` declarations, proto `java_package`, `google-services.json`'s `package_name`, and the source directories, moved from `com/nativeapptemplate/nativeapptemplate` to `app/orangebaton/orangebaton` in every module and source set). Lowercased; needs at least two labels, each a DNS label (letters, digits, hyphens), and each starting with a letter (Android package segments must). A label that isn't a valid Java/Kotlin package segment is written differently in the Android package only — a hyphen becomes `_` (`orange-baton.app` → `app.orange_baton.orangebaton`, iOS keeps `app.orange-baton…`), a keyword gets a trailing `_` (`native` → `native_`) — and the run says so. An invalid domain stops the run before anything is generated. The report shows the domain and the generated IDs (`meta.appDomain` in `report.json`). Links to the template's repos stay as they are. |
 | `--rename-ja From=名前` | planner's pick | Override the Japanese name of a planned rename (repeatable). `From` is `Shop` or `ItemTag`; the Rails API's Japanese messages (`config/locales/ja.yml`) and their tests use it in place of the substrate's 店舗 / アイテムタグ. The planner picks one itself (`toJa` in the rename plan); without one the Japanese is left as is. Example: `--rename-ja Shop=動物病院` |
 
 #### Reserved rename targets

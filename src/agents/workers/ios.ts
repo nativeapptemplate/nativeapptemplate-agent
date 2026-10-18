@@ -1,10 +1,11 @@
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { scrubbedEnv } from "../../env.js";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { trace } from "../../trace.js";
 import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
+import { bundleIdFromPbxproj, renameAppDomainInput, type RenameAppDomain } from "../../app-domain.js";
 import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
 import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
 import { runFormatter, traceFormat } from "../../validation/autoformat.js";
@@ -57,9 +58,9 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
   const plan = renamePlan.map((p) => `${p.from}->${p.to}`).join(", ");
   trace("ios", `running scripts/ruby/rename.rb: ${plan}`);
 
-  const renameStats = await runRuby<{ renamePlan: readonly RenamePair[]; japaneseRenamePlan: readonly RenamePair[]; root: string }, RenameStats>(
+  const renameStats = await runRuby<{ renamePlan: readonly RenamePair[]; japaneseRenamePlan: readonly RenamePair[]; appDomain?: RenameAppDomain; root: string }, RenameStats>(
     "rename.rb",
-    { renamePlan, japaneseRenamePlan: japaneseRenamePairs(renamePlan), root: outDir },
+    { renamePlan, japaneseRenamePlan: japaneseRenamePairs(renamePlan), ...renameAppDomainInput(domain.slug, domain.appDomain), root: outDir },
   );
 
   trace(
@@ -67,6 +68,8 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
     `scanned ${renameStats.files_scanned} files, changed ${renameStats.files_changed}, ${renameStats.substitutions} substitutions, ${renameStats.files_renamed} file/dir renames`,
   );
 
+  const appId = await readBundleId(outDir);
+  if (appId) trace("ios", `bundle ID: ${appId}`);
   const format = await runFormatter("ios", outDir);
   traceFormat("ios", format);
   await initGit(outDir);
@@ -78,7 +81,18 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
     renamedFrom: renamedTokens(renamePlan),
     format,
+    ...(appId ? { appId } : {}),
   };
+}
+
+async function readBundleId(outDir: string): Promise<string | undefined> {
+  const project = (await readdir(outDir)).find((name) => name.endsWith(".xcodeproj"));
+  if (!project) return undefined;
+  try {
+    return bundleIdFromPbxproj(await readFile(join(outDir, project, "project.pbxproj"), "utf8"));
+  } catch {
+    return undefined;
+  }
 }
 
 function buildProductRenamePairs(slug: string): readonly RenamePair[] {
