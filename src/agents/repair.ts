@@ -4,6 +4,7 @@ import { isStub } from "../stub.js";
 import type { DomainSpec, Platform } from "./types.js";
 import { REPAIR_EFFORT, REPAIR_MODEL } from "../models.js";
 import { tokenCounts, type TokenUsage } from "../structured-output.js";
+import { recordSdkCost } from "../usage.js";
 
 // Which validation layer this repair attempt targets. Layer 1 (leftover
 // substrate tokens) and Layer 2 (build/compile failures) are the
@@ -63,6 +64,7 @@ export async function runRepair(target: RepairTarget, domain: DomainSpec): Promi
     if (message.type === "result") {
       turns = message.num_turns;
       cost = `, ${repairCostLine(message)}`;
+      recordSdkCost(message.total_cost_usd, message.usage);
       if (message.subtype === "success" && !message.is_error) {
         action = firstLine(message.result) || action;
       } else {

@@ -77,7 +77,8 @@ Tell the user, briefly, before you start:
   asking the user for a key. Time and cost by visual level (README "Runtime"; measured on an M1
   Max with the devices pre-booted): `0` ~2–3 min, ~$0.02; `1` ~2.5 min (full
   builds), ~$0.13; `2` ~7–8 min, ~$0.22. Cold builds add a minute or two; `--tests`
-  adds several minutes per platform.
+  adds a few minutes (the three suites run in parallel; ~2.5 min on a VISUAL=2 run)
+  and no API cost.
 - Prerequisites for the level you're running — say them before you start, and
   for `--visual=1`/`2` ask the user to confirm they're ready: `1` and `2` need a
   **booted iOS simulator** (Xcode; the build targets iPhone 17 Pro / iOS 26.2
@@ -152,7 +153,11 @@ Read `out/<slug>/report.json`. Its shape:
     "renamePlan": [ { "from": "Shop", "to": "…" }, … ],
     "entities":   [ { "name", "replaces", "fields", "states"? }, … ]
   },
-  "repairAttempts": [ /* present only if the self-repair loop ran */ ]
+  "repairAttempts": [ /* present only if the self-repair loop ran */ ],
+  "cost": { "estimatedUsd", "calls", /* API spend of this run, an estimate */
+            "byAgent": { "planner"|"judge"|"repair": { "calls", "inputTokens", "outputTokens",
+                         "cacheWriteTokens", "cacheReadTokens", "usd" } },
+            "fallbackCalls"?, "pricing": { "model", "perMTok" } }
 }
 ```
 
@@ -165,7 +170,9 @@ means a full build was run), **Layer 3** = semantic vision judge (only when
 ## 5. Summarize for the user
 
 Lead with the headline (`verdict` + `summary` + total time from
-`meta.durationMs`). Say PARTIAL plainly when `verdict` is `"partial"`: Layer 1/2
+`meta.durationMs` + API cost from `cost.estimatedUsd`, e.g. "≈ $0.22, 25 API
+calls"; say it's an estimate at list price — billed amounts are in the Claude
+Console). Say PARTIAL plainly when `verdict` is `"partial"`: Layer 1/2
 and the reviewer passed, but the UI was not judged (Layer 3 didn't run) — offer a
 re-run with `--visual=1` (or `--visual=2` for the full walk) for a full verdict. Then a compact per-platform table — Layer 1 / Layer 2 (/
 Layer 3 if present) as ✅/❌ for rails, ios, android — plus reviewer contract

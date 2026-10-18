@@ -10,6 +10,7 @@ import { readPackageVersion } from "./version.js";
 import { describeAppIdentifiers, validateAppDomain } from "./app-domain.js";
 import type { RenamePair } from "./agents/types.js";
 import type { RunReport } from "./report/model.js";
+import { describeCost } from "./report/collect.js";
 import { parseVisualLevel, type VisualLevel } from "./run-options.js";
 import { PreflightError } from "./preflight.js";
 
@@ -184,6 +185,7 @@ export async function main(spec?: string): Promise<void> {
   console.log('=== run complete ===');
   console.log(`result: ${result.summary}`);
   console.log(overallLine(result.report));
+  if (result.report.cost) console.log(`cost: ${describeCost(result.report.cost)}`);
   if (result.reportPaths.htmlPath) {
     console.log(`report: file://${result.reportPaths.htmlPath}`);
     if (parsed.open && process.platform === 'darwin') {

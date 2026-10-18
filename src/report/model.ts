@@ -1,4 +1,5 @@
 import type { PlatformDetail } from "../agents/types.js";
+import type { RunCost } from "../usage.js";
 
 // The single aggregate the validation report renders from. Assembled by
 // dispatch (src/report/collect.ts#buildRunReport) and serialized to
@@ -24,6 +25,9 @@ export type RunReport = {
   // Populated once the self-repair loop is wired (AGENTS.md ≤5 cap).
   // Rendered only when present.
   repairAttempts?: readonly RepairAttempt[];
+  // Estimated API spend of this run (src/usage.ts). Absent when the run made
+  // no API call (stub mode).
+  cost?: RunCost;
 };
 
 export type Verdict = "pass" | "partial" | "fail";

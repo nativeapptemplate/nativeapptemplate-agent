@@ -6,6 +6,7 @@ import { BILLING_RESERVED, ERROR_MONITORING_RESERVED, STDLIB_RESERVED, SUBSTRATE
 import { FALLBACK_BETA, FALLBACKS, PLANNER_EFFORT, PLANNER_MODEL } from "../models.js";
 import { isValidSlug } from "../slug.js";
 import { readStructuredJson, usageLine } from "../structured-output.js";
+import { recordMessageUsage } from "../usage.js";
 
 // Opus 5.5 always thinks, and thinking counts toward max_tokens: leave room
 // for it on top of the DomainSpec JSON.
@@ -160,6 +161,7 @@ export async function runPlanner(spec: string): Promise<DomainSpec> {
   trace("planner", `calling ${PLANNER_MODEL} (effort ${PLANNER_EFFORT}) to extract domain`);
 
   const response = await client.beta.messages.create(buildPlannerRequest(spec));
+  recordMessageUsage("planner", response, PLANNER_MODEL);
   const domain = parsePlannerResponse(response);
   trace("planner", `derived slug: ${domain.slug}`);
   trace("planner", `rename plan: ${domain.renamePlan.map((r) => `${r.from}->${r.to}${r.toJa ? ` (${r.toJa})` : ""}`).join(", ")}`);

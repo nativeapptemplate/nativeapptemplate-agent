@@ -4349,3 +4349,102 @@ test("Android copy of a non-git substrate leaves google-services.json out (nothi
   assert.equal(existsSync(join(dest, "app", "google-services.json")), false);
   assert.equal(existsSync(join(dest, "app", "build.gradle.kts")), true);
 });
+
+// --- Per-run API cost (#167) ---
+
+// The 2026-10-18 Orange Baton VISUAL=2 run, whose trace-derived totals matched
+// the Console usage export to the token: planner 2,761 in / 814 out; 24 judge
+// calls summing to 3,456 in / 2,866 out / 17,320 cache-write / 86,600 cache-read.
+const ORANGE_BATON_PLANNER_USAGE = { input_tokens: 2761, output_tokens: 814, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+const ORANGE_BATON_JUDGE_USAGE = { input_tokens: 3456, output_tokens: 2866, cache_creation_input_tokens: 17320, cache_read_input_tokens: 86600 };
+
+test("run cost prices planner and judge calls at the Opus 5.5 rates", async () => {
+  const { withUsageLedger, recordMessageUsage, currentRunCost } = await import("../src/usage.js");
+  const cost = await withUsageLedger(async () => {
+    recordMessageUsage("planner", fakeMessage({ usage: ORANGE_BATON_PLANNER_USAGE }), "claude-opus-5-5");
+    recordMessageUsage("judge", fakeMessage({ usage: ORANGE_BATON_JUDGE_USAGE }), "claude-opus-5-5");
+    return currentRunCost();
+  });
+  assert.ok(cost);
+  // planner: 2761*$4 + 814*$20 = 11044 + 16280 = 27324 µ$ → $0.0273
+  assert.deepEqual(cost.byAgent.planner, { calls: 1, inputTokens: 2761, outputTokens: 814, cacheWriteTokens: 0, cacheReadTokens: 0, usd: 0.0273 });
+  // judge: 3456*$4 + 2866*$20 + 17320*$5 + 86600*$0.40 = 13824 + 57320 + 86600 + 34640 = 192384 µ$ → $0.1924
+  assert.equal(cost.byAgent.judge?.usd, 0.1924);
+  // total: 27324 + 192384 = 219708 µ$ → $0.2197 (scripts/cost.sh printed the same for that run)
+  assert.equal(cost.estimatedUsd, 0.2197);
+  assert.equal(cost.calls, 2);
+  assert.equal(cost.currency, "USD");
+  assert.equal(cost.fallbackCalls, undefined);
+  assert.equal(cost.pricing.model, "claude-opus-5-5");
+});
+
+test("run cost counts fallback-served calls and takes the repair SDK cost as is", async () => {
+  const { withUsageLedger, recordMessageUsage, recordSdkCost, currentRunCost } = await import("../src/usage.js");
+  const cost = await withUsageLedger(async () => {
+    recordMessageUsage("judge", fakeMessage({ model: "claude-opus-5", usage: { input_tokens: 100, output_tokens: 200, cache_creation_input_tokens: 1000, cache_read_input_tokens: 0 } }), "claude-opus-5-5");
+    recordSdkCost(0.1, { input_tokens: 12, output_tokens: 3400, cache_creation_input_tokens: 15000, cache_read_input_tokens: 90000 });
+    return currentRunCost();
+  });
+  assert.ok(cost);
+  assert.equal(cost.fallbackCalls, 1);
+  // judge: 100*$4 + 200*$20 + 1000*$5 = 400 + 4000 + 5000 = 9400 µ$ → $0.0094, priced at Opus 5.5 rates like cost.sh
+  assert.equal(cost.byAgent.judge?.usd, 0.0094);
+  // repair: the SDK's total_cost_usd, not re-priced from its tokens
+  assert.equal(cost.byAgent.repair?.usd, 0.1);
+  assert.equal(cost.byAgent.repair?.cacheReadTokens, 90000);
+  // 0.0094 + 0.1 = 0.1094
+  assert.equal(cost.estimatedUsd, 0.1094);
+});
+
+test("run cost is per run: concurrent ledgers don't mix, and nothing is recorded outside one", async () => {
+  const { withUsageLedger, recordMessageUsage, currentRunCost } = await import("../src/usage.js");
+  recordMessageUsage("planner", fakeMessage({ usage: ORANGE_BATON_PLANNER_USAGE }), "claude-opus-5-5");
+  assert.equal(currentRunCost(), undefined);
+  const run = (calls: number) => withUsageLedger(async () => {
+    for (let i = 0; i < calls; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+      recordMessageUsage("judge", fakeMessage({ usage: { input_tokens: 1, output_tokens: 1 } }), "claude-opus-5-5");
+    }
+    return currentRunCost();
+  });
+  const [a, b] = await Promise.all([run(2), run(3)]);
+  assert.equal(a?.calls, 2);
+  assert.equal(b?.calls, 3);
+  assert.equal(await withUsageLedger(async () => currentRunCost()), undefined, "a run without API calls has no cost");
+});
+
+test("stub dispatch makes no API call, so its report has no cost block", async () => {
+  const result = await dispatch("a walk-in clinic queue for small veterinary practices");
+  assert.equal(result.report.cost, undefined);
+  assert.ok(!renderReport(result.report).includes("API cost"));
+});
+
+test("report carries the run cost; HTML and CLI line show it", async () => {
+  const { withUsageLedger, recordMessageUsage, currentRunCost } = await import("../src/usage.js");
+  const { describeCost } = await import("../src/report/collect.js");
+  const cost = await withUsageLedger(async () => {
+    recordMessageUsage("planner", fakeMessage({ usage: ORANGE_BATON_PLANNER_USAGE }), "claude-opus-5-5");
+    recordMessageUsage("judge", fakeMessage({ usage: ORANGE_BATON_JUDGE_USAGE }), "claude-opus-5-5");
+    return currentRunCost();
+  });
+  assert.ok(cost);
+  const report = buildRunReport({
+    spec: "a vet clinic queue",
+    domain: reportDomain,
+    judge: mixedJudge(),
+    reviewer: failReviewer,
+    agentVersion: "9.9.9",
+    judgeModel: "claude-opus-5-5",
+    visualLevel: 2,
+    startedAt: 1000,
+    finishedAt: 4000,
+    cost,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(report)).cost, cost);
+  assert.equal(describeCost(cost), "≈ $0.2197 (2 API calls: planner $0.0273, judge $0.1924)");
+  const html = renderReport(report);
+  assert.ok(html.includes("<h2>API cost (estimate)</h2>"));
+  assert.ok(html.includes("cost: ≈ $0.22"), "header shows the rounded total");
+  // Total row: 2 calls, 2761+3456 = 6,217 in, 814+2866 = 3,680 out
+  assert.match(html, /<tr><td>Total<\/td><td>2<\/td><td>6,217<\/td><td>3,680<\/td><td>17,320<\/td><td>86,600<\/td><td>\$0\.2197<\/td><\/tr>/);
+});
