@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, join, relative, basename, sep } from "node:path";
+import { protectedSpans } from "./protected-references.js";
 
 export type Layer1Input = {
   projectDir: string;
@@ -76,11 +77,13 @@ export async function runLayer1(input: Layer1Input): Promise<Layer1Result> {
     const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]!;
+      const kept = protectedSpans(line);
       regex.lastIndex = 0;
       let m: RegExpExecArray | null;
       while ((m = regex.exec(line)) !== null) {
         const at = m.index;
         if (NON_DOMAIN_WORDS.some((w) => w.startsWith(m![0]) && line.startsWith(w, at))) continue;
+        if (kept.some(([start, end]) => at >= start && at < end)) continue;
         findings.push({
           token: m[0],
           file: relative(root, filePath),

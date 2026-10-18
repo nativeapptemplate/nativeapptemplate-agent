@@ -207,6 +207,37 @@ def rename_all(text)
   [result, count]
 end
 
+# References to the template's own GitHub repos and the agent's name are left
+# byte-for-byte as they are: renamed, they become dead links
+# (github.com/orangebaton/OrangeBaton-iOS) and a tool that doesn't exist
+# (orangebaton-agent). They are masked with placeholders before the
+# substitution and restored after it, so nothing inside them is renamed: not
+# the product name, nor a Shop / ItemTag token in a URL path. The product's
+# domains and emails (nativeapptemplate.com) are not protected; they become
+# the app's own. Mirrored in src/validation/protected-references.ts, which
+# keeps Layer 1 from flagging what is left here.
+PROTECTED_REFERENCE = %r{
+  github\.com[/:]nativeapptemplate(?![A-Za-z0-9_-])(?:/[^\s)\]"'<>`]*)?
+  |
+  (?<![A-Za-z0-9_-])nativeapptemplate-agent(?:-mcp)?(?![A-Za-z0-9_])
+}x
+MASK_OPEN  = "\u{E000}"
+MASK_CLOSE = "\u{E001}"
+MASK       = /#{MASK_OPEN}(\d+)#{MASK_CLOSE}/
+
+def rename_content(text)
+  # A file that already holds the sentinel can't be masked unambiguously.
+  return rename_all(text) if text.include?(MASK_OPEN)
+
+  spans = []
+  masked = text.gsub(PROTECTED_REFERENCE) do
+    spans << Regexp.last_match(0)
+    "#{MASK_OPEN}#{spans.length - 1}#{MASK_CLOSE}"
+  end
+  result, count = rename_all(masked)
+  [result.gsub(MASK) { spans[Regexp.last_match(1).to_i] }, count]
+end
+
 def skip?(path, root)
   # Compare against the path RELATIVE to the project root, not the absolute
   # path. Otherwise SKIP_DIR_SEGMENTS like "tmp" / "log" / "build" silently
@@ -245,7 +276,7 @@ Dir.glob("#{root}/**/*", File::FNM_DOTMATCH).each do |path|
     next
   end
 
-  content, local_subst = rename_all(original)
+  content, local_subst = rename_content(original)
   next if content == original
 
   File.write(path, content)
