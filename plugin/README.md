@@ -54,7 +54,8 @@ plugin/
 
 ## Requirements
 
-- Node.js 22+ and an `ANTHROPIC_API_KEY` with access to `claude-opus-5-5`.
+- Node.js 22+ and an Anthropic API key with access to `claude-opus-5-5`, as
+  `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` (preferred when set) or `ANTHROPIC_API_KEY`.
 - For the generated apps to validate, the substrate env vars
   (`NATIVEAPPTEMPLATE_API` / `_IOS` / `_ANDROID`) must point at the substrate
   repos, as documented in the main README. The plugin reads them from your
