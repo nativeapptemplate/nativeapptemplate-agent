@@ -15,7 +15,9 @@ import { runRepairLoop, REPAIR_ITERATION_CAP, type RepairLoopDeps } from "./repa
 import { runRepair } from "./agents/repair.js";
 import { runLayer1 } from "./validation/layer1.js";
 import { runLayer2, type Layer2Mode } from "./validation/layer2.js";
-import { applyTestResults, runTestSuite, testsEnabled } from "./validation/test-suites.js";
+import { applyTestResults, runTestSuite } from "./validation/test-suites.js";
+import { resolveTests, resolveVisualLevel, type VisualLevel } from "./run-options.js";
+import { assertVisualPreflight } from "./preflight.js";
 import type { RepairAttempt, RunReport } from "./report/model.js";
 import type { JudgeResult, Platform, PlatformDetail, RenamePair, StepResult, WorkerResult } from "./agents/types.js";
 import { applyJapaneseOverrides, applyRenameOverrides, describeKeptTarget, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
@@ -49,6 +51,16 @@ export type DispatchOptions = {
   // the iOS bundle ID and Android package (src/app-domain.ts). Invalid throws;
   // the CLI and MCP validate it first to report the error themselves.
   domain?: string;
+  // Visual level for this run (CLI --visual, MCP `visual`); wins over
+  // NATIVEAPPTEMPLATE_VISUAL. Read per call, never written to process.env.
+  visual?: VisualLevel;
+  // Run the generated apps' test suites (CLI --tests / --no-tests, MCP
+  // `tests`); wins over NATIVEAPPTEMPLATE_TESTS.
+  tests?: boolean;
+  // Checks run before anything is generated when the visual level is >= 1
+  // (src/preflight.ts); throws PreflightError. Test seam — defaults to the
+  // real simctl/adb/mise checks, skipped in judge-stub mode.
+  preflight?: (level: VisualLevel) => Promise<void>;
 };
 
 export type DispatchResult = JudgeResult & {
@@ -69,6 +81,14 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     const check = validateAppDomain(options.domain);
     if (!check.ok) throw new Error(check.error);
     appDomain = check.domain;
+  }
+  const visualLevel = resolveVisualLevel(options.visual);
+  const runTests = resolveTests(options.tests);
+  // Before the planner (the first Anthropic API call): a visual run without a
+  // booted simulator / emulator (or `mise` for level 2) would only fail later.
+  if (visualLevel >= 1) {
+    const preflight = options.preflight ?? (isStub("judge") ? undefined : (level: VisualLevel) => assertVisualPreflight(level));
+    if (preflight) await preflight(visualLevel);
   }
   let domain = await runPlanner(spec);
 
@@ -171,7 +191,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
   ]);
   const reviewer = await runReviewer({ domain, rails, ios, android });
 
-  // Visual judging is opt-in via NATIVEAPPTEMPLATE_VISUAL:
+  // Visual judging is opt-in via --visual / NATIVEAPPTEMPLATE_VISUAL:
   //   =1  Stage 1 only — post-launch home screen rubric (substrate-leak
   //       detection + render sanity). Adds 60-180s for build mode.
   //   =2  Stage 1 + Stage 2 — same plus a scripted-CRUD walk via
@@ -179,13 +199,11 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
   //       Layer 3 scoring on the post-toggle screen. Adds another
   //       60-120s and requires a sim/emulator booted with the app
   //       already launched after Stage 1. Off by default.
-  const visualLevelRaw = process.env['NATIVEAPPTEMPLATE_VISUAL'] ?? "";
-  const visualLevel = visualLevelRaw === "2" ? 2 : visualLevelRaw === "1" ? 1 : 0;
   // Visual levels force build mode so Stage 1 has an artifact to launch;
-  // so does NATIVEAPPTEMPLATE_TESTS=1 (the suites run in build mode, after
-  // Layer 2's build). Otherwise Layer 2 stays in the cheaper fast mode. The
-  // repair loop re-validates Layer 2 in the same mode the judge used.
-  const runTests = testsEnabled();
+  // so do the test suites (--tests / NATIVEAPPTEMPLATE_TESTS=1; they run in
+  // build mode, after Layer 2's build). Otherwise Layer 2 stays in the cheaper
+  // fast mode. The repair loop re-validates Layer 2 in the same mode the judge
+  // used.
   const layer2Mode: Layer2Mode = visualLevel >= 1 || runTests ? "build" : "fast";
   const visual: VisualJudgeConfig | undefined = visualLevel >= 1
     ? {
@@ -307,7 +325,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
   // the final code. Skipped in stub mode (no generated projects).
   if (runTests && judge.platforms && judge.platforms.length > 0 && !isStub("judge")) {
     const workers: Record<Platform, WorkerResult> = { rails, ios, android };
-    trace("dispatch", "test suites: NATIVEAPPTEMPLATE_TESTS=1 — bin/rails test, xcodebuild test, ./gradlew testDebugUnitTest");
+    trace("dispatch", "test suites: on — bin/rails test, xcodebuild test, ./gradlew testDebugUnitTest");
     const results: Partial<Record<Platform, StepResult>> = {};
     await Promise.all(judge.platforms.map(async (p) => {
       const result = await runTestSuite(p.platform, resolve(process.cwd(), workers[p.platform].outDir));
@@ -328,7 +346,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     reviewer,
     agentVersion: readPackageVersion(),
     judgeModel: JUDGE_MODEL,
-    visualLevel: visualLevel as 0 | 1 | 2,
+    visualLevel,
     testsEnabled: runTests,
     startedAt,
     finishedAt: Date.now(),

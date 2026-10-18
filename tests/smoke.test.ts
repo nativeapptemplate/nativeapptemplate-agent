@@ -2029,7 +2029,7 @@ test("applyTestResults fails the run on a failing suite, ignores skipped ones, a
   assert.match(html, /unknownTypeHasNoEntityType/);
   assert.match(html, /643 runs, 2108 assertions/);
   assert.match(html, /<div class="label">Test suites<\/div><div class="value">1\/2 pass<\/div>/);
-  assert.match(html, /NATIVEAPPTEMPLATE_VISUAL=2 NATIVEAPPTEMPLATE_TESTS=1 npx/);
+  assert.match(html, /npx nativeapptemplate-agent &quot;[^&]*&quot; --visual=2 --tests/);
 
   const off = renderReport(buildRunReport({
     spec: "a job hand-off tracker",
@@ -2941,6 +2941,186 @@ test("generate_app rejects an invalid domain with the same message, and passes a
   });
   await client.close();
   await server.close();
+});
+
+// #160: --visual / --tests per run. Precedence (issue): a flag wins over
+// NATIVEAPPTEMPLATE_VISUAL / _TESTS; without one, the env decides as before.
+test("parseArgs takes --visual (= and space forms) and --tests / --no-tests", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  assert.equal(parseArgs(["a queue", "--visual=2"]).visual, 2);
+  assert.equal(parseArgs(["a queue", "--visual", "1"]).visual, 1);
+  assert.equal(parseArgs(["a queue", "--visual=0"]).visual, 0);
+  const none = parseArgs(["a queue"]);
+  assert.equal(none.visual, undefined);
+  assert.equal(none.tests, undefined);
+  assert.equal(parseArgs(["a queue", "--tests"]).tests, true);
+  assert.equal(parseArgs(["a queue", "--no-tests"]).tests, false);
+  const both = parseArgs(["a", "queue", "--visual", "2", "--tests"]);
+  assert.equal(both.spec, "a queue");
+  assert.deepEqual(both.errors, []);
+});
+
+test("parseArgs rejects an invalid --visual value as an error (exit 2)", async () => {
+  const { parseArgs } = await import("../src/index.js");
+  for (const [args, shown] of [[["--visual=3"], '"3"'], [["--visual=high"], '"high"'], [["--visual="], '""'], [["--visual"], "nothing"]] as const) {
+    const parsed = parseArgs(["a queue", ...args]);
+    assert.equal(parsed.visual, undefined, args.join(" "));
+    assert.deepEqual(parsed.errors, [`--visual must be 0, 1, or 2 (got ${shown})`]);
+  }
+});
+
+test("resolveVisualLevel / resolveTests: a flag wins over the environment, which decides without one", async () => {
+  const { resolveVisualLevel, resolveTests } = await import("../src/run-options.js");
+  const env = { NATIVEAPPTEMPLATE_VISUAL: "2", NATIVEAPPTEMPLATE_TESTS: "1" };
+  assert.equal(resolveVisualLevel(0, env), 0);
+  assert.equal(resolveVisualLevel(undefined, env), 2);
+  assert.equal(resolveVisualLevel(undefined, {}), 0);
+  assert.equal(resolveVisualLevel(1, {}), 1);
+  assert.equal(resolveVisualLevel(undefined, { NATIVEAPPTEMPLATE_VISUAL: "3" }), 0); // unchanged env reading
+  assert.equal(resolveTests(false, env), false);
+  assert.equal(resolveTests(undefined, env), true);
+  assert.equal(resolveTests(undefined, {}), false);
+  assert.equal(resolveTests(true, {}), true);
+});
+
+test("dispatch: options.visual / options.tests override the environment and run the preflight first", async () => {
+  const saved = { v: process.env['NATIVEAPPTEMPLATE_VISUAL'], t: process.env['NATIVEAPPTEMPLATE_TESTS'] };
+  process.env['NATIVEAPPTEMPLATE_VISUAL'] = "2";
+  process.env['NATIVEAPPTEMPLATE_TESTS'] = "1";
+  try {
+    const levels: number[] = [];
+    const preflight = async (level: number) => { levels.push(level); };
+    const off = await dispatch("a walk-in clinic queue for vets", { visual: 0, tests: false, preflight });
+    assert.equal(off.report.meta.visualLevel, 0);
+    assert.equal(off.report.meta.tests, undefined);
+    assert.deepEqual(levels, []); // level 0: no preflight
+    const env = await dispatch("a walk-in clinic queue for vets", { preflight });
+    assert.equal(env.report.meta.visualLevel, 2);
+    assert.equal(env.report.meta.tests, true);
+    assert.deepEqual(levels, [2]);
+  } finally {
+    if (saved.v !== undefined) process.env['NATIVEAPPTEMPLATE_VISUAL'] = saved.v; else delete process.env['NATIVEAPPTEMPLATE_VISUAL'];
+    if (saved.t !== undefined) process.env['NATIVEAPPTEMPLATE_TESTS'] = saved.t; else delete process.env['NATIVEAPPTEMPLATE_TESTS'];
+  }
+});
+
+test("dispatch stops on a failed preflight instead of running the pipeline", async () => {
+  const { PreflightError } = await import("../src/preflight.js");
+  let planned = false;
+  await assert.rejects(
+    dispatch("a walk-in clinic queue for vets", {
+      visual: 1,
+      preflight: async (level) => { throw new PreflightError(level, ["no iOS simulator is booted."]); },
+      report: { enabled: false },
+    }).then(() => { planned = true; }),
+    (err: unknown) => err instanceof PreflightError && /visual level 1 needs[\s\S]*- no iOS simulator is booted\./.test(err.message),
+  );
+  assert.equal(planned, false);
+});
+
+test("preflightVisual reports each missing device / tool, with mocked simctl, adb and mise", async () => {
+  const { preflightVisual } = await import("../src/preflight.js");
+  const sim = { udid: "6136DF2C-DBC4-4B8D-B454-84B1A1E3ECA5", name: "iPhone 17 Pro" };
+  const deps = (o: { sims?: { udid: string; name: string }[]; serials?: string[]; mise?: boolean; adbError?: string }) => ({
+    bootedIosSimulators: async () => ({ ok: true as const, items: o.sims ?? [sim] }),
+    adbDevices: async () => (o.adbError ? { ok: false as const, error: o.adbError } : { ok: true as const, items: o.serials ?? ["emulator-5554"] }),
+    hasMise: async () => o.mise ?? true,
+  });
+  assert.deepEqual(await preflightVisual(0, deps({ sims: [], serials: [], mise: false }), {}), []);
+  assert.deepEqual(await preflightVisual(1, deps({ mise: false }), {}), []); // level 1 doesn't need mise
+  assert.deepEqual(await preflightVisual(2, deps({}), {}), []);
+
+  const none = await preflightVisual(2, deps({ sims: [], serials: [], mise: false }), {});
+  assert.equal(none.length, 3);
+  assert.match(none[0]!, /^no iOS simulator is booted/);
+  assert.match(none[1]!, /^no Android emulator or device is attached/);
+  assert.match(none[2]!, /^`mise` isn't on PATH/);
+
+  const adbBroken = await preflightVisual(1, deps({ adbError: "spawn adb ENOENT" }), {});
+  assert.deepEqual(adbBroken, ["couldn't list Android devices (adb devices): spawn adb ENOENT"]);
+
+  // Overrides: the variables Stage 1/2 target must name a live device.
+  assert.deepEqual(await preflightVisual(1, deps({}), { NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE: "iPhone 17 Pro", NATIVEAPPTEMPLATE_ADB_SERIAL: "emulator-5554" }), []);
+  assert.deepEqual(await preflightVisual(1, deps({}), { NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE: sim.udid }), []);
+  const wrong = await preflightVisual(1, deps({ serials: ["1C081FDF600CMG"] }), { NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE: "iPhone 16", NATIVEAPPTEMPLATE_ADB_SERIAL: "emulator-5554" });
+  assert.equal(wrong.length, 2);
+  assert.match(wrong[0]!, /NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE="iPhone 16" is not a booted simulator \(booted: iPhone 17 Pro \(6136DF2C/);
+  assert.match(wrong[1]!, /NATIVEAPPTEMPLATE_ADB_SERIAL="emulator-5554" is not attached \(adb devices: 1C081FDF600CMG\)/);
+});
+
+test("parseBootedIosSimulators keeps booted iOS simulators only", async () => {
+  const { parseBootedIosSimulators } = await import("../src/preflight.js");
+  const json = JSON.stringify({
+    devices: {
+      "com.apple.CoreSimulator.SimRuntime.watchOS-26-2": [{ udid: "W", name: "Apple Watch", state: "Booted" }],
+      "com.apple.CoreSimulator.SimRuntime.iOS-26-2": [
+        { udid: "A", name: "iPhone 17 Pro", state: "Booted" },
+        { udid: "B", name: "iPhone 17", state: "Shutdown" },
+      ],
+    },
+  });
+  assert.deepEqual(parseBootedIosSimulators(json), [{ udid: "A", name: "iPhone 17 Pro" }]);
+});
+
+test("generate_app passes visual / tests to that call only (no process.env leakage)", async () => {
+  const { createMcpServer } = await import("../src/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const seen: unknown[] = [];
+  const recordingDispatch: typeof dispatch = async (spec, options) => {
+    seen.push(options ?? {});
+    return dispatch(spec, { ...options, preflight: async () => {} });
+  };
+  const savedVisual = process.env['NATIVEAPPTEMPLATE_VISUAL'];
+  const savedTests = process.env['NATIVEAPPTEMPLATE_TESTS'];
+  delete process.env['NATIVEAPPTEMPLATE_VISUAL'];
+  delete process.env['NATIVEAPPTEMPLATE_TESTS'];
+  const server = createMcpServer({ dispatch: recordingDispatch });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    const first = await client.callTool({ name: "generate_app", arguments: { spec: "a queue", visual: 2, tests: true } });
+    const second = await client.callTool({ name: "generate_app", arguments: { spec: "a queue" } });
+    assert.deepEqual(seen, [{ visual: 2, tests: true }, {}]);
+    const meta = (r: typeof first) => (r.structuredContent as { report: { meta: { visualLevel: number; tests?: boolean } } }).report.meta;
+    assert.equal(meta(first).visualLevel, 2);
+    assert.equal(meta(first).tests, true);
+    assert.equal(meta(second).visualLevel, 0);
+    assert.equal(meta(second).tests, undefined);
+    assert.equal(process.env['NATIVEAPPTEMPLATE_VISUAL'], undefined);
+    assert.equal(process.env['NATIVEAPPTEMPLATE_TESTS'], undefined);
+
+    const bad = await client.callTool({ name: "generate_app", arguments: { spec: "a queue", visual: 3 } });
+    assert.equal(bad.isError, true);
+    assert.equal(seen.length, 2); // rejected by the schema, never dispatched
+  } finally {
+    await client.close();
+    await server.close();
+    if (savedVisual !== undefined) process.env['NATIVEAPPTEMPLATE_VISUAL'] = savedVisual;
+    if (savedTests !== undefined) process.env['NATIVEAPPTEMPLATE_TESTS'] = savedTests;
+  }
+});
+
+test("generate_app turns a failed preflight into an error result", async () => {
+  const { createMcpServer } = await import("../src/mcp.js");
+  const { PreflightError } = await import("../src/preflight.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const server = createMcpServer({
+    dispatch: async (spec, options) => dispatch(spec, { ...options, preflight: async (level) => { throw new PreflightError(level, ["no Android emulator or device is attached."]); } }),
+  });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    const res = await client.callTool({ name: "generate_app", arguments: { spec: "a queue", visual: 1 } });
+    assert.equal(res.isError, true);
+    assert.match(JSON.stringify(res.content), /visual level 1 needs[^"]*no Android emulator or device is attached\.[^"]*Nothing was generated/);
+  } finally {
+    await client.close();
+    await server.close();
+  }
 });
 
 test("renderReport shows the app's domain and identifiers", () => {

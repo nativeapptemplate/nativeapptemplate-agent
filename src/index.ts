@@ -10,11 +10,13 @@ import { readPackageVersion } from "./version.js";
 import { describeAppIdentifiers, validateAppDomain } from "./app-domain.js";
 import type { RenamePair } from "./agents/types.js";
 import type { RunReport } from "./report/model.js";
+import { parseVisualLevel, type VisualLevel } from "./run-options.js";
+import { PreflightError } from "./preflight.js";
 
 loadDotenvIfPresent();
 
 const USAGE =
-  'Usage: nativeapptemplate-agent "your spec here" [--project-name="Vet Clinic"] [--rename From=To]... [--rename-ja From=名前]... [--domain=orangebaton.app] [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]\n' +
+  'Usage: nativeapptemplate-agent "your spec here" [--project-name="Vet Clinic"] [--rename From=To]... [--rename-ja From=名前]... [--domain=orangebaton.app] [--visual=0|1|2] [--tests|--no-tests] [--no-report] [--report-format=html|json|both] [--report-embed=true|false] [--report-open] [--exit-zero]\n' +
   '       nativeapptemplate-agent --version | --help';
 
 export type ParsedArgs = {
@@ -28,6 +30,9 @@ export type ParsedArgs = {
   japaneseOverrides: RenamePair[];
   projectName?: string;
   domain?: string;
+  // Unset = the environment decides (NATIVEAPPTEMPLATE_VISUAL / _TESTS).
+  visual?: VisualLevel;
+  tests?: boolean;
 };
 
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -39,6 +44,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   let exitZero = false;
   let projectName: string | undefined;
   let domain: string | undefined;
+  let visual: VisualLevel | undefined;
+  let tests: boolean | undefined;
   let action: ParsedArgs["action"];
   const errors: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -77,18 +84,27 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       const check = validateAppDomain(raw ?? "");
       if (check.ok) domain = check.domain;
       else errors.push(check.error);
+    } else if (arg === "--visual" || arg.startsWith("--visual=")) {
+      const raw = arg === "--visual" ? argv[++i] : arg.slice("--visual=".length);
+      const level = parseVisualLevel(raw ?? "");
+      if (level !== undefined) visual = level;
+      else errors.push(`--visual must be 0, 1, or 2 (got ${raw === undefined ? "nothing" : `"${raw}"`})`);
+    } else if (arg === "--tests") {
+      tests = true;
+    } else if (arg === "--no-tests") {
+      tests = false;
     } else if (/^-./.test(arg)) {
       errors.push(`unknown option "${arg}"`);
     } else {
       specParts.push(arg);
     }
   }
-  return { ...(action !== undefined ? { action } : {}), errors, spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, japaneseOverrides, ...(projectName !== undefined ? { projectName } : {}), ...(domain !== undefined ? { domain } : {}) };
+  return { ...(action !== undefined ? { action } : {}), errors, spec: specParts.join(" ").trim(), report, open, exitZero, renameOverrides, japaneseOverrides, ...(projectName !== undefined ? { projectName } : {}), ...(domain !== undefined ? { domain } : {}), ...(visual !== undefined ? { visual } : {}), ...(tests !== undefined ? { tests } : {}) };
 }
 
 export function overallLine(report: RunReport): string {
   if (report.verdict === "partial") {
-    return "overall: PARTIAL (nothing failed, but Layer 3 did not judge the UI; set NATIVEAPPTEMPLATE_VISUAL=1 for a full run)";
+    return "overall: PARTIAL (nothing failed, but Layer 3 did not judge the UI; re-run with --visual=1 for a full run)";
   }
   return `overall: ${report.verdict === "pass" ? "PASS" : "FAIL"}`;
 }
@@ -119,13 +135,24 @@ export async function main(spec?: string): Promise<void> {
   console.log(`nativeapptemplate-agent: received spec: ${input}`);
   console.log('(tail tmp/trace/*.log in a tiled view via scripts/demo-tmux.sh)');
 
-  const result = await dispatch(input, {
-    report: parsed.report,
-    renameOverrides: parsed.renameOverrides,
-    japaneseOverrides: parsed.japaneseOverrides,
-    ...(parsed.projectName !== undefined ? { projectName: parsed.projectName } : {}),
-    ...(parsed.domain !== undefined ? { domain: parsed.domain } : {}),
-  });
+  let result: Awaited<ReturnType<typeof dispatch>>;
+  try {
+    result = await dispatch(input, {
+      report: parsed.report,
+      renameOverrides: parsed.renameOverrides,
+      japaneseOverrides: parsed.japaneseOverrides,
+      ...(parsed.projectName !== undefined ? { projectName: parsed.projectName } : {}),
+      ...(parsed.domain !== undefined ? { domain: parsed.domain } : {}),
+      ...(parsed.visual !== undefined ? { visual: parsed.visual } : {}),
+      ...(parsed.tests !== undefined ? { tests: parsed.tests } : {}),
+    });
+  } catch (err) {
+    if (!(err instanceof PreflightError)) throw err;
+    console.error(`error: ${err.message}`);
+    console.error("Nothing was generated and no API call was made.");
+    process.exitCode = 2;
+    return;
+  }
 
   if (parsed.projectName !== undefined) {
     const finalSlug = result.report.meta.slug;

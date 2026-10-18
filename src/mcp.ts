@@ -8,6 +8,7 @@ import { dispatch } from "./dispatch.js";
 import { loadDotenvIfPresent } from "./env.js";
 import { readPackageVersion } from "./version.js";
 import { validateAppDomain } from "./app-domain.js";
+import { PreflightError } from "./preflight.js";
 
 // MCP surface (MONETIZATION.md §"MCP as a distribution surface"):
 // thin wrapper around dispatch() so any MCP-compatible AI assistant
@@ -18,7 +19,13 @@ import { validateAppDomain } from "./app-domain.js";
 // an MCP client config (the -mcp bin lives in the nativeapptemplate-agent
 // package; `npx -y nativeapptemplate-agent-mcp` 404s).
 
-export function createMcpServer(): McpServer {
+export type McpServerDeps = {
+  // Test seam: capture what generate_app hands dispatch().
+  dispatch?: typeof dispatch;
+};
+
+export function createMcpServer(deps: McpServerDeps = {}): McpServer {
+  const run = deps.dispatch ?? dispatch;
   const server = new McpServer({
     name: "nativeapptemplate-agent",
     version: readPackageVersion(),
@@ -29,7 +36,7 @@ export function createMcpServer(): McpServer {
     {
       title: "Generate three-platform SaaS app",
       description:
-        "Generate a working three-platform SaaS app from a natural-language spec — Rails 8.1 API + SwiftUI iOS + Jetpack Compose Android. Validated end-to-end (rename completeness, build, vision judge). Output lands in ./out/<spec-slug>/{rails,ios,android}/. Each invocation runs ~3-5 minutes and consumes Anthropic API usage on the configured key, separate from the calling assistant's session.",
+        "Generate a working three-platform SaaS app from a natural-language spec — Rails 8.1 API + SwiftUI iOS + Jetpack Compose Android. Validated end-to-end (rename completeness, build, vision judge). Output lands in ./out/<spec-slug>/{rails,ios,android}/. Each invocation runs ~3-5 minutes at visual 0 (~7-9 minutes at visual 2) and consumes Anthropic API usage on the configured key, separate from the calling assistant's session.",
       inputSchema: {
         spec: z
           .string()
@@ -61,21 +68,43 @@ export function createMcpServer(): McpServer {
           .describe(
             'Optional domain of the app, e.g. "orangebaton.app" (at least two labels). Replaces the template\'s nativeapptemplate.com, subdomains and email addresses included, and its reverse sets the iOS bundle ID (app.orangebaton.OrangeBaton.ios) and the Android applicationId / package (app.orangebaton.orangebaton). A label that isn\'t a valid Java/Kotlin package segment is written differently there (hyphens become underscores, a keyword gets a trailing underscore). Default: <project name, flat lowercase>.com.',
           ),
+        visual: z
+          .union([z.literal(0), z.literal(1), z.literal(2)])
+          .optional()
+          .describe(
+            'Optional visual validation level for this call, overriding NATIVEAPPTEMPLATE_VISUAL. 0 (default): no UI judging, verdict PARTIAL at best. 1: full iOS/Android builds + the home screen judged by the vision model on a booted iOS simulator and Android emulator. 2: 1 + the Rails API booted under mise and a scripted sign-up/sign-in walk through both apps (~7-9 min). 1 and 2 fail fast, before generating, if no simulator is booted, no emulator is attached, or (2) mise is missing.',
+          ),
+        tests: z
+          .boolean()
+          .optional()
+          .describe(
+            "Optional: run the generated apps' own test suites (bin/rails test, xcodebuild test, ./gradlew testDebugUnitTest) for this call, overriding NATIVEAPPTEMPLATE_TESTS. Implies full builds; adds several minutes.",
+          ),
       },
     },
-    async ({ spec, renameOverrides, japaneseOverrides, projectName, domain }) => {
+    async ({ spec, renameOverrides, japaneseOverrides, projectName, domain, visual, tests }) => {
       let appDomain: string | undefined;
       if (domain !== undefined) {
         const check = validateAppDomain(domain);
         if (!check.ok) return { content: [{ type: "text", text: `error: ${check.error}` }], isError: true };
         appDomain = check.domain;
       }
-      const result = await dispatch(spec, {
-        ...(appDomain !== undefined ? { domain: appDomain } : {}),
-        ...(renameOverrides ? { renameOverrides } : {}),
-        ...(japaneseOverrides ? { japaneseOverrides } : {}),
-        ...(projectName !== undefined ? { projectName } : {}),
-      });
+      // Per call: visual / tests go to dispatch() as options, never into
+      // process.env, so they don't carry over to the server's next call.
+      let result: Awaited<ReturnType<typeof dispatch>>;
+      try {
+        result = await run(spec, {
+          ...(appDomain !== undefined ? { domain: appDomain } : {}),
+          ...(renameOverrides ? { renameOverrides } : {}),
+          ...(japaneseOverrides ? { japaneseOverrides } : {}),
+          ...(projectName !== undefined ? { projectName } : {}),
+          ...(visual !== undefined ? { visual } : {}),
+          ...(tests !== undefined ? { tests } : {}),
+        });
+      } catch (err) {
+        if (!(err instanceof PreflightError)) throw err;
+        return { content: [{ type: "text", text: `error: ${err.message}\nNothing was generated and no API call was made.` }], isError: true };
+      }
       return {
         content: [{ type: "text", text: result.summary }],
         structuredContent: {

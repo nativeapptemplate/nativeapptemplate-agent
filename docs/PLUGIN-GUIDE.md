@@ -113,7 +113,7 @@ server (`nativeapptemplate-agent`) and `mobile-mcp` for device automation.
 
 ### Additionally required for `walk-app` (and for visual validation)
 
-`walk-app` — and any `NATIVEAPPTEMPLATE_VISUAL=1/2` generate run — puts a real
+`walk-app` — and any visual (`--visual=1` / `2`) generate run — puts a real
 app on a real device, so it needs the mobile toolchains booted and ready:
 
 - **iOS:** Xcode 26.3+ with an **iPhone 17 Pro simulator on iOS 26.2+**, booted.
@@ -246,6 +246,8 @@ You can pass these inline; they're forwarded straight to the generator:
 | Project name | `--project-name="Vet Clinic"` | Fixes the display name **and** the output slug, independent of the domain rename. You can also say it in plain language — *"…for household pest detection. project name is Sentova."* — and the skill maps it to the same argument. |
 | Rename override | `--rename Shopkeeper=Vet` (repeatable) | Overrides one of the planner's chosen renames. `From` must be a substrate token (`Shop`, `Shopkeeper`, `ItemTag`). Only renames the planner *already planned* are overridable; an override that matches nothing is reported and dropped, and so is one into a reserved name (e.g. `Owner`, `Account`, `Subscription`, `Plan`, `Product`, `Store`, `Sentry`, `Event`, `Task`; full list in the README's "Reserved rename targets"). |
 | Domain | `--domain=vetclinic.app` | The app's web domain: replaces the template's `nativeapptemplate.com` (subdomains and emails included) and, reversed, sets the iOS bundle ID (`app.vetclinic.VetClinic.ios`) and Android applicationId / package (`app.vetclinic.vetclinic`). Say it in plain language too — *"domain is vetclinic.app"*. Default: `<project name>.com`. An invalid domain (one label, a URL, a label starting with a digit) stops the run with the reason. |
+| Visual level | `--visual=2` (`0`, `1` or `2`) | How much of the UI to validate for this run, overriding `NATIVEAPPTEMPLATE_VISUAL` without restarting Claude Code. `1` judges the home screens on the booted simulator + emulator; `2` adds the scripted sign-up / sign-in walk (~7–8 min instead of 2–3; needs both devices booted and `mise`). Say it in plain language too — *"visual 2"*, *"check the UI too"*, *"画面も確認して"*. The skill states time and prerequisites first; the run stops before generating anything (no API call) if a device or `mise` is missing. |
+| Test suites | `--tests` | Also run the generated apps' own test suites (`bin/rails test`, `xcodebuild test`, `./gradlew testDebugUnitTest`) for this run, overriding `NATIVEAPPTEMPLATE_TESTS`; adds minutes per platform. Plain language: *"run the tests"*, *"テストも回して"*. |
 | Japanese name | `--rename-ja Shop=動物病院` (repeatable) | Sets the Japanese noun that replaces the substrate's 店舗 (Shop) or アイテムタグ (ItemTag) in the Rails API's Japanese messages and tests. Overrides the planner's pick; an override for an unplanned rename is reported and dropped. |
 
 Example with both:
@@ -324,8 +326,8 @@ saying "it failed":
   self-repair loop by re-running with `NATIVEAPPTEMPLATE_REPAIR=on`.
 - **Reviewer parity fail** → lists `reviewer.diffs` (Rails ↔ iOS ↔ Android
   contract drift).
-- For semantic depth, it mentions `NATIVEAPPTEMPLATE_VISUAL=1` (build +
-  home-screen judge) or `=2` (full mobile-mcp walk-through).
+- For semantic depth, it offers a re-run with `--visual=1` (build +
+  home-screen judge) or `--visual=2` (full mobile-mcp walk-through).
 
 ### 6.6 After a successful generation
 
@@ -380,14 +382,13 @@ mobile-mcp drives an app that is already **installed and running** on a **booted
 device. Two routes:
 
 **Recommended — let the generator build + install it.** A
-`NATIVEAPPTEMPLATE_VISUAL=1` (home-screen build) or `=2` (full scripted walk)
+`--visual=1` (home-screen build) or `--visual=2` (full scripted walk)
 generate run does the full build → install → launch on both platforms and is the
 tested path. After it finishes, the app is installed and launched on the booted
 device, and you can pick up `walk-app` for interactive exploration:
 
 ```
-/nativeapptemplate-agent:generate-app a walk-in queue for a barbershop
-# re-run with NATIVEAPPTEMPLATE_VISUAL=1 set in the environment, then:
+/nativeapptemplate-agent:generate-app a walk-in queue for a barbershop --visual=1
 /nativeapptemplate-agent:walk-app barbershop-queue ios
 ```
 
@@ -520,6 +521,8 @@ The barbershop walk-in-queue spec is the canonical demo:
 | `--rename From=To` | planner's pick | Overrides one planner rename target (repeatable). `From` is a substrate token (`Shop`, `Shopkeeper`, `ItemTag`). An override matching no planned rename is reported and skipped, and so is one into a reserved name (README "Reserved rename targets"). |
 | `--rename-ja From=名前` | planner's pick | Override the Japanese name of a planned rename (repeatable). `From` is `Shop` or `ItemTag`; the Rails API's Japanese messages (`config/locales/ja.yml`) and their tests use it in place of the substrate's 店舗 / アイテムタグ. The planner picks one itself (`toJa` in the rename plan); without one the Japanese is left as is. Example: `--rename-ja Shop=動物病院` |
 | `--domain=orangebaton.app` | `<project name>.com` | The app's web domain (MCP `domain`). Replaces `nativeapptemplate.com` and, reversed, the `com.nativeapptemplate` prefix: iOS `app.orangebaton.OrangeBaton.ios`, Android `app.orangebaton.orangebaton` (applicationId, namespace, packages, source directories). Hyphens become `_` and keywords get a trailing `_` in the Android package only. See the README's naming flags. |
+| `--visual=0\|1\|2` | `NATIVEAPPTEMPLATE_VISUAL`, else `0` | Visual validation level for this run (MCP `visual`); wins over the variable. Levels 1 and 2 check for a booted iOS simulator and an attached Android emulator/device (and, for 2, `mise`) before generating, and stop with what's missing (exit 2). An invalid value exits 2. See the README's validation flags. |
+| `--tests` / `--no-tests` | `NATIVEAPPTEMPLATE_TESTS`, else off | Run (or skip) the generated apps' test suites for this run (MCP `tests`); wins over the variable. Implies full builds. |
 | `--report-format=html\|json\|both` | `both` | Which report artifact(s) to write. The skill always uses `both` so `report.json` exists to parse. |
 | `--report-embed=true\|false` | `true` | Embed screenshots as `data:` URIs (one portable HTML file) vs. copy to `report-assets/`. |
 | `--report-open` | — | Open the HTML in your browser when the run finishes (macOS). |
@@ -533,7 +536,7 @@ The barbershop walk-in-queue spec is the canonical demo:
 | `ANTHROPIC_API_KEY` | Your Anthropic key (needs `claude-opus-5-5`). The only sensitive secret the agent requires. |
 | `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` | Optional dedicated workspace key; preferred over `ANTHROPIC_API_KEY` when set, so a runaway loop hits the workspace cap instead of your tier limit. |
 | `NATIVEAPPTEMPLATE_API` / `_IOS` / `_ANDROID` | Paths to the three substrate repos. Required — there is no default. Point at the free repos for an OSS-reproducible run, or at the paid repos if you have them. |
-| `NATIVEAPPTEMPLATE_VISUAL=1` | Stage-1 visual judging: Layer 2 runs in **build mode** (full `xcodebuild build` + `./gradlew assembleDebug`), installs on the booted sim/emulator, captures the home screen, and judges it with Opus 5.5 vision. Requires a sim/emulator booted per platform. Adds ~60–180s per platform. |
+| `NATIVEAPPTEMPLATE_VISUAL=1` | Default visual level when `--visual` isn't given. Stage-1 visual judging: Layer 2 runs in **build mode** (full `xcodebuild build` + `./gradlew assembleDebug`), installs on the booted sim/emulator, captures the home screen, and judges it with Opus 5.5 vision. Requires a sim/emulator booted per platform. Adds ~60–180s per platform. |
 | `NATIVEAPPTEMPLATE_VISUAL=2` | Implies `=1` and additionally runs **Stage 2**: boots the generated Rails app, drives a scripted CRUD walk-through via `mobile-mcp` (Sign Up → email-confirm → Sign In → drill into seeded sample), then judges the post-walk screenshot. Requires both sims/emulators booted + the substrate's `mise` toolchain. Adds 2–4 min/platform. |
 | `NATIVEAPPTEMPLATE_REPAIR` | Opts into the bounded self-repair loop. `on` (or a positive integer N, hard-capped at 5). On a code-repairable failure (Layer 1 leftover tokens or Layer 2 build errors) the agent runs a repair pass scoped to the failing project and re-validates, up to the cap. Layer 3 + reviewer misses are surfaced, not auto-repaired. Off by default. |
 | `NATIVEAPPTEMPLATE_BRIDGE=off` | Skip writing `<PRODUCT>_API_*` into `~/.gradle/gradle.properties` (process.env injection still runs for child-spawn paths). |
@@ -579,7 +582,7 @@ no device. Boot it per [§7.3](#73-device-readiness).
 
 **`walk-app`: "app not installed."**
 The build/install step didn't run or failed. Easiest fix is the recommended
-`NATIVEAPPTEMPLATE_VISUAL=1` route ([§7.2](#72-get-the-app-onto-a-device-the-heavy-prerequisite)),
+`--visual=1` route ([§7.2](#72-get-the-app-onto-a-device-the-heavy-prerequisite)),
 which builds + installs + launches for you.
 
 **`walk-app`: app launches but data screens are blank / sign-in fails / lists empty.**
@@ -595,7 +598,7 @@ Offer a repair re-run of `generate-app` with `NATIVEAPPTEMPLATE_REPAIR=on`.
 
 **How long does a run take / how much does it cost?**
 A plain `generate-app` run is ~3–5 minutes of real Anthropic API calls;
-`NATIVEAPPTEMPLATE_VISUAL=1/2` adds device build + walk time. Set a workspace
+`--visual=1` adds device builds, `--visual=2` the walk too (~7–8 min in all). Set a workspace
 spend cap as a backstop.
 
 **Where does output go?**

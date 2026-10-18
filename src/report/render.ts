@@ -43,7 +43,7 @@ function head(report: RunReport): string {
   const badge = report.verdict === "pass"
     ? `<span class="badge pass">✓ Pass</span>`
     : report.verdict === "partial"
-      ? `<span class="badge partial" title="Nothing failed, but Layer 3 (UI vision judge) did not run — set NATIVEAPPTEMPLATE_VISUAL=1">◐ Partial</span>`
+      ? `<span class="badge partial" title="Nothing failed, but Layer 3 (UI vision judge) did not run — re-run with --visual=1">◐ Partial</span>`
       : `<span class="badge fail">✗ Fail</span>`;
   const visual = m.visualLevel === 0 ? "off" : `level ${m.visualLevel}`;
   return `<header class="report-head">
@@ -261,9 +261,9 @@ function appIdentifiersCard(report: RunReport): string {
 }
 
 function footer(report: RunReport): string {
-  const visualPrefix = report.meta.visualLevel > 0 ? `NATIVEAPPTEMPLATE_VISUAL=${report.meta.visualLevel} ` : "";
-  const testsPrefix = report.meta.tests ? "NATIVEAPPTEMPLATE_TESTS=1 " : "";
-  const cmd = `${visualPrefix}${testsPrefix}npx nativeapptemplate-agent ${JSON.stringify(report.meta.spec)}`;
+  const visualFlag = report.meta.visualLevel > 0 ? ` --visual=${report.meta.visualLevel}` : "";
+  const testsFlag = report.meta.tests ? " --tests" : "";
+  const cmd = `npx nativeapptemplate-agent ${JSON.stringify(report.meta.spec)}${visualFlag}${testsFlag}`;
   return `<footer>
 <p>Reproduce this run:</p>
 <pre>${esc(cmd)}</pre>
