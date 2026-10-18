@@ -1071,23 +1071,32 @@ test("env-bridge: syncGradleProperties sentinel block round-trips and replaces i
     });
     assert.equal(r2.mode, "noop");
 
-    // Third write with different slug's keys — replaces the block,
-    // doesn't append a second block.
+    // Third write with a different product's keys — joins the same block
+    // and keeps the first product's lines (#148).
     const r3 = await syncGradleProperties({
+      product: "CLINICQUEUE",
       values: { CLINICQUEUE_API_DOMAIN: "10.0.0.5" },
     });
     assert.equal(r3.mode, "wrote");
     content = readFileSync(gradlePath, "utf8");
     assert.equal((content.match(/# BEGIN nativeapptemplate-agent/g) ?? []).length, 1);
     assert.match(content, /^CLINICQUEUE_API_DOMAIN=10\.0\.0\.5$/m);
-    assert.doesNotMatch(content, /VETCLINICQUEUE_API_/);
+    assert.match(content, /^VETCLINICQUEUE_API_DOMAIN=192\.168\.1\.11$/m);
 
-    // Empty bridge — removes sentinel block, leaves rest untouched.
-    const r4 = await syncGradleProperties({ values: {} });
+    // Empty bridge for one product — drops only that product's lines.
+    const r4 = await syncGradleProperties({ product: "CLINICQUEUE", values: {} });
     assert.equal(r4.removedStale, true);
     content = readFileSync(gradlePath, "utf8");
+    assert.doesNotMatch(content, /CLINICQUEUE_API_DOMAIN=10/);
+    assert.match(content, /^VETCLINICQUEUE_API_DOMAIN=192\.168\.1\.11$/m);
+
+    // ...and once the last product's lines go, the block goes with them,
+    // leaving the rest untouched.
+    const r4b = await syncGradleProperties({ product: "VETCLINICQUEUE", values: {} });
+    assert.equal(r4b.removedStale, true);
+    content = readFileSync(gradlePath, "utf8");
     assert.doesNotMatch(content, /BEGIN nativeapptemplate-agent/);
-    assert.match(content, /^NATIVEAPPTEMPLATE_API_DOMAIN=api\.nativeapptemplate\.com$/m);
+    assert.equal(content, "# pre-existing content\nNATIVEAPPTEMPLATE_API_DOMAIN=api.nativeapptemplate.com\n");
 
     // Smoke: existsSync still true.
     assert.equal(existsSync(gradlePath), true);
@@ -1115,6 +1124,65 @@ test("env-bridge: syncGradleProperties sentinel block round-trips and replaces i
   } finally {
     if (realHome !== undefined) process.env['HOME'] = realHome;
     else delete process.env['HOME'];
+  }
+});
+
+test("env-bridge: a second product's run keeps the first product's lines in the managed block (#148)", async () => {
+  // Repro from #148: generate orange-baton, then clinic-queue — the
+  // orange-baton Debug build must still find ORANGEBATON_API_* in
+  // ~/.gradle/gradle.properties. HOME points at a temp dir so the real
+  // file is never touched.
+  const fakeHome = mkdtempSync(join(tmpdir(), "env-bridge-multi-"));
+  mkdirSync(join(fakeHome, ".gradle"), { recursive: true });
+  const gradlePath = join(fakeHome, ".gradle", "gradle.properties");
+  writeFileSync(gradlePath, "org.gradle.jvmargs=-Xmx4g\n");
+  const fakeSubstrate = mkdtempSync(join(tmpdir(), "substrate-multi-"));
+  writeFileSync(join(fakeSubstrate, ".env"), "HOST=192.168.1.11\nPORT=3000\n");
+  const saved = { HOME: process.env['HOME'], API: process.env['NATIVEAPPTEMPLATE_API'], SCHEME: process.env['NATIVEAPPTEMPLATE_API_SCHEME'] };
+  process.env['HOME'] = fakeHome;
+  process.env['NATIVEAPPTEMPLATE_API'] = fakeSubstrate;
+  process.env['NATIVEAPPTEMPLATE_API_SCHEME'] = "http";
+  try {
+    const { buildBridgeValues, syncGradleProperties } = await import("../src/env-bridge.js");
+    const domainFor = (slug: string): DomainSpec => ({ slug, displayName: slug, entities: [], renamePlan: [], jsonApiContract: {} });
+
+    await syncGradleProperties(await buildBridgeValues(domainFor("orange-baton")));
+    writeFileSync(join(fakeSubstrate, ".env"), "HOST=10.0.0.5\nPORT=3001\n");
+    await syncGradleProperties(await buildBridgeValues(domainFor("clinic-queue")));
+
+    // Keys sorted within the block (formatSentinelBlock), one block only.
+    assert.equal(
+      readFileSync(gradlePath, "utf8"),
+      [
+        "org.gradle.jvmargs=-Xmx4g",
+        "# BEGIN nativeapptemplate-agent (mirrored API config — do not edit by hand)",
+        "CLINICQUEUE_API_DOMAIN=10.0.0.5",
+        "CLINICQUEUE_API_PORT=3001",
+        "CLINICQUEUE_API_SCHEME=http",
+        "ORANGEBATON_API_DOMAIN=192.168.1.11",
+        "ORANGEBATON_API_PORT=3000",
+        "ORANGEBATON_API_SCHEME=http",
+        "# END nativeapptemplate-agent",
+        "",
+      ].join("\n"),
+    );
+
+    // Re-running orange-baton replaces only its own lines; a key its run no
+    // longer mirrors (SCHEME unset) goes away instead of lingering.
+    delete process.env['NATIVEAPPTEMPLATE_API_SCHEME'];
+    writeFileSync(join(fakeSubstrate, ".env"), "HOST=192.168.1.20\nPORT=3000\n");
+    const r = await syncGradleProperties(await buildBridgeValues(domainFor("orange-baton")));
+    assert.equal(r.mode, "wrote");
+    const content = readFileSync(gradlePath, "utf8");
+    assert.match(content, /^ORANGEBATON_API_DOMAIN=192\.168\.1\.20$/m);
+    assert.doesNotMatch(content, /ORANGEBATON_API_SCHEME/);
+    assert.match(content, /^CLINICQUEUE_API_SCHEME=http$/m);
+    assert.equal((content.match(/^ORANGEBATON_API_DOMAIN=/gm) ?? []).length, 1);
+  } finally {
+    for (const [k, v] of [["HOME", saved.HOME], ["NATIVEAPPTEMPLATE_API", saved.API], ["NATIVEAPPTEMPLATE_API_SCHEME", saved.SCHEME]] as const) {
+      if (v !== undefined) process.env[k] = v;
+      else delete process.env[k];
+    }
   }
 });
 
