@@ -14,6 +14,12 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { chmodSync } from "node:fs";
 
+// Stage 2 device overrides exported in the developer's shell would steer
+// selectDevice away from the fake mobile-mcp devices; tests that need an
+// override set it themselves.
+delete process.env['NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE'];
+delete process.env['NATIVEAPPTEMPLATE_MOBILE_ANDROID_DEVICE'];
+
 // rename.rb is a Ruby subprocess; CI runs the suite in stub mode with no
 // Ruby step, so guard the one test that shells out to it.
 const RUBY_AVAILABLE = (() => {
