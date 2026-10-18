@@ -4,6 +4,7 @@ import type { DomainSpec, JudgeResult, ReviewerResult } from "../agents/types.js
 import { renderReport } from "./render.js";
 import type { AssetMap, RepairAttempt, RunAppDomain, RunReport, Verdict } from "./model.js";
 import { appIdentifiers } from "../app-domain.js";
+import type { RunCost } from "../usage.js";
 
 export type ReportFormat = "html" | "json" | "both";
 
@@ -19,6 +20,7 @@ export type BuildRunReportInput = {
   startedAt: number;
   finishedAt: number;
   repairAttempts?: readonly RepairAttempt[];
+  cost?: RunCost;
   // Store identifiers read back from the generated projects (WorkerResult.appId).
   appIds?: { ios?: string; android?: string };
 };
@@ -64,7 +66,18 @@ export function buildRunReport(input: BuildRunReportInput): RunReport {
     ...(input.repairAttempts && input.repairAttempts.length > 0
       ? { repairAttempts: input.repairAttempts }
       : {}),
+    ...(input.cost ? { cost: input.cost } : {}),
   };
+}
+
+// "≈ $0.2197 (25 API calls: planner $0.0273, judge $0.1924)" — the CLI's
+// closing summary and the dispatch trace.
+export function describeCost(cost: RunCost): string {
+  const parts = (["planner", "judge", "repair"] as const)
+    .filter((agent) => cost.byAgent[agent] !== undefined)
+    .map((agent) => `${agent} $${cost.byAgent[agent]!.usd.toFixed(4)}`);
+  const calls = `${cost.calls} API call${cost.calls === 1 ? "" : "s"}`;
+  return `≈ $${cost.estimatedUsd.toFixed(4)} (${calls}: ${parts.join(", ")})`;
 }
 
 function runAppDomain(domain: DomainSpec, appIds: BuildRunReportInput["appIds"]): RunAppDomain {

@@ -295,7 +295,8 @@ The skill reads `out/<slug>/report.json` and narrates it. Its shape:
     "renamePlan": [ { "from": "Shop", "to": "…" }, … ],
     "entities":   [ { "name", "replaces", "fields", "states"? }, … ]
   },
-  "repairAttempts": [ /* present only if the self-repair loop ran */ ]
+  "repairAttempts": [ /* present only if the self-repair loop ran */ ],
+  "cost": { "estimatedUsd", "calls", "byAgent": { "planner", "judge", "repair"? }, … } // this run's API spend, estimated
 }
 ```
 
@@ -598,8 +599,10 @@ Offer a repair re-run of `generate-app` with `NATIVEAPPTEMPLATE_REPAIR=on`.
 
 **How long does a run take / how much does it cost?**
 A plain `generate-app` run is ~3–5 minutes of real Anthropic API calls;
-`--visual=1` adds device builds, `--visual=2` the walk too (~7–8 min in all). Set a workspace
-spend cap as a backstop.
+`--visual=1` adds device builds, `--visual=2` the walk too (~7–8 min in all). API cost
+is about $0.02 / $0.13 / $0.22 for visual 0 / 1 / 2; each run's own estimate is in
+`report.json` (`cost`), the HTML report and the CLI's closing summary, and the
+skill quotes it. Set a workspace spend cap as a backstop.
 
 **Where does output go?**
 `./out/<slug>/{rails,ios,android}/` in the current working directory, plus

@@ -4,6 +4,7 @@ import { isStub } from "../stub.js";
 import { trace } from "../trace.js";
 import { FALLBACK_BETA, FALLBACKS, JUDGE_EFFORT, JUDGE_MODEL } from "../models.js";
 import { readStructuredJson, usageLine } from "../structured-output.js";
+import { recordMessageUsage } from "../usage.js";
 
 export type Layer3Criterion = {
   id: string;
@@ -159,6 +160,7 @@ async function judgeOne(
 ): Promise<{ pass: boolean; rationale: string }> {
   const response = await client.beta.messages.create(buildJudgeRequest(model, imageBase64, spec, criterion));
   trace("judge", `layer3 ${criterion.id}: ${usageLine(response, model)}`);
+  recordMessageUsage("judge", response, model);
   return parseVerdict(response);
 }
 

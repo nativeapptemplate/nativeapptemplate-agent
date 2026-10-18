@@ -85,6 +85,7 @@ Screenshots originate in `tmp/screenshots/{ios-home,android-home}.png` (Stage 1)
    - **Stage 2** (when `VISUAL=2`): scenario name, `stepsPassed/stepCount`, a screenshot filmstrip (`screenshots[]`), and the post-toggle Layer 3 scores (`layer3Scores`).
    - `error` rendered prominently when a platform's visual phase failed.
 7. **Reviewer — Contract parity.** `pass`/`fail` + `diffs[]` in a collapsed `<details>` when non-empty.
+7a. **API cost (estimate)** (when present: `cost`, i.e. the run made an API call). Per agent (planner / judge / repair): calls, input / output / cache-write / cache-read tokens, USD, plus a total row; the header shows the total rounded to cents. Messages API calls are priced at the list rates in `src/models.ts` (`OPUS_PRICE_PER_MTOK`); repair uses the Agent SDK's own `total_cost_usd`, counted as one call per repair attempt. Same rules as `scripts/cost.sh`, but collected per run in memory (`src/usage.ts`), so it never mixes runs the way the appended `tmp/trace/` logs do.
 8. **Domain spec appendix.** Rename plan table (`from → to`), entities and fields, so the reader sees *what was generated and why the tokens changed*.
 9. **Footer / reproduce.** The exact command to reproduce (`npx nativeapptemplate-agent "<spec>"` + the `NATIVEAPPTEMPLATE_VISUAL` value), and a pointer to `tmp/trace/*.log` for raw logs.
 
@@ -128,6 +129,17 @@ export type RunReport = {
   };
 
   repairAttempts?: readonly RepairAttempt[]; // future; render if present
+
+  cost?: {                      // absent when the run made no API call (stub mode)
+    currency: "USD";
+    estimatedUsd: number;       // 4 decimals
+    calls: number;
+    byAgent: Partial<Record<"planner" | "judge" | "repair", {
+      calls: number; inputTokens: number; outputTokens: number;
+      cacheWriteTokens: number; cacheReadTokens: number; usd: number }>>;
+    fallbackCalls?: number;     // answered by a refusal-fallback model, priced at the rates below
+    pricing: { model: string; perMTok: { input; output; cacheWrite5m; cacheRead } };
+  };
 };
 
 export type PlatformDetail = {
@@ -181,6 +193,7 @@ Reuse the social-preview palette for brand coherence (`docs/social-preview.svg`)
 
 - Always write `out/<slug>/report.json` + `validation-report.html`.
 - Print the report path as a `file://` URL (clickable in terminals) alongside the existing summary lines.
+- When the run made API calls, print `cost: ≈ $0.2197 (25 API calls: planner $0.0273, judge $0.1924)` after the `overall:` line.
 
 Flags:
 

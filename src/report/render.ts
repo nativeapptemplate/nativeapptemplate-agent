@@ -18,6 +18,7 @@ export function renderReport(report: RunReport, assets: AssetMap = {}): string {
     layer3Section(report, assets),
     reviewerSection(report),
     repairSection(report),
+    costSection(report),
     domainSection(report),
     footer(report),
   ].join("\n");
@@ -55,7 +56,7 @@ ${badge}
 <span>agent v${esc(m.agentVersion)}</span>
 <span>judge: ${esc(m.judgeModel)}</span>
 <span>visual: ${visual}</span>${m.tests ? "\n<span>tests: on</span>" : ""}
-<span>${fmtDuration(m.durationMs)}</span>
+<span>${fmtDuration(m.durationMs)}</span>${report.cost ? `\n<span>cost: ≈ $${report.cost.estimatedUsd.toFixed(2)}</span>` : ""}
 <span>${esc(m.finishedAt)}</span>
 </div>
 </header>`;
@@ -225,6 +226,41 @@ function repairSection(report: RunReport): string {
 <thead><tr><th>#</th><th>Failing layer</th><th>Action</th><th>Resolved</th></tr></thead>
 <tbody>${rows}</tbody>
 </table></section>`;
+}
+
+function costSection(report: RunReport): string {
+  const cost = report.cost;
+  if (!cost) return "";
+  const num = (n: number): string => n.toLocaleString("en-US");
+  const row = (label: string, a: { calls: number; inputTokens: number; outputTokens: number; cacheWriteTokens: number; cacheReadTokens: number }, usd: number): string =>
+    `<tr><td>${esc(label)}</td><td>${a.calls}</td><td>${num(a.inputTokens)}</td><td>${num(a.outputTokens)}</td><td>${num(a.cacheWriteTokens)}</td><td>${num(a.cacheReadTokens)}</td><td>$${usd.toFixed(4)}</td></tr>`;
+  const agents = (["planner", "judge", "repair"] as const).filter((agent) => cost.byAgent[agent] !== undefined);
+  const total = agents.reduce(
+    (t, agent) => {
+      const a = cost.byAgent[agent]!;
+      return {
+        calls: t.calls + a.calls,
+        inputTokens: t.inputTokens + a.inputTokens,
+        outputTokens: t.outputTokens + a.outputTokens,
+        cacheWriteTokens: t.cacheWriteTokens + a.cacheWriteTokens,
+        cacheReadTokens: t.cacheReadTokens + a.cacheReadTokens,
+      };
+    },
+    { calls: 0, inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 },
+  );
+  const rows = agents.map((agent) => row(agent, cost.byAgent[agent]!, cost.byAgent[agent]!.usd)).join("") + row("Total", total, cost.estimatedUsd);
+  const r = cost.pricing.perMTok;
+  const notes = [
+    `Estimate at ${esc(cost.pricing.model)} list prices per million tokens: $${r.input} in / $${r.output} out / $${r.cacheWrite5m} cache-write (5 min) / $${r.cacheRead} cache-read.`,
+    ...(cost.byAgent.repair ? ["Repair is the Agent SDK's own total, one row per repair attempt."] : []),
+    ...(cost.fallbackCalls ? [`${cost.fallbackCalls} call(s) answered by a refusal-fallback model, priced at the rates above.`] : []),
+  ];
+  return `<section><h2>API cost (estimate)</h2>
+<table class="findings">
+<thead><tr><th>Agent</th><th>Calls</th><th>Input</th><th>Output</th><th>Cache write</th><th>Cache read</th><th>USD</th></tr></thead>
+<tbody>${rows}</tbody>
+</table>
+${notes.map((n) => `<p class="kv">${n}</p>`).join("\n")}</section>`;
 }
 
 function domainSection(report: RunReport): string {

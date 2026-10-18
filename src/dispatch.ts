@@ -9,7 +9,7 @@ import { applyBridgeToProcessEnv, buildBridgeValues, syncGradleProperties } from
 import { startRails, type RailsHandle } from "./rails-lifecycle.js";
 import { isStub } from "./stub.js";
 import { trace } from "./trace.js";
-import { buildRunReport, writeReport, type ReportFormat, type ReportPaths } from "./report/collect.js";
+import { buildRunReport, describeCost, writeReport, type ReportFormat, type ReportPaths } from "./report/collect.js";
 import { readPackageVersion } from "./version.js";
 import { runRepairLoop, REPAIR_ITERATION_CAP, type RepairLoopDeps } from "./repair-loop.js";
 import { runRepair } from "./agents/repair.js";
@@ -23,6 +23,7 @@ import type { JudgeResult, Platform, PlatformDetail, RenamePair, StepResult, Wor
 import { applyJapaneseOverrides, applyRenameOverrides, describeKeptTarget, syncEntityNames, type OverrideOutcome } from "./rename-overrides.js";
 import { reservedTargets, type ReservedTarget } from "./reserved-words.js";
 import { JUDGE_MODEL } from "./models.js";
+import { currentRunCost, withUsageLedger } from "./usage.js";
 import { appIdentifiers, describeAppIdentifiers, validateAppDomain, type AppIdentifiers } from "./app-domain.js";
 import { isValidSlug, slugToPascal, projectNameToSlug, projectNameToDisplayName } from "./slug.js";
 
@@ -74,7 +75,12 @@ export type DispatchResult = JudgeResult & {
   appIdentifiers: AppIdentifiers;
 };
 
-export async function dispatch(spec: string, options: DispatchOptions = {}): Promise<DispatchResult> {
+// Each run collects its own API usage for report.json's cost block.
+export function dispatch(spec: string, options: DispatchOptions = {}): Promise<DispatchResult> {
+  return withUsageLedger(() => runDispatch(spec, options));
+}
+
+async function runDispatch(spec: string, options: DispatchOptions): Promise<DispatchResult> {
   const startedAt = Date.now();
   let appDomain: string | undefined;
   if (options.domain !== undefined) {
@@ -339,6 +345,8 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     judge = applyTestResults(judge, results);
   }
 
+  const cost = currentRunCost();
+  if (cost) trace("dispatch", `cost: ${describeCost(cost)}`);
   const report = buildRunReport({
     spec,
     domain,
@@ -351,6 +359,7 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
     startedAt,
     finishedAt: Date.now(),
     repairAttempts,
+    ...(cost ? { cost } : {}),
     appIds: {
       ...(ios.appId ? { ios: ios.appId } : {}),
       ...(android.appId ? { android: android.appId } : {}),
