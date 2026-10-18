@@ -7,6 +7,7 @@ import { NO_SUBSTRATE_LEAK_QUESTION } from "./visual-judge.js";
 import { createMobileClient, type MobileClient, type ScreenElement } from "../mobile.js";
 import type { Stage2PlatformReport } from "../agents/types.js";
 import { trace } from "../trace.js";
+import { APP_UNDER_TEST_LOCALE } from "./launch.js";
 
 // Layer 2 Stage 2 visual judge: pairs the scripted-CRUD scenario runner
 // with the Layer 3 vision judge so the agent can score post-CRUD
@@ -173,6 +174,8 @@ async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
     });
 
     const baseReport = toBaseReport(scenario);
+    const localized = await nonEnglishUiError(client, args.platform, scenario);
+    if (localized !== undefined) baseReport.error = localized;
 
     // Run Layer 3 on the LAST captured screenshot even if a later
     // scenario step failed — a partial walk that reached the domain
@@ -201,6 +204,45 @@ async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
   }
 }
 
+// A text step that fails on a screen showing non-Latin text (e.g. "Orange
+// Baton へようこそ") is the device language, not the app: say so instead of
+// leaving an opaque wait_for_text error (#159). Only scripts other than Latin
+// are detected — a French or German UI still reads as a plain step failure.
+export async function nonEnglishUiError(
+  client: MobileClient,
+  platform: "ios" | "android",
+  scenario: Stage2Result,
+): Promise<string | undefined> {
+  const failed = scenario.steps.find((s) => !s.ok);
+  if (!failed || (failed.step.kind !== "wait_for_text" && failed.step.kind !== "tap_text")) return undefined;
+  let elements: readonly ScreenElement[];
+  try {
+    elements = await client.listElements();
+  } catch {
+    return undefined;
+  }
+  const sample = nonLatinText(elements);
+  if (sample === undefined) return undefined;
+  const device = platform === "ios" ? "simulator" : "emulator";
+  const how = platform === "ios"
+    ? "-AppleLanguages (en)"
+    : `per-app locale ${APP_UNDER_TEST_LOCALE}, which needs Android 13+`;
+  return `environment: the app's UI is not in English (the screen shows "${sample}") although the agent launched it in English (${how}); the Stage 2 scenario walks English text. Set the ${device}'s language to English and re-run. (${failed.error ?? "step failed"})`;
+}
+
+const NON_LATIN_LETTER = /(?=\p{L})[^\p{Script=Latin}]/u;
+const TEXT_KEYS = ["label", "text", "name", "value", "title"] as const;
+
+export function nonLatinText(elements: readonly ScreenElement[]): string | undefined {
+  for (const el of elements) {
+    for (const key of TEXT_KEYS) {
+      const v = el[key];
+      if (typeof v === "string" && NON_LATIN_LETTER.test(v)) return v.length > 60 ? `${v.slice(0, 57)}...` : v;
+    }
+  }
+  return undefined;
+}
+
 // Launches the app and checks it actually came to front. Observed on iOS:
 // Stage 2 step 0 still saw the springboard (17 "Icon" elements) after the
 // launch, with nothing recorded about why. So: retry once if the launch
@@ -209,7 +251,9 @@ async function runOnePlatform(args: RunOneArgs): Promise<Stage2PlatformReport> {
 async function foregroundApp(client: MobileClient, platform: "ios" | "android", appId: string): Promise<void> {
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      await client.launchApp(appId);
+      // English, like Stage 1's launch — this also covers the relaunch retry
+      // when the first launch left the springboard up.
+      await client.launchApp(appId, APP_UNDER_TEST_LOCALE);
     } catch (err) {
       trace("judge", `Stage 2 ${platform}: launch ${appId} (attempt ${attempt}) threw: ${errorText(err)}`);
       if (attempt === 2) throw err;

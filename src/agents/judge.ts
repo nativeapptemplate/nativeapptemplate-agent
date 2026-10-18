@@ -185,6 +185,9 @@ async function runVisualPhase(
     });
 
     const report: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport } = {};
+    for (const [platform, r] of [["ios", stage1.ios], ["android", stage1.android]] as const) {
+      for (const w of r?.launch.warnings ?? []) trace("judge", `Layer 3 ${platform}: warning: ${w}`);
+    }
     if (stage1.ios) {
       report.ios = toPlatformReport(stage1.ios);
       trace("judge", `Layer 3 ios: ${stage1.ios.ok ? "PASS" : "FAIL"}` + (stage1.ios.error ? ` — ${stage1.ios.error}` : ""));
