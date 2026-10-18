@@ -7,6 +7,7 @@ import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
 import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
 import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
+import { runFormatter, traceFormat } from "../../validation/autoformat.js";
 import { slugToPascal } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
@@ -66,6 +67,8 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
     `scanned ${renameStats.files_scanned} files, changed ${renameStats.files_changed}, ${renameStats.substitutions} substitutions, ${renameStats.files_renamed} file/dir renames`,
   );
 
+  const format = await runFormatter("ios", outDir);
+  traceFormat("ios", format);
   await initGit(outDir);
   trace("ios", `done (out/${domain.slug}/ios)`);
 
@@ -74,6 +77,7 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
     outDir: `./out/${domain.slug}/ios`,
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
     renamedFrom: renamedTokens(renamePlan),
+    format,
   };
 }
 

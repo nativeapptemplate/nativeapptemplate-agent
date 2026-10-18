@@ -108,6 +108,8 @@ The agent performs three clean operations against this substrate.
 - iOS: entity types, view models, networking DTOs, SwiftUI views, Localizable.strings
 - Android: data classes, repositories, ViewModels, Compose screens, strings.xml
 
+After the rename each worker runs the substrate's autocorrecting formatter on its generated project — `bin/rubocop -a` (Rails), `./gradlew spotlessApply` (Android), `swiftformat <Product>` (iOS app sources) — because renamed identifiers change hash alignment and import order. What a formatter can't fix is reported (`platforms[].format` in `report.json`, the report's "Formatters" section, the platform trace), not gated. `NATIVEAPPTEMPLATE_FORMAT=off` skips it.
+
 **Operation 2 — Adapt or replace the domain module.**
 
 - *Adapt path* (walk-in-queue variants like clinic queue, restaurant waitlist, salon walk-ins, household pest-sighting log): keep `ItemTag`, rename to the variant's terminology, preserve the two-state toggle (`Idled` ↔ `Completed`) and its transition logic. Variants that genuinely need a three-state lifecycle (e.g., a clinic queue wanting a distinct "in-service" state) extend the state machine rather than replace it — the planner decides whether to preserve, extend, or replace the states based on the NL spec.

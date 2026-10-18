@@ -12,6 +12,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { chmodSync } from "node:fs";
 
 // rename.rb is a Ruby subprocess; CI runs the suite in stub mode with no
 // Ruby step, so guard the one test that shells out to it.
@@ -1568,6 +1569,135 @@ test("renderReport falls back to the summary line when platforms are empty (stub
   const html = renderReport(report);
   assert.ok(html.includes("Layer 1/2/3 PASS"));
   assert.ok(html.includes("✓ Pass"));
+});
+
+// --- autocorrecting formatters after the rename (#149) ---
+
+function fakeTool(path: string, body: string): void {
+  writeFileSync(path, `#!/bin/sh\n${body}\n`);
+  chmodSync(path, 0o755);
+}
+
+test("runFormatter rails runs bin/rubocop -a and reports offenses it could not autocorrect", async () => {
+  const { runFormatter } = await import("../src/validation/autoformat.js");
+  const dir = mkdtempSync(join(tmpdir(), "fmt-rails-"));
+  mkdirSync(join(dir, "bin"));
+  // RuboCop exits 1 when offenses remain after -a; its report goes to stdout.
+  fakeTool(join(dir, "bin", "rubocop"), 'echo "$@" > args.txt\necho "test/a_test.rb:3:5: C: Layout/HashAlignment: Align the keys"\necho "1 file inspected, 2 offenses detected, 1 offense corrected"\nexit 1');
+  const left = await runFormatter("rails", dir, { useMise: false });
+  assert.equal(left.status, "fail");
+  assert.equal(left.command, "bin/rubocop -a");
+  assert.equal(left.exitCode, 1);
+  assert.match(left.outputTail ?? "", /Layout\/HashAlignment/);
+  assert.equal(readFileSync(join(dir, "args.txt"), "utf8").trim(), "-a");
+
+  fakeTool(join(dir, "bin", "rubocop"), 'echo "1 file inspected, 1 offense detected, 1 offense corrected"\nexit 0');
+  const clean = await runFormatter("rails", dir, { useMise: false });
+  assert.equal(clean.status, "pass");
+  assert.equal(clean.exitCode, 0);
+});
+
+test("runFormatter android runs ./gradlew spotlessApply and surfaces a failing apply", async () => {
+  const { runFormatter } = await import("../src/validation/autoformat.js");
+  const dir = mkdtempSync(join(tmpdir(), "fmt-android-"));
+  fakeTool(join(dir, "gradlew"), 'echo "$@" > args.txt\nexit 0');
+  const ok = await runFormatter("android", dir);
+  assert.equal(ok.status, "pass");
+  assert.equal(readFileSync(join(dir, "args.txt"), "utf8").trim(), "spotlessApply --no-daemon");
+
+  // ktlint violations without an autocorrect fail spotlessApply (on stderr).
+  fakeTool(join(dir, "gradlew"), 'echo "SignUpApi.kt:3:1 Lint error > [standard:import-ordering]" >&2\nexit 1');
+  const left = await runFormatter("android", dir);
+  assert.equal(left.status, "fail");
+  assert.match(left.outputTail ?? "", /import-ordering/);
+});
+
+test("runFormatter ios formats the app sources with swiftformat, and skips when it isn't installed", async () => {
+  const { runFormatter } = await import("../src/validation/autoformat.js");
+  const dir = mkdtempSync(join(tmpdir(), "fmt-ios-"));
+  mkdirSync(join(dir, "OrangeBaton.xcodeproj"));
+  mkdirSync(join(dir, "OrangeBaton"));
+  mkdirSync(join(dir, "OrangeBatonTests"));
+  const bin = mkdtempSync(join(tmpdir(), "fmt-ios-bin-"));
+  fakeTool(join(bin, "swiftformat"), 'echo "$@" > args.txt\nexit 0');
+  const ran = await runFormatter("ios", dir, { env: { PATH: `${bin}:/usr/bin:/bin` } });
+  assert.equal(ran.status, "pass");
+  assert.equal(ran.command, "swiftformat OrangeBaton");
+  assert.equal(readFileSync(join(dir, "args.txt"), "utf8").trim(), "OrangeBaton");
+
+  // `which` lives in /usr/bin; swiftformat (Homebrew) does not.
+  const missing = await runFormatter("ios", dir, { env: { PATH: "/usr/bin:/bin" } });
+  assert.equal(missing.status, "skipped");
+  assert.match(missing.note ?? "", /not on PATH/);
+});
+
+test("runFormatter never throws: a missing tool or NATIVEAPPTEMPLATE_FORMAT=off comes back as a result", async () => {
+  const { runFormatter } = await import("../src/validation/autoformat.js");
+  const { runStep } = await import("../src/validation/run-step.js");
+  const { existsSync } = await import("node:fs");
+  const empty = mkdtempSync(join(tmpdir(), "fmt-empty-"));
+  assert.equal((await runFormatter("rails", empty, { useMise: false })).status, "skipped");
+  assert.equal((await runFormatter("android", empty)).status, "skipped");
+
+  const gone = await runStep(empty, ["definitely-not-a-command-149"], { timeoutMs: 5_000 });
+  assert.equal(gone.exitCode, null);
+
+  const slow = await runStep(empty, ["sleep", "5"], { timeoutMs: 200 });
+  assert.equal(slow.exitCode, null);
+  assert.equal(slow.timedOut, true);
+
+  const dir = mkdtempSync(join(tmpdir(), "fmt-off-"));
+  fakeTool(join(dir, "gradlew"), "touch ran.txt\nexit 0");
+  process.env['NATIVEAPPTEMPLATE_FORMAT'] = "off";
+  try {
+    const off = await runFormatter("android", dir);
+    assert.equal(off.status, "skipped");
+    assert.equal(off.note, "NATIVEAPPTEMPLATE_FORMAT=off");
+    assert.equal(existsSync(join(dir, "ran.txt")), false);
+  } finally {
+    delete process.env['NATIVEAPPTEMPLATE_FORMAT'];
+  }
+});
+
+test("renderReport shows formatter results, with what was left after autocorrect", () => {
+  const judge = mixedJudge();
+  const platforms = (judge.platforms ?? []).map((p) =>
+    p.platform === "rails"
+      ? { ...p, format: { status: "fail" as const, command: "mise exec -- bin/rubocop -a", exitCode: 1, durationMs: 9000, outputTail: "registrations_controller_test.rb:4:7: C: Layout/HashAlignment" } }
+      : p.platform === "ios"
+        ? { ...p, format: { status: "skipped" as const, command: "swiftformat OrangeBaton", exitCode: null, durationMs: 0, note: "swiftformat not on PATH" } }
+        : p,
+  );
+  const report = buildRunReport({
+    spec: "a vet clinic queue",
+    domain: reportDomain,
+    judge: { ...judge, platforms },
+    reviewer: { contractParity: "pass", diffs: [] },
+    agentVersion: "0.0.0",
+    judgeModel: "claude-opus-5-5",
+    visualLevel: 0,
+    startedAt: 0,
+    finishedAt: 1000,
+  });
+  const html = renderReport(report);
+  assert.match(html, /Formatters — autocorrect after the rename/);
+  assert.match(html, /issues left/);
+  assert.match(html, /Layout\/HashAlignment/);
+  assert.match(html, /swiftformat not on PATH/);
+  assert.equal(report.platforms[0]?.format?.status, "fail");
+
+  const without = renderReport(buildRunReport({
+    spec: "a vet clinic queue",
+    domain: reportDomain,
+    judge: mixedJudge(),
+    reviewer: { contractParity: "pass", diffs: [] },
+    agentVersion: "0.0.0",
+    judgeModel: "claude-opus-5-5",
+    visualLevel: 0,
+    startedAt: 0,
+    finishedAt: 1000,
+  }));
+  assert.doesNotMatch(without, /Formatters —/);
 });
 
 test("writeReport emits a self-contained report.json + HTML with embedded screenshot", async () => {

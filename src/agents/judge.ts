@@ -61,6 +61,7 @@ export type VisualJudgeConfig = {
 
 type PlatformEval = {
   platform: Platform;
+  worker: WorkerResult;
   layer1: Layer1Result;
   layer2: Layer2Result;
 };
@@ -81,7 +82,8 @@ export async function runJudge(input: JudgeInput): Promise<JudgeResult> {
   for (const r of reports) {
     const l1 = r.layer1.pass ? "PASS" : `FAIL (${r.layer1.findings.length} leftover tokens)`;
     const l2 = r.layer2.pass ? `PASS (${(r.layer2.durationMs / 1000).toFixed(1)}s)` : "FAIL";
-    trace("judge", `${r.platform}: Layer 1 ${l1} · Layer 2 ${l2} [${r.layer2.command}]`);
+    const fmt = r.worker.format ? ` · formatter ${r.worker.format.status === "fail" ? "ISSUES LEFT" : r.worker.format.status}` : "";
+    trace("judge", `${r.platform}: Layer 1 ${l1} · Layer 2 ${l2} [${r.layer2.command}]${fmt}`);
   }
 
   let visualReport: { ios?: VisualJudgePlatformReport; android?: VisualJudgePlatformReport } | undefined;
@@ -122,6 +124,7 @@ export async function runJudge(input: JudgeInput): Promise<JudgeResult> {
         ...(r.layer2.stderrTail !== undefined ? { stderrTail: r.layer2.stderrTail } : {}),
       },
       ...(layer3 !== undefined ? { layer3 } : {}),
+      ...(r.worker.format !== undefined ? { format: r.worker.format } : {}),
     };
   });
 
@@ -330,5 +333,5 @@ async function evaluate(worker: WorkerResult, layer2Mode: Layer2Mode): Promise<P
     runLayer2({ platform: worker.platform, outDir, mode: layer2Mode }),
   ]);
 
-  return { platform: worker.platform, layer1, layer2 };
+  return { platform: worker.platform, worker, layer1, layer2 };
 }

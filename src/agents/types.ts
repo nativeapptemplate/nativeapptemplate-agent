@@ -38,6 +38,19 @@ export type WorkerResult = {
   outDir: string;
   filesTouched: number;
   renamedFrom: readonly string[];
+  // The autocorrecting formatter run after the rename (src/validation/autoformat.ts).
+  format?: StepResult;
+};
+
+// A command run in a generated project that is reported but doesn't gate
+// the verdict (src/validation/run-step.ts). "skipped" says why in `note`.
+export type StepResult = {
+  status: "pass" | "fail" | "skipped";
+  command: string;
+  exitCode: number | null;
+  durationMs: number;
+  outputTail?: string;
+  note?: string;
 };
 
 export type ReviewerResult = {
@@ -68,6 +81,9 @@ export type PlatformDetail = {
     stderrTail?: string;
   };
   layer3?: VisualJudgePlatformReport;
+  // Post-rename formatter: "fail" means offenses were left that it could
+  // not autocorrect. Reported, not part of overallPass.
+  format?: StepResult;
 };
 
 export type VisualJudgeReport = {
