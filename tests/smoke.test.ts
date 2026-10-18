@@ -238,6 +238,25 @@ test("runLayer1 skips compiled build output so un-renamed bundle tokens aren't f
   assert.equal(result.pass, false);
 });
 
+test("runLayer1 doesn't flag tokens inside links to the template's repos or the agent's name (#155)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "layer1-protected-"));
+  writeFileSync(join(root, "README.md"), [
+    "https://github.com/nativeapptemplate/NativeAppTemplate-iOS/blob/main/NativeAppTemplate/ShopView.swift",
+    "git@github.com:nativeapptemplate/NativeAppTemplate-Android.git",
+    "nativeapptemplate-agent and nativeapptemplate-agent-mcp",
+    "NativeAppTemplate is a leftover, and so is support@nativeapptemplate.com",
+    "github.com/nativeapptemplatefoo/NativeAppTemplate is another org",
+  ].join("\n"));
+  const result = await runLayer1({ projectDir: root, forbiddenTokens: ["NativeAppTemplate", "nativeapptemplate", "Shop"] });
+  // Only lines 4 and 5 hold leftovers: the bare product name and the email on line 4,
+  // and both tokens of the look-alike org on line 5 (not protected: different org).
+  assert.deepEqual(
+    result.findings.map((f) => [f.line, f.token]),
+    [[4, "NativeAppTemplate"], [4, "nativeapptemplate"], [5, "nativeapptemplate"], [5, "NativeAppTemplate"]],
+  );
+  assert.equal(result.pass, false);
+});
+
 test("runLayer1 scans .kamal/secrets, which has no extension", async () => {
   // Kamal's secrets file is extensionless. config/deploy.yml (a .yml) names the
   // secret keys it reads from there, so a leftover substrate token in
@@ -2539,6 +2558,63 @@ test("rename.rb never writes through a symlink to a file outside the tree", { sk
   const { runRuby } = await import("../src/ruby.js");
   await runRuby("rename.rb", { renamePlan: [{ from: "Shop", to: "Clinic" }], root });
   assert.equal(readFileSync(join(outside, "real.swift"), "utf8"), "Shop");
+});
+
+// The product pairs buildProductRenamePairs("orange-baton") produces, plus two domain pairs.
+const ORANGE_BATON_PLAN = [
+  { from: "Nativeapptemplateapi", to: "OrangeBatonApi" },
+  { from: "NativeAppTemplate", to: "OrangeBaton" },
+  { from: "Nativeapptemplate", to: "OrangeBaton" },
+  { from: "ItemTag", to: "Baton" },
+  { from: "Shop", to: "Project" },
+];
+
+test("rename.rb leaves links to the template's GitHub repos and the agent's name unchanged (#155)", { skip: !RUBY_AVAILABLE }, async () => {
+  // Protected spans (github.com/nativeapptemplate/<repo>... and nativeapptemplate-agent[-mcp])
+  // must survive byte-for-byte, Shop / ItemTag in their paths included. Everything outside
+  // them follows the usual rules: NativeAppTemplate -> OrangeBaton, ItemTag -> Baton,
+  // flat nativeapptemplate -> orangebaton (so the domain and email become the app's own,
+  // as in out/orange-baton: support@orangebaton.com), shops -> projects.
+  const protectedLines = [
+    "https://github.com/nativeapptemplate/NativeAppTemplate-iOS/blob/main/NativeAppTemplate/Data/Repositories/ItemTagRepository.swift",
+    "[issues](https://github.com/nativeapptemplate/nativeapptemplateapi/issues)",
+    "github.com/nativeapptemplate/nativeapptemplate-agent/blob/main/docs/SUBSTRATE-CONTRACT.md",
+    "https://github.com/nativeapptemplate/NativeAppTemplate-Free-Android/pull/12",
+    "git clone git@github.com:nativeapptemplate/NativeAppTemplate-Android.git",
+    "<text>github.com/nativeapptemplate/nativeapptemplateapi</text>",
+    "nativeapptemplate-agent renames it; so does nativeapptemplate-agent-mcp.",
+  ];
+  const root = await runRenameFixture(
+    {
+      "README.md": [
+        ...protectedLines,
+        "See https://github.com/nativeapptemplate/NativeAppTemplate-iOS for the NativeAppTemplate ItemTag list.",
+        "nativeapptemplate-agent turns each Shop into whatever you name it.",
+        "Mail support@nativeapptemplate.com or visit https://api.nativeapptemplate.com/shops",
+      ].join("\n"),
+    },
+    ORANGE_BATON_PLAN,
+  );
+  assert.deepEqual(readFileSync(join(root, "README.md"), "utf8").split("\n"), [
+    ...protectedLines,
+    "See https://github.com/nativeapptemplate/NativeAppTemplate-iOS for the OrangeBaton Baton list.",
+    "nativeapptemplate-agent turns each Project into whatever you name it.",
+    "Mail support@orangebaton.com or visit https://api.orangebaton.com/projects",
+  ]);
+  // Layer 1 must accept what rename.rb protected (the two mirrored patterns agree).
+  const layer1 = await runLayer1({ projectDir: root, forbiddenTokens: ORANGE_BATON_PLAN.map((p) => p.from) });
+  assert.deepEqual(layer1.findings, []);
+});
+
+test("rename.rb still renames file and directory paths next to protected references (#155)", { skip: !RUBY_AVAILABLE }, async () => {
+  const root = await runRenameFixture(
+    { "NativeAppTemplate/ShopView.swift": "// https://github.com/nativeapptemplate/NativeAppTemplate-iOS\nstruct ShopView {}\n" },
+    ORANGE_BATON_PLAN,
+  );
+  assert.equal(
+    readFileSync(join(root, "OrangeBaton", "ProjectView.swift"), "utf8"),
+    "// https://github.com/nativeapptemplate/NativeAppTemplate-iOS\nstruct ProjectView {}\n",
+  );
 });
 
 test("runRuby rejects (instead of crashing the process) when ruby is not on PATH", async () => {
