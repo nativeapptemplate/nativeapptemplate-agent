@@ -7,6 +7,7 @@ import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
 import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
 import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
+import { runFormatter, traceFormat } from "../../validation/autoformat.js";
 import { slugToPascal, slugToSnake } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
@@ -58,6 +59,8 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
   );
 
   await dropSlugDatabases(domain.slug);
+  const format = await runFormatter("rails", outDir);
+  traceFormat("rails", format);
   await initGit(outDir);
   trace("rails", `done (out/${domain.slug}/rails)`);
 
@@ -66,6 +69,7 @@ export async function runRailsWorker(domain: DomainSpec): Promise<WorkerResult> 
     outDir: `./out/${domain.slug}/rails`,
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
     renamedFrom: renamedTokens(renamePlan),
+    format,
   };
 }
 

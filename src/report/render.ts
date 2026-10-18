@@ -13,6 +13,7 @@ export function renderReport(report: RunReport, assets: AssetMap = {}): string {
     matrix(report),
     layer1Section(report),
     layer2Section(report),
+    formatSection(report),
     layer3Section(report, assets),
     reviewerSection(report),
     repairSection(report),
@@ -135,6 +136,22 @@ function layer2Section(report: RunReport): string {
   return `<section><h2>Layer 2 — runtime (toolchain build/boot)</h2>${cards}</section>`;
 }
 
+function formatSection(report: RunReport): string {
+  const plats = report.platforms.filter((p) => p.format !== undefined);
+  if (plats.length === 0) return "";
+  const cards = plats.map((p) => {
+    const f = p.format!;
+    const kv = f.status === "skipped"
+      ? `<p class="kv">command: <b>${esc(f.command)}</b><br>skipped: ${esc(f.note ?? "")}</p>`
+      : `<p class="kv">command: <b>${esc(f.command)}</b><br>exit: <b>${f.exitCode === null ? "—" : f.exitCode}</b> · <b>${fmtDuration(f.durationMs)}</b>${f.note ? ` · ${esc(f.note)}` : ""}</p>`;
+    const output = f.outputTail && f.status === "fail"
+      ? `<details open><summary>left after autocorrect</summary><pre>${esc(f.outputTail)}</pre></details>`
+      : "";
+    return statusCard(p.platform, f.status, kv + output);
+  }).join("");
+  return `<section><h2>Formatters — autocorrect after the rename (reported, not gated)</h2>${cards}</section>`;
+}
+
 function layer3Section(report: RunReport, assets: AssetMap): string {
   const plats = report.platforms.filter((p): p is PlatformDetail & { layer3: NonNullable<PlatformDetail["layer3"]> } => p.layer3 !== undefined);
   if (plats.length === 0) return "";
@@ -215,6 +232,11 @@ function footer(report: RunReport): string {
 
 function card(title: string, pass: boolean, inner: string): string {
   const pill = pass ? `<span class="pill pass">pass</span>` : `<span class="pill fail">fail</span>`;
+  return `<div class="card"><h3>${esc(title)} ${pill}</h3>${inner}</div>`;
+}
+
+function statusCard(title: string, status: "pass" | "fail" | "skipped", inner: string): string {
+  const pill = status === "skipped" ? `<span class="pill skipped">skipped</span>` : status === "pass" ? `<span class="pill pass">pass</span>` : `<span class="pill fail">issues left</span>`;
   return `<div class="card"><h3>${esc(title)} ${pill}</h3>${inner}</div>`;
 }
 

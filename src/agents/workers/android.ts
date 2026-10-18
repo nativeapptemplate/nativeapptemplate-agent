@@ -7,6 +7,7 @@ import { isStub } from "../../stub.js";
 import { runRuby } from "../../ruby.js";
 import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
 import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
+import { runFormatter, traceFormat } from "../../validation/autoformat.js";
 import { slugToPascal } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
@@ -71,6 +72,8 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
     `scanned ${renameStats.files_scanned} files, changed ${renameStats.files_changed}, ${renameStats.substitutions} substitutions, ${renameStats.files_renamed} file/dir renames`,
   );
 
+  const format = await runFormatter("android", outDir);
+  traceFormat("android", format);
   await initGit(outDir);
   trace("android", `done (out/${domain.slug}/android)`);
 
@@ -79,6 +82,7 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
     outDir: `./out/${domain.slug}/android`,
     filesTouched: renameStats.files_changed + renameStats.files_renamed,
     renamedFrom: renamedTokens(renamePlan),
+    format,
   };
 }
 

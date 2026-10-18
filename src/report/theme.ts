@@ -82,6 +82,7 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .pill { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
 .pill.pass { background: rgba(52,211,153,0.16); color: var(--pass); }
 .pill.fail { background: rgba(248,113,113,0.16); color: var(--fail); }
+.pill.skipped { background: rgba(154,165,177,0.16); color: var(--muted); }
 .findings th, .findings td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
 .findings th { color: var(--muted); font-weight: 600; }
 .findings code, code.inline { font-family: "SF Mono", Menlo, monospace; font-size: 12px; color: var(--accent); }
