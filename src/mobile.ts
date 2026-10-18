@@ -49,8 +49,11 @@ export type MobileClient = {
   pressButton(button: string): Promise<void>;
   // Launch (foreground) an app by its package id — bundle id on iOS, package
   // name on Android. Used to bring the app to front before a scenario walk in
-  // case it was backgrounded to springboard between stages.
-  launchApp(packageName: string): Promise<void>;
+  // case it was backgrounded to springboard between stages. `locale` (BCP 47,
+  // e.g. "en-US") launches it in that language: mobile-mcp passes
+  // -AppleLanguages/-AppleLocale on iOS and sets the per-app locale on
+  // Android 13+.
+  launchApp(packageName: string, locale?: string): Promise<void>;
   takeScreenshot(): Promise<Screenshot>;
   saveScreenshot(absolutePath: string): Promise<void>;
   close(): Promise<void>;
@@ -198,10 +201,10 @@ function wrapClient(client: Client): MobileClient {
     async pressButton(button) {
       await callTool("mobile_press_button", { button });
     },
-    async launchApp(packageName) {
+    async launchApp(packageName, locale) {
       // mobile-mcp uses `packageName` for the app id on both platforms (the
       // bundle id on iOS). `device` is injected by callTool.
-      await callTool("mobile_launch_app", { packageName });
+      await callTool("mobile_launch_app", { packageName, ...(locale !== undefined ? { locale } : {}) });
     },
     async takeScreenshot() {
       const result = await callTool("mobile_take_screenshot");
@@ -240,7 +243,7 @@ function createStubMobileClient(): MobileClient {
     click: async () => {},
     typeKeys: async (_text: string, _submit?: boolean) => {},
     pressButton: async () => {},
-    launchApp: async (_packageName: string) => {},
+    launchApp: async (_packageName: string, _locale?: string) => {},
     takeScreenshot: async () => ({ data: Buffer.alloc(0), mimeType: "image/png" }),
     saveScreenshot: async () => {},
     close: async () => {},

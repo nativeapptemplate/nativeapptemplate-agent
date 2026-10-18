@@ -892,10 +892,11 @@ test("runStage2Visual relaunches the app when the first launch leaves the iOS sp
     { description: "fake", inputSchema: { saveTo: z.string() } },
     async () => ({ content: [] }),
   );
+  const launchLocales: (string | undefined)[] = [];
   fake.registerTool(
     "mobile_launch_app",
-    { description: "fake", inputSchema: { device: z.string(), packageName: z.string() } },
-    async () => { launches++; return { content: [] }; },
+    { description: "fake", inputSchema: { device: z.string(), packageName: z.string(), locale: z.string().optional() } },
+    async ({ locale }) => { launches++; launchLocales.push(locale); return { content: [] }; },
   );
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -920,9 +921,129 @@ test("runStage2Visual relaunches the app when the first launch leaves the iOS sp
 
   assert.equal(launches, 2);
   assert.equal(result.ios?.stepsPassed, 2, result.ios?.error);
+  // #159: the first launch and the springboard relaunch both ask for English.
+  assert.deepEqual(launchLocales, ["en-US", "en-US"]);
 
   await mobile.close();
   await fake.close();
+});
+
+// #159: the app under test is launched in English whatever the device
+// language. Expected commands from the issue: iOS `simctl launch <udid>
+// <bundle> -AppleLanguages "(en)" -AppleLocale en_US` (Apple's documented
+// launch-argument overrides of the NSGlobalDomain keys); Android `cmd locale
+// set-app-locales <pkg> --locales en-US` (Android 13 per-app language).
+function recordingExec(fail: (args: readonly string[]) => string | undefined = () => undefined) {
+  const calls: { cmd: string; args: readonly string[] }[] = [];
+  const exec = {
+    run: async (cmd: string, args: readonly string[]) => {
+      calls.push({ cmd, args });
+      const err = fail(args);
+      return err === undefined ? { ok: true } : { ok: false, error: err };
+    },
+    capture: async (cmd: string, args: readonly string[]) => {
+      calls.push({ cmd, args });
+      return { ok: true as const, stdout: "List of devices attached\n1C081FDF600CMG\tdevice\nemulator-5554\tdevice\n" };
+    },
+  };
+  return { calls, exec };
+}
+
+test("installAndLaunch launches the iOS app in English (-AppleLanguages (en) -AppleLocale en_US)", async () => {
+  const { calls, exec } = recordingExec();
+  const result = await installAndLaunch({ platform: "ios", appPath: "/tmp/App.app", bundleId: "com.example.app" }, exec);
+  assert.equal(result.ok, true);
+  const launch = calls.find((c) => c.args[1] === "launch");
+  assert.deepEqual(launch, {
+    cmd: "xcrun",
+    args: ["simctl", "launch", "booted", "com.example.app", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"],
+  });
+  assert.match(result.command, /xcrun simctl launch booted com\.example\.app -AppleLanguages "\(en\)" -AppleLocale en_US$/);
+});
+
+test("installAndLaunch sets the Android app's locale to en-US before launching it", async () => {
+  const saved = process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'];
+  delete process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'];
+  try {
+    const { calls, exec } = recordingExec();
+    const result = await installAndLaunch({ platform: "android", apkPath: "/tmp/app-debug.apk", packageName: "com.example.app" }, exec);
+    assert.equal(result.ok, true);
+    assert.equal(result.warnings, undefined);
+    const shell = calls.filter((c) => c.args.includes("shell")).map((c) => c.args);
+    // Emulator picked over the phone; locale set after install, before monkey.
+    assert.deepEqual(shell[1], ["-s", "emulator-5554", "shell", "cmd", "locale", "set-app-locales", "com.example.app", "--locales", "en-US"]);
+    assert.equal(shell[2]?.[3], "monkey");
+    assert.match(result.command, /set-app-locales com\.example\.app --locales en-US && .*monkey/);
+  } finally {
+    if (saved !== undefined) process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'] = saved;
+  }
+});
+
+test("installAndLaunch still launches on Android < 13 (no per-app locale) and warns", async () => {
+  const saved = process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'];
+  process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'] = "emulator-5554";
+  try {
+    const { calls, exec } = recordingExec((args) => (args.includes("set-app-locales") ? "cmd: Can't find service: locale" : undefined));
+    const result = await installAndLaunch({ platform: "android", apkPath: "/tmp/app-debug.apk", packageName: "com.example.app" }, exec);
+    assert.equal(result.ok, true);
+    assert.ok(calls.some((c) => c.args.includes("monkey")));
+    assert.equal(result.warnings?.length, 1);
+    assert.match(result.warnings?.[0] ?? "", /API 33\+.*device language/);
+  } finally {
+    if (saved !== undefined) process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'] = saved;
+    else delete process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'];
+  }
+});
+
+async function stage2OnScreen(elements: readonly Record<string, unknown>[]) {
+  const { tmpdir } = await import("node:os");
+  const { mkdtempSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { runStage2Visual, DEFAULT_STAGE2_RUBRIC } = await import("../src/validation/stage2-judge.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async () => ({ content: [{ type: "text", text: JSON.stringify([{ name: "iPhone 17", platform: "ios" }]) }] }),
+  );
+  fake.registerTool(
+    "mobile_list_elements_on_screen",
+    { description: "fake", inputSchema: {} },
+    async () => ({ content: [{ type: "text", text: JSON.stringify(elements) }] }),
+  );
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+  try {
+    return await runStage2Visual({
+      spec: "a queue",
+      iosScenario: { name: "smoke", steps: [{ kind: "wait_for_text", text: "Welcome to", timeoutMs: 300 }] },
+      rubric: DEFAULT_STAGE2_RUBRIC,
+      screenshotDir: mkdtempSync(join(tmpdir(), "stage2-locale-")),
+      iosClient: mobile,
+    });
+  } finally {
+    await mobile.close();
+    await fake.close();
+  }
+}
+
+test("Stage 2 reports a non-English UI as an environment problem, not a bare wait_for_text failure", async () => {
+  // The screen observed in #159 on a ja-JP simulator.
+  const result = await stage2OnScreen([{ type: "StaticText", label: "Orange Baton へようこそ", x: 60, y: 650, width: 280, height: 100 }]);
+  assert.equal(result.ios?.pass, false);
+  assert.match(result.ios?.error ?? "", /^environment: the app's UI is not in English \(the screen shows "Orange Baton へようこそ"\)/);
+  assert.match(result.ios?.error ?? "", /wait_for_text "Welcome to": not found/);
+});
+
+test("Stage 2 keeps the plain step error when the screen is in English", async () => {
+  const result = await stage2OnScreen([{ type: "StaticText", label: "Something else", x: 60, y: 650, width: 280, height: 100 }]);
+  assert.match(result.ios?.error ?? "", /^wait_for_text "Welcome to": not found/);
 });
 
 test("dispatch with NATIVEAPPTEMPLATE_VISUAL=2 plumbs through to JudgeResult.visual.<platform>.stage2 (stub pipeline)", async () => {

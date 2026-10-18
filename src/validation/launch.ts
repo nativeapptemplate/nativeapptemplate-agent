@@ -7,6 +7,40 @@ export type LaunchResult = {
   command: string;
   durationMs: number;
   error?: string;
+  // Non-fatal problems worth surfacing, e.g. the per-app English locale
+  // couldn't be set on an Android < 13 device.
+  warnings?: readonly string[];
+};
+
+// Stage 2's scripted scenario waits for English UI text ("Welcome to", button
+// labels), but the generated apps follow the device language. So the app
+// under test is launched in English whatever the sim/emulator is set to (#159).
+export const APP_UNDER_TEST_LOCALE = "en-US";
+export const IOS_ENGLISH_LAUNCH_ARGS = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"] as const;
+
+export function iosLaunchArgs(bundleId: string): readonly string[] {
+  return ["simctl", "launch", "booted", bundleId, ...IOS_ENGLISH_LAUNCH_ARGS];
+}
+
+// Per-app locale (Android 13 / API 33+). The setting survives relaunches and
+// is cleared by the next run's uninstall.
+export function androidAppLocaleArgs(packageName: string): readonly string[] {
+  return ["shell", "cmd", "locale", "set-app-locales", packageName, "--locales", APP_UNDER_TEST_LOCALE];
+}
+
+export type RunResult = { ok: boolean; error?: string };
+export type CaptureResult = { ok: true; stdout: string } | { ok: false; error: string };
+
+// The process layer, injectable so tests can check the commands without a
+// real simctl / adb.
+export type LaunchExec = {
+  run(cmd: string, args: readonly string[], timeoutMs: number): Promise<RunResult>;
+  capture(cmd: string, args: readonly string[], timeoutMs: number): Promise<CaptureResult>;
+};
+
+export const defaultLaunchExec: LaunchExec = {
+  run: (cmd, args, timeoutMs) => runOnce(cmd, args, timeoutMs),
+  capture: (cmd, args, timeoutMs) => runCapture(cmd, args, timeoutMs),
 };
 
 export type IosLaunchInput = {
@@ -35,10 +69,11 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 // Chain per platform (a best-effort uninstall runs first — see below):
 //   iOS:     xcrun simctl uninstall booted <bundleId>          (best-effort)
 //            xcrun simctl install   booted <appPath>
-//            xcrun simctl launch    booted <bundleId>
+//            xcrun simctl launch    booted <bundleId> -AppleLanguages "(en)" -AppleLocale en_US
 //   Android: adb uninstall <package>                           (best-effort)
 //            adb install -r <apkPath>
 //            adb shell pm grant <package> POST_NOTIFICATIONS   (best-effort)
+//            adb shell cmd locale set-app-locales <package> --locales en-US  (API 33+; warns below)
 //            adb shell monkey -p <package> -c android.intent.category.LAUNCHER 1
 //
 // The leading uninstall clears prior per-run state — notably a Keychain/app
@@ -54,27 +89,28 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 // Screen-readiness polling is NOT done here; the caller should sleep briefly
 // before captureScreenshot() so the home screen has rendered. A future PR may
 // add an explicit ready-poll using accessibility tree or pixel diff.
-export async function installAndLaunch(input: LaunchInput): Promise<LaunchResult> {
+export async function installAndLaunch(input: LaunchInput, exec: LaunchExec = defaultLaunchExec): Promise<LaunchResult> {
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   switch (input.platform) {
     case "ios":
-      return installAndLaunchIos(input.appPath, input.bundleId, timeoutMs);
+      return installAndLaunchIos(input.appPath, input.bundleId, timeoutMs, exec);
     case "android":
-      return installAndLaunchAndroid(input.apkPath, input.packageName, timeoutMs);
+      return installAndLaunchAndroid(input.apkPath, input.packageName, timeoutMs, exec);
   }
 }
 
-async function installAndLaunchIos(appPath: string, bundleId: string, timeoutMs: number): Promise<LaunchResult> {
+async function installAndLaunchIos(appPath: string, bundleId: string, timeoutMs: number, exec: LaunchExec): Promise<LaunchResult> {
   const started = Date.now();
   const uninstallCmd = `xcrun simctl uninstall booted ${bundleId}`;
   const installCmd = `xcrun simctl install booted ${appPath}`;
-  const launchCmd = `xcrun simctl launch booted ${bundleId}`;
+  const launchArgs = iosLaunchArgs(bundleId);
+  const launchCmd = `xcrun ${launchArgs.map((a) => (a.includes("(") ? `"${a}"` : a)).join(" ")}`;
 
   // Best-effort clean: drop any prior install (and its stale auth/Keychain
   // state) so this run starts fresh. Ignore errors (e.g. not installed yet).
-  await runOnce("xcrun", ["simctl", "uninstall", "booted", bundleId], timeoutMs);
+  await exec.run("xcrun", ["simctl", "uninstall", "booted", bundleId], timeoutMs);
 
-  const install = await runOnce("xcrun", ["simctl", "install", "booted", appPath], timeoutMs);
+  const install = await exec.run("xcrun", ["simctl", "install", "booted", appPath], timeoutMs);
   if (!install.ok) {
     return {
       ok: false,
@@ -83,7 +119,7 @@ async function installAndLaunchIos(appPath: string, bundleId: string, timeoutMs:
       ...(install.error !== undefined ? { error: install.error } : {}),
     };
   }
-  const launch = await runOnce("xcrun", ["simctl", "launch", "booted", bundleId], timeoutMs);
+  const launch = await exec.run("xcrun", launchArgs, timeoutMs);
   return {
     ok: launch.ok,
     command: `${uninstallCmd} ; ${installCmd} && ${launchCmd}`,
@@ -92,7 +128,7 @@ async function installAndLaunchIos(appPath: string, bundleId: string, timeoutMs:
   };
 }
 
-async function installAndLaunchAndroid(apkPath: string, packageName: string, timeoutMs: number): Promise<LaunchResult> {
+async function installAndLaunchAndroid(apkPath: string, packageName: string, timeoutMs: number, exec: LaunchExec): Promise<LaunchResult> {
   const adb = resolveAdbPath();
   const started = Date.now();
 
@@ -103,7 +139,7 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
   // and are reproducible). If exactly one device, pass through with no
   // -s. If zero, fail fast with a useful error rather than letting adb
   // produce its terse "no devices/emulators found".
-  const targeting = await selectAdbTarget(adb, timeoutMs);
+  const targeting = await selectAdbTarget(adb, timeoutMs, exec);
   if (!targeting.ok) {
     return {
       ok: false,
@@ -118,14 +154,15 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
   const uninstallCmd = `${adb}${targetForCmd} uninstall ${packageName}`;
   const installCmd = `${adb}${targetForCmd} install -r ${apkPath}`;
   const grantCmd = `${adb}${targetForCmd} shell pm grant ${packageName} android.permission.POST_NOTIFICATIONS`;
+  const localeCmd = `${adb}${targetForCmd} ${androidAppLocaleArgs(packageName).join(" ")}`;
   const launchCmd = `${adb}${targetForCmd} shell monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
 
   // Best-effort clean: clear prior app data (incl. stale auth) before
   // reinstalling. Ignore errors — `uninstall` fails when the package isn't
   // present (first run).
-  await runOnce(adb, [...targetArgs, "uninstall", packageName], timeoutMs);
+  await exec.run(adb, [...targetArgs, "uninstall", packageName], timeoutMs);
 
-  const install = await runOnce(adb, [...targetArgs, "install", "-r", apkPath], timeoutMs);
+  const install = await exec.run(adb, [...targetArgs, "install", "-r", apkPath], timeoutMs);
   if (!install.ok) {
     return {
       ok: false,
@@ -141,22 +178,34 @@ async function installAndLaunchAndroid(apkPath: string, packageName: string, tim
   // fails Layer 3's "renders-cleanly" rubric. Best-effort: on older API
   // levels (where it isn't a runtime permission) or apps that don't declare
   // it, `pm grant` errors — we ignore the result so it never blocks launch.
-  await runOnce(
+  await exec.run(
     adb,
     [...targetArgs, "shell", "pm", "grant", packageName, "android.permission.POST_NOTIFICATIONS"],
     timeoutMs,
   );
 
-  const launch = await runOnce(
+  // Launch in English whatever the device language (#159). `cmd locale
+  // set-app-locales` needs Android 13 (API 33+); on older devices it fails —
+  // launch anyway and say so, since the app then follows the device language.
+  const warnings: string[] = [];
+  const locale = await exec.run(adb, [...targetArgs, ...androidAppLocaleArgs(packageName)], timeoutMs);
+  if (!locale.ok) {
+    warnings.push(
+      `could not set ${packageName}'s app locale to ${APP_UNDER_TEST_LOCALE} (needs Android 13 / API 33+): ${locale.error ?? "unknown error"} — the app follows the device language, and Stage 2 needs it in English`,
+    );
+  }
+
+  const launch = await exec.run(
     adb,
     [...targetArgs, "shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1"],
     timeoutMs,
   );
   return {
     ok: launch.ok,
-    command: `${uninstallCmd} ; ${installCmd} && ${grantCmd} && ${launchCmd}`,
+    command: `${uninstallCmd} ; ${installCmd} && ${grantCmd} && ${localeCmd} && ${launchCmd}`,
     durationMs: Date.now() - started,
     ...(launch.ok || launch.error === undefined ? {} : { error: launch.error }),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
@@ -169,11 +218,11 @@ type AdbTargeting =
 // emulator-* (reliable, reproducible) > first device. Returns
 // { ok:true, serial:undefined } when exactly one device is attached
 // (no -s needed; adb defaults work fine).
-export async function selectAdbTarget(adb: string, timeoutMs: number): Promise<AdbTargeting> {
+export async function selectAdbTarget(adb: string, timeoutMs: number, exec: LaunchExec = defaultLaunchExec): Promise<AdbTargeting> {
   const override = process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'];
   if (override) return { ok: true, serial: override };
 
-  const list = await runCapture(adb, ["devices"], timeoutMs);
+  const list = await exec.capture(adb, ["devices"], timeoutMs);
   if (!list.ok) {
     return { ok: false, error: list.error ?? `${adb} devices failed` };
   }
@@ -204,9 +253,6 @@ export function parseAdbDevices(stdout: string): readonly string[] {
   }
   return result;
 }
-
-type RunResult = { ok: boolean; error?: string };
-type CaptureResult = { ok: true; stdout: string } | { ok: false; error: string };
 
 function runCapture(cmd: string, args: readonly string[], timeoutMs: number): Promise<CaptureResult> {
   return new Promise((resolvePromise) => {
