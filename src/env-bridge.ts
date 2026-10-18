@@ -41,6 +41,10 @@ const SENTINEL_BEGIN = "# BEGIN nativeapptemplate-agent (mirrored API config —
 const SENTINEL_END = "# END nativeapptemplate-agent";
 
 export type BridgeValues = {
+  // The <PRODUCT> token whose lines this bridge owns in the managed block of
+  // ~/.gradle/gradle.properties. Lets an empty bridge still drop its own
+  // stale lines without touching other products'.
+  readonly product?: string;
   // Map from <PRODUCT>_<SUFFIX> → value, e.g.
   //   { VETCLINICQUEUE_API_DOMAIN: "192.168.1.11", ... }
   readonly values: Readonly<Record<string, string>>;
@@ -103,7 +107,7 @@ export async function buildBridgeValues(domain: DomainSpec): Promise<BridgeValue
   for (const [suffix, value] of Object.entries(substrate)) {
     values[`${product}_${suffix}`] = value;
   }
-  return { values };
+  return { product, values };
 }
 
 // Set ORG_GRADLE_PROJECT_<KEY> and SIMCTL_CHILD_<KEY> entries in the
@@ -129,11 +133,13 @@ export type SyncResult = {
 };
 
 // Write a sentinel block to ~/.gradle/gradle.properties containing the
-// mirrored keys. Replaces an existing block from a prior run; preserves
-// every line outside the block. If gradle.properties doesn't exist,
-// creates it. If the bridge has no values (substrate vars unset),
-// removes the existing block (so stale values from a prior run don't
-// linger) and writes nothing else.
+// mirrored keys. The block holds one set of lines per product: a run
+// replaces only its own product's lines, so an app generated earlier keeps
+// its <PRODUCT>_API_* and its next Debug build still reaches the local
+// Rails. Every line outside the block is preserved. If gradle.properties
+// doesn't exist, creates it. If the bridge has no values (substrate vars
+// unset), drops its product's lines (so stale values from a prior run
+// don't linger) and removes the block once nothing is left in it.
 //
 // Safety knobs (env vars, both default to off):
 //   NATIVEAPPTEMPLATE_BRIDGE=off       — skip the file write entirely;
@@ -156,13 +162,17 @@ export async function syncGradleProperties(bridge: BridgeValues): Promise<SyncRe
   const existing = await readFileOrEmpty(path);
   const stripped = removeSentinelBlock(existing);
   const hasValues = Object.keys(bridge.values).length > 0;
-  const removedStale = stripped !== existing && !hasValues;
+  const owned = ownedKeys(bridge);
+  const blockLines = sentinelBlockLines(existing);
+  const kept = blockLines.filter((line) => !owned.has(lineKey(line)));
+  const removedStale = !hasValues && kept.length < blockLines.length;
+  const lines = [...kept, ...Object.entries(bridge.values).map(([key, value]) => `${key}=${value}`)];
 
   let next: string;
-  if (!hasValues) {
+  if (lines.length === 0) {
     next = stripped;
   } else {
-    const block = formatSentinelBlock(bridge.values);
+    const block = formatSentinelBlock(lines);
     next = ensureTrailingNewline(stripped) + block + "\n";
   }
 
@@ -221,13 +231,43 @@ function removeSentinelBlock(content: string): string {
   return content.slice(0, before) + content.slice(trailing);
 }
 
-function formatSentinelBlock(values: Readonly<Record<string, string>>): string {
-  const lines: string[] = [SENTINEL_BEGIN];
-  for (const key of Object.keys(values).sort()) {
-    lines.push(`${key}=${values[key]}`);
+// Every key this bridge's product may have written: <PRODUCT>_<SUFFIX> for
+// each mirrored suffix, for bridge.product and for any product its values
+// name. Exact keys, not a prefix, so CLINIC never claims CLINICQUEUE's lines.
+function ownedKeys(bridge: BridgeValues): Set<string> {
+  const products = new Set<string>(bridge.product ? [bridge.product] : []);
+  for (const key of Object.keys(bridge.values)) {
+    const suffix = MIRRORED_SUFFIXES.find((sfx) => key.endsWith(`_${sfx}`));
+    if (suffix) products.add(key.slice(0, -(suffix.length + 1)));
   }
-  lines.push(SENTINEL_END);
-  return lines.join("\n");
+  const keys = new Set<string>();
+  for (const product of products) {
+    for (const suffix of MIRRORED_SUFFIXES) keys.add(`${product}_${suffix}`);
+  }
+  return keys;
+}
+
+// The non-blank lines between the sentinels, or [] when there is no block.
+function sentinelBlockLines(content: string): string[] {
+  const beginIdx = content.indexOf(SENTINEL_BEGIN);
+  if (beginIdx === -1) return [];
+  const endIdx = content.indexOf(SENTINEL_END, beginIdx);
+  if (endIdx === -1) return [];
+  return content
+    .slice(beginIdx + SENTINEL_BEGIN.length, endIdx)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function lineKey(line: string): string {
+  const eq = line.indexOf("=");
+  return (eq === -1 ? line : line.slice(0, eq)).trim();
+}
+
+function formatSentinelBlock(lines: readonly string[]): string {
+  const sorted = [...lines].sort((a, b) => (lineKey(a) < lineKey(b) ? -1 : lineKey(a) > lineKey(b) ? 1 : 0));
+  return [SENTINEL_BEGIN, ...sorted, SENTINEL_END].join("\n");
 }
 
 function ensureTrailingNewline(s: string): string {

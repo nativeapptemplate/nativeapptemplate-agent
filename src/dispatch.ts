@@ -139,8 +139,9 @@ export async function dispatch(spec: string, options: DispatchOptions = {}): Pro
         break;
     }
   } else {
-    // No substrate values to mirror — clean up any stale sentinel block
-    // from a prior run so we don't leave dangling values behind.
+    // No substrate values to mirror — drop this product's lines from a
+    // prior run so we don't leave dangling values behind. Other products'
+    // lines in the block stay.
     await syncGradleProperties(bridge);
     trace("dispatch", "env-bridge: no HOST/PORT in $NATIVEAPPTEMPLATE_API/.env; nothing to mirror");
   }
