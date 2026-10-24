@@ -141,8 +141,8 @@ Plugin `.mcp.json` pins are load-bearing: `nativeapptemplate-agent@latest` (MCP 
 
 - `docs/SPEC.md` — full technical specification (read first for any non-trivial change)
 - `ROADMAP.md` — post-hackathon direction, OSS vs hosted tracks, durable scope boundaries
-- `docs-private/GTM.md` — business strategy (relevant when discussing product surface, pricing, or Phase A/B transitions). Gitignored, not for publication.
-- `docs-private/PREP-CHECKLIST.md` — pre-hackathon setup (should already be all-green by the time development starts). Gitignored.
+- `../docs/agent/GTM.md` — business strategy (relevant when discussing product surface, pricing, or Phase A/B transitions). Lives in the private workspace repo one level up, not in this repo; not for publication.
+- `../docs/agent/PREP-CHECKLIST.md` — pre-hackathon setup (should already be all-green by the time development starts). Same private workspace location.
 
 ## Anti-patterns to avoid
 
