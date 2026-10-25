@@ -4062,6 +4062,63 @@ test("every platform keeps its gitignored files the generated app needs", async 
   assert.deepEqual(RAILS_SKIP_RULES.keepIgnored, [".env", "config/credentials/development.key"]);
 });
 
+// The template's production credentials are encrypted with the template's
+// production.key, which never comes along, so a generated API can't open them
+// and had to make new ones before its first deploy (found in Orange Baton).
+test("copySubstrate leaves the API's production credentials behind and keeps the development ones", async () => {
+  const { copySubstrate } = await import("../src/agents/workers/copy.js");
+  const { RAILS_SKIP_RULES } = await import("../src/agents/workers/rails.js");
+  const { existsSync } = await import("node:fs");
+  const base = mkdtempSync(join(tmpdir(), "copy-credentials-"));
+  const src = join(base, "src");
+  mkdirSync(join(src, "config", "credentials"), { recursive: true });
+  // Mirrors nativeapptemplateapi: the *.yml.enc are tracked, the keys ignored.
+  writeFileSync(join(src, ".gitignore"), "/config/credentials/*.key\n");
+  for (const env of ["development", "production", "test"]) {
+    writeFileSync(join(src, "config", "credentials", `${env}.yml.enc`), "encrypted");
+    writeFileSync(join(src, "config", "credentials", `${env}.key`), "key");
+  }
+  gitIn(src, "init", "-q");
+  gitIn(src, "add", ".");
+  gitIn(src, "commit", "-q", "-m", "init");
+  const dest = join(base, "dest");
+  await copySubstrate(src, dest, RAILS_SKIP_RULES);
+  for (const kept of ["development.yml.enc", "development.key", "test.yml.enc"]) {
+    assert.equal(existsSync(join(dest, "config", "credentials", kept)), true, `${kept} must be copied`);
+  }
+  for (const left of ["production.yml.enc", "production.key"]) {
+    assert.equal(existsSync(join(dest, "config", "credentials", left)), false, `${left} must not be copied`);
+  }
+});
+
+// A generated app is a new product: its first store upload is 1.0.0 (1), not
+// the template's own release. Orange Baton started at the template's 3.3.3 (13)
+// and had to be set back before its first TestFlight build.
+test("resetPbxprojVersion / resetGradleVersion start the generated app at 1.0.0 (1)", async () => {
+  const { resetPbxprojVersion, resetGradleVersion } = await import("../src/app-version.js");
+  const pbxproj = [
+    "\t\t\t\tCURRENT_PROJECT_VERSION = 13;",
+    "\t\t\t\tMARKETING_VERSION = 3.3.3;",
+    "\t\t\t\tCURRENT_PROJECT_VERSION = 1;",
+    "\t\t\t\tMARKETING_VERSION = 1.0;",
+    "\t\t\t\tPRODUCT_NAME = \"$(TARGET_NAME)\";",
+    "",
+  ].join("\n");
+  assert.equal(
+    resetPbxprojVersion(pbxproj),
+    [
+      "\t\t\t\tCURRENT_PROJECT_VERSION = 1;",
+      "\t\t\t\tMARKETING_VERSION = 1.0.0;",
+      "\t\t\t\tCURRENT_PROJECT_VERSION = 1;",
+      "\t\t\t\tMARKETING_VERSION = 1.0.0;",
+      "\t\t\t\tPRODUCT_NAME = \"$(TARGET_NAME)\";",
+      "",
+    ].join("\n"),
+  );
+  const gradle = '    minSdk = 26\n    versionCode = 11\n    versionName = "3.3.0"\n';
+  assert.equal(resetGradleVersion(gradle), '    minSdk = 26\n    versionCode = 1\n    versionName = "1.0.0"\n');
+});
+
 test("copySubstrate of a non-git iOS substrate still leaves out build/ and .xcresult bundles", async () => {
   const { copySubstrate } = await import("../src/agents/workers/copy.js");
   const { IOS_SKIP_RULES } = await import("../src/agents/workers/ios.js");

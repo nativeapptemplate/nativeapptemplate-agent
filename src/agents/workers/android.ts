@@ -9,6 +9,7 @@ import { applicationIdFromGradle, renameAppDomainInput, type RenameAppDomain } f
 import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
 import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
 import { runFormatter, traceFormat } from "../../validation/autoformat.js";
+import { resetAndroidVersion } from "../../app-version.js";
 import { slugToPascal } from "../../slug.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
@@ -75,6 +76,7 @@ export async function runAndroidWorker(domain: DomainSpec): Promise<WorkerResult
 
   const appId = await readApplicationId(outDir);
   if (appId) trace("android", `applicationId: ${appId}`);
+  await resetAndroidVersion(outDir);
   const format = await runFormatter("android", outDir);
   traceFormat("android", format);
   await initGit(outDir);

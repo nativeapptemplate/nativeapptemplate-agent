@@ -113,6 +113,8 @@ The error monitoring (Sentry) layer follows it too: it reports the signed-in use
 
 References to the template itself are not the product name and are never renamed: any `github.com/nativeapptemplate/<repo>` link (with or without `https://`, any path after it such as `/issues` or `/blob/main/docs/...`, or the SSH form `git@github.com:nativeapptemplate/...`) and the bare name `nativeapptemplate-agent` (and `nativeapptemplate-agent-mcp`) stay byte-for-byte as written, including any `Shop` / `ItemTag` in a URL path, so generated apps keep working links to the template's repos. `rename.rb` masks them before substituting (`PROTECTED_REFERENCE`), and Layer 1 skips them (`src/validation/protected-references.ts`). The product's domains and emails (`nativeapptemplate.com`, `support@nativeapptemplate.com`) are not protected: they become the app's own. Write any other mention of the template (another host, a prose name like "NativeAppTemplate-iOS" without a link) knowing it will be renamed.
 
+Don't state facts about a renamed token that stop being true after the rename. The README's "the default host `api.nativeapptemplate.com` has been shut down" became "`api.orangebaton.com` has been shut down" about the generated app's own live API (found in Orange Baton). Write what the developer does with it instead ("point the app at your own API server").
+
 ### 6. Comments and docstrings: same rules
 
 Comments are scanned by the rename pipeline and treated like any other text. If a comment says "an item tag," it'll become "an patient" the same way a UI string does. Apply rule 1 to comments too:
