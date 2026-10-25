@@ -10,6 +10,7 @@ import { japaneseRenamePairs, renamedTokens } from "../../japanese-nouns.js";
 import { copySubstrate, SENTRY_CREDENTIAL_FILES, type CopySkipRules } from "./copy.js";
 import { runFormatter, traceFormat } from "../../validation/autoformat.js";
 import { slugToPascal } from "../../slug.js";
+import { resetIosVersion } from "../../app-version.js";
 import type { DomainSpec, RenamePair, WorkerResult } from "../types.js";
 
 type RenameStats = {
@@ -70,6 +71,7 @@ export async function runIosWorker(domain: DomainSpec): Promise<WorkerResult> {
 
   const appId = await readBundleId(outDir);
   if (appId) trace("ios", `bundle ID: ${appId}`);
+  await resetIosVersion(outDir);
   const format = await runFormatter("ios", outDir);
   traceFormat("ios", format);
   await initGit(outDir);

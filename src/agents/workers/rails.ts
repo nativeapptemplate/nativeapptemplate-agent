@@ -20,7 +20,9 @@ type RenameStats = {
 };
 
 export const RAILS_SKIP_RULES: CopySkipRules = {
-  rootPaths: [".git", ".claude", "node_modules", "tmp", "log", "vendor/bundle"],
+  // production.yml.enc is encrypted with the template's production.key, which
+  // stays behind: the generated API makes its own before the first deploy.
+  rootPaths: [".git", ".claude", "node_modules", "tmp", "log", "vendor/bundle", "config/credentials/production.yml.enc"],
   anySegment: SENTRY_CREDENTIAL_FILES,
   // Gitignored but needed: .env holds the HOST/PORT rails-lifecycle.ts reads
   // from the generated dir, and development.key decrypts the committed
