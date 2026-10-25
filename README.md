@@ -54,6 +54,8 @@ Generated output appears under `./out/<slug>/`. See [Usage](#usage) for rename o
 
 > **Pass a domain if the app will ship.** `--domain=vetclinic.app` (or "domain is …" in the plugin) sets the app's web domain and, from its reverse, the iOS bundle ID (`app.vetclinic.VetClinic.ios`) and the Android applicationId / package (`app.vetclinic.vetclinic`). Neither ID can change after the first store release. Omit it and you get `<project name>.com` (`vetclinic.com`, `com.vetclinic.…`).
 
+> **Set your own Apple team.** The generated iOS project has no `DEVELOPMENT_TEAM` (the template's is cleared), so the first build for a device asks for one: choose your team in Xcode under the target's Signing & Capabilities. Simulator builds need none. The paid template's invitation link (Associated Domains, `applinks:api.<domain>`) also needs the generated API to serve your `<Team ID>.<bundle ID>`: set `app_links` in its `config/settings.yml` (or `APP_LINKS_IOS_APP_IDS`), as its README's "Invitation links" section says.
+
 > Using Cursor, Cline, Goose, or another MCP-capable editor? The generator also ships as an MCP server: `npx -y -p nativeapptemplate-agent nativeapptemplate-agent-mcp` exposes a `generate_app` tool you can wire into your editor's MCP config.
 
 ---

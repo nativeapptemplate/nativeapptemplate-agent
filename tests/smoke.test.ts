@@ -4119,6 +4119,30 @@ test("resetPbxprojVersion / resetGradleVersion start the generated app at 1.0.0 
   assert.equal(resetGradleVersion(gradle), '    minSdk = 26\n    versionCode = 1\n    versionName = "1.0.0"\n');
 });
 
+// A generated app is someone else's product: it must not sign with the template
+// author's Apple team. The templates' SAMPLE_CODE_DISAMBIGUATOR is
+// ${DEVELOPMENT_TEAM}, so the team also ended the Debug bundle ID (issue #173).
+// Cleared, Xcode asks for the developer's own team on the first device build;
+// simulator builds need none.
+test("clearPbxprojTeam leaves the generated iOS project without the template's team", async () => {
+  const { clearPbxprojTeam } = await import("../src/app-team.js");
+  const pbxproj = [
+    "\t\t\t\tDEVELOPMENT_TEAM = NNYDL5U3V3;",
+    "\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = \"app.barberq.BarberQ.ios${SAMPLE_CODE_DISAMBIGUATOR}\";",
+    "\t\t\t\tDEVELOPMENT_TEAM = \"NNYDL5U3V3\";",
+    "",
+  ].join("\n");
+  assert.equal(
+    clearPbxprojTeam(pbxproj),
+    [
+      "\t\t\t\tDEVELOPMENT_TEAM = \"\";",
+      "\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = \"app.barberq.BarberQ.ios${SAMPLE_CODE_DISAMBIGUATOR}\";",
+      "\t\t\t\tDEVELOPMENT_TEAM = \"\";",
+      "",
+    ].join("\n"),
+  );
+});
+
 test("copySubstrate of a non-git iOS substrate still leaves out build/ and .xcresult bundles", async () => {
   const { copySubstrate } = await import("../src/agents/workers/copy.js");
   const { IOS_SKIP_RULES } = await import("../src/agents/workers/ios.js");
