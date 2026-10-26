@@ -14,6 +14,7 @@ The project started as a submission to Cerebral Valley's *Built with Opus 4.7: a
 - **v0.4.x** — 0.4.0 (October 18, 2026): choose the app's domain (`--domain`; bundle ID and Android package follow), the visual level and test suites per run (`--visual`, `--tests`, also as MCP arguments and in the plugin) with a preflight before any API call, opt-in test suites in the report, formatters (`rubocop -a`, `spotlessApply`, `swiftformat`) after the rename, Stage 2 launches the app in English, links to the template's own GitHub repos survive the rename, the env bridge keeps one entry per product, and the Android Firebase config comes from git (placeholder), never the developer's working tree.
   0.4.1 (October 18, 2026): the plugin accepts `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` as well as `ANTHROPIC_API_KEY`.
   0.4.2 (October 18, 2026): each run reports its API token usage and estimated cost (`report.json` `cost`, the HTML report, the CLI summary, the MCP result and the plugin's summary).
+  0.4.3 (October 27, 2026): generated apps start at 1.0.0 (1) on iOS and Android, leave the template's production credentials (`production.yml.enc`) and Apple team (`DEVELOPMENT_TEAM`) behind, so the Debug bundle ID no longer carries the team.
 - **Public launch** — May 27, 2026.
 
 The pipeline generates three coherent platforms from a one-sentence natural-language spec. The full 3-spec × 2-edition × 2-platform matrix passes end to end at `NATIVEAPPTEMPLATE_VISUAL=2` (verified May 23, 2026).
