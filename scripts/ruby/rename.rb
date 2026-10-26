@@ -29,7 +29,12 @@ root  = input.fetch("root")
 stats = { files_scanned: 0, files_changed: 0, substitutions: 0, files_renamed: 0 }
 
 SKIP_DIR_SEGMENTS = %w[.git node_modules tmp log DerivedData Pods Carthage xcuserdata .build build .gradle .idea .kotlin captures].freeze
-SKIP_SUBPATHS     = %w[vendor/bundle app/assets/builds public/assets].freeze
+# The Solid Queue / Cache / Cable schemas and migrations are the gems' own:
+# their columns (completed_jobs) must stay what the gems expect, whatever the
+# plan renames. Mirrored in src/validation/layer1.ts.
+SKIP_SUBPATHS     = %w[vendor/bundle app/assets/builds public/assets
+                       db/queue_schema.rb db/cache_schema.rb db/cable_schema.rb
+                       db/queue_migrate db/cache_migrate db/cable_migrate].freeze
 TEXT_EXTS         = %w[
   .rb .erb .yml .yaml .json .md .gemspec .rake .ru .txt .sample .example .conf
   .html .css .scss .js .mjs .tt .lock
@@ -244,12 +249,17 @@ end
 # substitution and restored after it, so nothing inside them is renamed: not
 # the product name, nor a Shop / ItemTag token in a URL path. The product's
 # domains and emails (nativeapptemplate.com) are not protected; they become
-# the app's own. Mirrored in src/validation/protected-references.ts, which
-# keeps Layer 1 from flagging what is left here.
+# the app's own. The RevenueCat SDK's PurchasesAreCompletedBy (Android) is
+# protected the same way: a plan that renames the Completed state would
+# otherwise turn it into an import that doesn't exist. Mirrored in
+# src/validation/protected-references.ts, which keeps Layer 1 from flagging
+# what is left here.
 PROTECTED_REFERENCE = %r{
   github\.com[/:]nativeapptemplate(?![A-Za-z0-9_-])(?:/[^\s)\]"'<>`]*)?
   |
   (?<![A-Za-z0-9_-])nativeapptemplate-agent(?:-mcp)?(?![A-Za-z0-9_])
+  |
+  (?<![A-Za-z0-9_])[Pp]urchasesAreCompletedBy(?![A-Za-z0-9_])
 }x
 MASK_OPEN  = "\u{E000}"
 MASK_CLOSE = "\u{E001}"
