@@ -4529,3 +4529,128 @@ test("report carries the run cost; HTML and CLI line show it", async () => {
   // Total row: 2 calls, 2761+3456 = 6,217 in, 814+2866 = 3,680 out
   assert.match(html, /<tr><td>Total<\/td><td>2<\/td><td>6,217<\/td><td>3,680<\/td><td>17,320<\/td><td>86,600<\/td><td>\$0\.2197<\/td><\/tr>/);
 });
+
+// --- Third-party identifiers that a state rename must not touch (0.4.4) ---
+
+test("rename.rb leaves RevenueCat's PurchasesAreCompletedBy and the Solid Queue schema alone when the plan renames Completed", { skip: !RUBY_AVAILABLE }, async () => {
+  // Observed 2026-10-27 (agent 0.4.3, Orange Baton): the planner added Completed→Passed and the
+  // Android build failed with "Unresolved reference 'PurchasesArePassedBy'", and
+  // db/queue_schema.rb got a passed_jobs column Solid Queue doesn't know. Expected values:
+  // the identifier as the RevenueCat purchases-android SDK declares it
+  // (com.revenuecat.purchases.PurchasesAreCompletedBy), and the column as Solid Queue's
+  // batches migration declares it (completed_jobs). The template's own CompletedTag still
+  // follows the plan.
+  const kotlin = [
+    "import com.revenuecat.purchases.PurchasesAreCompletedBy.REVENUECAT",
+    "val tag = CompletedTag()",
+    "  .purchasesAreCompletedBy(REVENUECAT)",
+  ].join("\n");
+  const root = await runRenameFixture(
+    {
+      "app/src/main/kotlin/PurchasesIdentity.kt": kotlin,
+      "db/queue_schema.rb": '    t.integer "completed_jobs", default: 0, null: false',
+      "db/queue_migrate/20261005225505_add_batches_to_solid_queue.rb": "      t.integer :completed_jobs, default: 0, null: false",
+      "db/schema.rb": '    t.datetime "completed_at"',
+    },
+    [{ from: "Completed", to: "Passed" }],
+  );
+  assert.deepEqual(readFileSync(join(root, "app/src/main/kotlin/PurchasesIdentity.kt"), "utf8").split("\n"), [
+    "import com.revenuecat.purchases.PurchasesAreCompletedBy.REVENUECAT",
+    "val tag = PassedTag()",
+    "  .purchasesAreCompletedBy(REVENUECAT)",
+  ]);
+  assert.equal(readFileSync(join(root, "db/queue_schema.rb"), "utf8"), '    t.integer "completed_jobs", default: 0, null: false');
+  assert.equal(
+    readFileSync(join(root, "db/queue_migrate/20261005225505_add_batches_to_solid_queue.rb"), "utf8"),
+    "      t.integer :completed_jobs, default: 0, null: false",
+  );
+  // The app's own schema is not a gem's: its column follows the plan as before.
+  assert.equal(readFileSync(join(root, "db/schema.rb"), "utf8"), '    t.datetime "passed_at"');
+});
+
+test("runLayer1 mirrors rename.rb: PurchasesAreCompletedBy is a protected span and the Solid Queue schema is skipped", async () => {
+  const { protectedSpans } = await import("../src/validation/protected-references.js");
+  // "import com.revenuecat.purchases." is 32 characters; the identifier is 23.
+  assert.deepEqual(protectedSpans("import com.revenuecat.purchases.PurchasesAreCompletedBy.REVENUECAT"), [[32, 55]]);
+  assert.deepEqual(protectedSpans("  .purchasesAreCompletedBy(REVENUECAT)"), [[3, 26]]);
+  assert.deepEqual(protectedSpans("val tag = CompletedTag()"), []);
+
+  const root = mkdtempSync(join(tmpdir(), "layer1-third-party-"));
+  mkdirSync(join(root, "db", "queue_migrate"), { recursive: true });
+  writeFileSync(join(root, "PurchasesIdentity.kt"), [
+    "import com.revenuecat.purchases.PurchasesAreCompletedBy.REVENUECAT",
+    "val tag = CompletedTag()",
+  ].join("\n"));
+  writeFileSync(join(root, "db", "queue_schema.rb"), "# Completed stays here: Solid Queue's file");
+  writeFileSync(join(root, "db", "queue_migrate", "001_batches.rb"), "# Completed stays here too");
+  writeFileSync(join(root, "db", "schema.rb"), "# Completed in the app's own schema is a leftover");
+  const result = await runLayer1({ projectDir: root, forbiddenTokens: ["Completed"] });
+  assert.deepEqual(
+    result.findings.map((f) => [f.file, f.line, f.token]),
+    [["PurchasesIdentity.kt", 2, "Completed"], ["db/schema.rb", 1, "Completed"]],
+  );
+});
+
+test("wait_for_text taps a listed dismiss button whenever a poll doesn't see the text", async () => {
+  // Observed 2026-10-27 (paid iOS, agent 0.4.3): the notification reason alert covered the
+  // list and the poll saw only its 2 elements, so wait_for_text "Sample" timed out although
+  // "Sample Project" was behind it. The OK button at (100, 100) 100×40 has its center at
+  // (150, 120).
+  const { runStage2Scenario } = await import("../src/validation/stage2.js");
+  const alert = [
+    { label: "Notifications let you know when someone in your organization completes batons.", type: "StaticText", x: 0, y: 0, width: 300, height: 60 },
+    { label: "OK", type: "Button", x: 100, y: 100, width: 100, height: 40 },
+  ];
+  const list = [{ label: "Sample Project", type: "StaticText", x: 0, y: 0, width: 300, height: 40 }];
+  const fakeClient = () => {
+    const clicks: { x: number; y: number }[] = [];
+    let dismissed = false;
+    const client = {
+      listElements: async () => (dismissed ? list : alert),
+      click: async (x: number, y: number) => {
+        clicks.push({ x, y });
+        dismissed = true;
+      },
+    };
+    return { client: client as unknown as import("../src/mobile.js").MobileClient, clicks };
+  };
+  const screenshotDir = mkdtempSync(join(tmpdir(), "stage2-dismiss-"));
+
+  const withDismiss = fakeClient();
+  const ok = await runStage2Scenario({
+    client: withDismiss.client,
+    scenario: { name: "dismiss", steps: [{ kind: "wait_for_text", text: "Sample", timeoutMs: 2_000, dismiss: ["Cancel", "OK"] }] },
+    screenshotDir,
+    pollIntervalMs: 10,
+    defaultWaitMs: 500,
+  });
+  assert.equal(ok.ok, true, ok.steps[0]?.error);
+  assert.deepEqual(withDismiss.clicks, [{ x: 150, y: 120 }]);
+
+  const without = fakeClient();
+  const failed = await runStage2Scenario({
+    client: without.client,
+    scenario: { name: "no-dismiss", steps: [{ kind: "wait_for_text", text: "Sample", timeoutMs: 100 }] },
+    screenshotDir,
+    pollIntervalMs: 10,
+    defaultWaitMs: 500,
+  });
+  assert.equal(failed.ok, false);
+  assert.match(failed.steps[0]?.error ?? "", /last poll saw 2 elements/);
+  assert.deepEqual(without.clicks, []);
+});
+
+test("buildQueueScenario's Sample wait dismisses the dialogs that can cover the list, the notification reason alert first", async () => {
+  const { buildQueueScenario, SAMPLE_WAIT_DISMISS } = await import("../src/validation/scenarios/queue.js");
+  for (const platform of ["ios", "android"] as const) {
+    const scenario = buildQueueScenario(
+      { slug: "vet-clinic", displayName: "Vet Clinic", entities: [], renamePlan: [{ from: "Shop", to: "Clinic" }, { from: "Shopkeeper", to: "Vet" }], jsonApiContract: {} },
+      { fullName: "T", email: "x@y.z", password: "p", primaryResourceName: "Acme", railsOutDir: "/tmp/r" },
+      platform,
+    );
+    const sampleWait = scenario.steps.find((s) => s.kind === "wait_for_text" && s.text === "Sample");
+    assert.deepEqual(sampleWait, { kind: "wait_for_text", text: "Sample", timeoutMs: 15_000, dismiss: SAMPLE_WAIT_DISMISS }, platform);
+  }
+  // The alert's OK comes first: it sits above the OS prompt it precedes.
+  assert.deepEqual(SAMPLE_WAIT_DISMISS, ["OK", "許可", "Allow", "今はしない", "Not Now", "Cancel"]);
+});

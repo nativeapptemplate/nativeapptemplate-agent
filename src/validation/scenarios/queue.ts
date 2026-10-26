@@ -52,6 +52,12 @@ export type QueueScenarioInputs = {
 
 export type Platform = "ios" | "android";
 
+// Buttons that close the dialogs that can cover the list while the walk waits
+// for the seeded "Sample" entry: the paid iOS template's notification reason
+// alert (OK), the OS permission prompt (許可 / Allow), the Keychain sheet
+// (今はしない / Not Now) and the multi-tenancy modal's second phase (Cancel).
+export const SAMPLE_WAIT_DISMISS: readonly string[] = ["OK", "許可", "Allow", "今はしない", "Not Now", "Cancel"];
+
 export function buildQueueScenario(
   domain: DomainSpec,
   inputs: QueueScenarioInputs,
@@ -261,7 +267,15 @@ export function buildQueueScenario(
     // The substrate's seed name "Sample" doesn't get renamed (it's
     // a value, not a domain identifier). On every edition the list
     // shows an entry containing "Sample" — wait for it.
-    { kind: "wait_for_text", text: "Sample", timeoutMs: 15_000 },
+    //
+    // The paid iOS template (2026-10-25) says what notifications are for in
+    // an alert of its own ("Notifications let you know…" / OK) before the OS
+    // prompt, and it can arrive after the optional taps above have given up
+    // (observed: the Sample wait timed out with the poll seeing only the
+    // alert's 2 elements). So this wait dismisses, in order of appearance,
+    // that alert, the OS prompt, the Keychain sheet and the multi-tenancy
+    // modal whenever a poll doesn't see the list.
+    { kind: "wait_for_text", text: "Sample", timeoutMs: 15_000, dismiss: SAMPLE_WAIT_DISMISS },
     { kind: "screenshot", label: "04-primary-list-with-sample" },
 
     // Drill into the sample resource to reach the queue-entry list.
