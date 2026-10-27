@@ -193,7 +193,7 @@ Reuse the social-preview palette for brand coherence (`docs/social-preview.svg`)
 
 - Always write `out/<slug>/report.json` + `validation-report.html`.
 - Print the report path as a `file://` URL (clickable in terminals) alongside the existing summary lines.
-- When the run made API calls, print `cost: ≈ $0.2163 (25 API calls: planner $0.0274, judge $0.1889)` after the `overall:` line.
+- When the run made API calls, print `cost: ≈ $0.2181 (25 API calls: planner $0.0313, judge $0.1867)` after the `overall:` line.
 
 Flags:
 
