@@ -140,12 +140,22 @@ export async function runStage2Scenario(input: Stage2Input): Promise<Stage2Resul
       stepResults.push(result);
     } catch (err) {
       ok = false;
-      stepResults.push({
+      const failed: Stage2StepResult = {
         step,
         ok: false,
         durationMs: Date.now() - started,
         error: err instanceof Error ? err.message : String(err),
-      });
+      };
+      // What the screen showed when the step gave up; not in `screenshots`, which
+      // Layer 3 judges, so the last captured domain screen is still the one scored.
+      const path = join(input.screenshotDir, `${slug(input.scenario.name)}-${pad(i)}-failed.png`);
+      try {
+        await input.client.saveScreenshot(path);
+        failed.screenshotPath = path;
+      } catch {
+        // The screen is gone or the client is down: the error above is what we have.
+      }
+      stepResults.push(failed);
       break;
     }
   }
@@ -298,18 +308,29 @@ async function waitForText(
   dismiss?: readonly string[],
 ): Promise<ScreenElement> {
   const deadline = Date.now() + timeoutMs;
-  let lastSeen = 0;
+  let lastSeen: readonly ScreenElement[] = [];
   while (Date.now() < deadline) {
     const elements = await client.listElements();
-    lastSeen = elements.length;
+    lastSeen = elements;
     const match = findByText(elements, text, preferType, exact);
     if (match) return match;
     if (await dismissOneOf(client, elements, dismiss)) continue;
     await sleep(pollMs);
   }
   throw new Error(
-    `wait_for_text "${text}": not found within ${timeoutMs}ms (last poll saw ${lastSeen} elements)`,
+    `wait_for_text "${text}": not found within ${timeoutMs}ms (last poll saw ${lastSeen.length} elements${describe(lastSeen)})`,
   );
+}
+
+// The texts of what the last poll saw, so a failed wait says which screen or
+// dialog was up instead of only how many elements it had.
+function describe(elements: readonly ScreenElement[]): string {
+  const texts = elements
+    .map((el) => TEXT_FIELDS.map((f) => el[f]).find((v): v is string => typeof v === "string" && v.length > 0))
+    .filter((t): t is string => t !== undefined)
+    .slice(0, 8)
+    .map((t) => JSON.stringify(t.length > 40 ? `${t.slice(0, 40)}…` : t));
+  return texts.length === 0 ? "" : `: ${texts.join(", ")}`;
 }
 
 async function dismissOneOf(
