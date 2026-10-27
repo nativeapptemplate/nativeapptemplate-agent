@@ -15,6 +15,7 @@ The project started as a submission to Cerebral Valley's *Built with Opus 4.7: a
   0.4.1 (October 18, 2026): the plugin accepts `NATIVEAPPTEMPLATE_AGENT_ANTHROPIC_KEY` as well as `ANTHROPIC_API_KEY`.
   0.4.2 (October 18, 2026): each run reports its API token usage and estimated cost (`report.json` `cost`, the HTML report, the CLI summary, the MCP result and the plugin's summary).
   0.4.3 (October 27, 2026): generated apps start at 1.0.0 (1) on iOS and Android, leave the template's production credentials (`production.yml.enc`) and Apple team (`DEVELOPMENT_TEAM`) behind, so the Debug bundle ID no longer carries the team.
+  0.4.4 (October 27, 2026): the rename leaves third-party identifiers alone — the RevenueCat SDK's `PurchasesAreCompletedBy` and the Solid Queue / Cache / Cable schemas and migrations (`completed_jobs`) — when a plan renames the Completed state; the Stage 2 walk dismisses the dialogs that can cover the list (the paid iOS template's notification reason alert, the OS prompt, the Keychain sheet) while it waits for the seeded Sample entry.
 - **Public launch** — May 27, 2026.
 
 The pipeline generates three coherent platforms from a one-sentence natural-language spec. The full 3-spec × 2-edition × 2-platform matrix passes end to end at `NATIVEAPPTEMPLATE_VISUAL=2` (verified May 23, 2026).
