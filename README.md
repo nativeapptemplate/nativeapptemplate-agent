@@ -17,7 +17,7 @@ Coherent across all three, in under an hour.
 npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices" --project-name="VetClinic"
 ```
 
-> **Status: 0.4.3 stable.** First built during [Built with Opus 4.7: a Claude Code Hackathon](https://cerebralvalley.ai/e/built-with-4-7-hackathon) (April 21–27, 2026); shipped to npm post-hackathon. Verified end-to-end on the three demo specs below from a fresh `/tmp/` cwd — the full 3-spec × 2-edition × 2-platform matrix is green at `NATIVEAPPTEMPLATE_VISUAL=2` (see the [matrix](#demo)). Stage 2 (scripted-CRUD walk-through via `mobile-mcp` against a live Rails server) and paid-edition parity validation landed post-launch. Active development continues — see the [roadmap](./ROADMAP.md) for what's next.
+> **Status: 0.4.4 stable.** First built during [Built with Opus 4.7: a Claude Code Hackathon](https://cerebralvalley.ai/e/built-with-4-7-hackathon) (April 21–27, 2026); shipped to npm post-hackathon. Verified end-to-end on the three demo specs below from a fresh `/tmp/` cwd — the full 3-spec × 2-edition × 2-platform matrix is green at `NATIVEAPPTEMPLATE_VISUAL=2` (see the [matrix](#demo)). Stage 2 (scripted-CRUD walk-through via `mobile-mcp` against a live Rails server) and paid-edition parity validation landed post-launch. Active development continues — see the [roadmap](./ROADMAP.md) for what's next.
 
 ---
 
@@ -262,7 +262,7 @@ The same generator also ships as an MCP server — `npx -y -p nativeapptemplate-
   export NATIVEAPPTEMPLATE_ANDROID="/path/to/NativeAppTemplate-Free-Android"
   ```
   A starter [`/.env.example`](./.env.example) lists all the variables in one place.
-- For runtime validation (Layer 2 onwards): Xcode 26.3+ with iOS 26.2+ simulator, Android SDK with API 26+ emulator
+- For runtime validation (Layer 2 onwards): Xcode 26.3+ with iOS 26.2+ simulator, Android SDK with API 26+ emulator. For the Stage 2 walk (`--visual=2`), boot an **iOS 26.x** simulator, not iOS 27: on iOS 27 the Keychain's "Save Password?" sheet after sign-in leaves nothing but the status bar in the accessibility snapshot, so the walk cannot dismiss it (seen with mobile-mcp 0.0.54 and 1.0.14 on iOS 27.0, 2026-10-27). The agent installs and walks the app on whichever simulator is booted, so boot exactly one.
 - For UI automation: [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp) (installed automatically as a Claude Code MCP server)
 
 ### Optional flags

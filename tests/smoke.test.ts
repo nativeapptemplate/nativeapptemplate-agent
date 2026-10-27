@@ -4604,6 +4604,7 @@ test("wait_for_text taps a listed dismiss button whenever a poll doesn't see the
   const list = [{ label: "Sample Project", type: "StaticText", x: 0, y: 0, width: 300, height: 40 }];
   const fakeClient = () => {
     const clicks: { x: number; y: number }[] = [];
+    const saved: string[] = [];
     let dismissed = false;
     const client = {
       listElements: async () => (dismissed ? list : alert),
@@ -4611,8 +4612,11 @@ test("wait_for_text taps a listed dismiss button whenever a poll doesn't see the
         clicks.push({ x, y });
         dismissed = true;
       },
+      saveScreenshot: async (path: string) => {
+        saved.push(path);
+      },
     };
-    return { client: client as unknown as import("../src/mobile.js").MobileClient, clicks };
+    return { client: client as unknown as import("../src/mobile.js").MobileClient, clicks, saved };
   };
   const screenshotDir = mkdtempSync(join(tmpdir(), "stage2-dismiss-"));
 
@@ -4636,7 +4640,16 @@ test("wait_for_text taps a listed dismiss button whenever a poll doesn't see the
     defaultWaitMs: 500,
   });
   assert.equal(failed.ok, false);
-  assert.match(failed.steps[0]?.error ?? "", /last poll saw 2 elements/);
+  // The error names what was on screen and the step keeps a screenshot of it, outside
+  // `screenshots` so Layer 3 still scores the last domain screen. A text is cut at 40
+  // characters: "Notifications let you know when someone " is the alert's first 40.
+  assert.match(
+    failed.steps[0]?.error ?? "",
+    /last poll saw 2 elements: "Notifications let you know when someone …", "OK"\)$/,
+  );
+  assert.ok(failed.steps[0]?.screenshotPath?.endsWith("/no-dismiss-00-failed.png"), failed.steps[0]?.screenshotPath);
+  assert.deepEqual(without.saved, [failed.steps[0]?.screenshotPath]);
+  assert.deepEqual(failed.screenshots, []);
   assert.deepEqual(without.clicks, []);
 });
 
