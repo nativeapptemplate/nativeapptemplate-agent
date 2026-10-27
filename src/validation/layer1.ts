@@ -49,7 +49,13 @@ const SKIP_SEGMENTS = new Set([
 // deliberately does NOT rewrite these (they're regenerated from un-renamed
 // source by the bundler — e.g. Turbo's `visitCompleted` in application.js), so
 // Layer 1 must not scan them either, or it flags tokens we intentionally left.
-const SKIP_SUBPATHS = ["app/assets/builds", "public/assets"];
+// The Solid Queue / Cache / Cable schemas and migrations are skipped for the
+// same reason: rename.rb leaves the gems' columns (completed_jobs) alone.
+const SKIP_SUBPATHS = [
+  "app/assets/builds", "public/assets",
+  "db/queue_schema.rb", "db/cache_schema.rb", "db/cable_schema.rb",
+  "db/queue_migrate", "db/cache_migrate", "db/cable_migrate",
+];
 
 // Ordinary words that begin with a forbidden token but aren't the domain noun.
 // rename.rb leaves them alone (the token is followed by a lowercase letter, not
@@ -120,9 +126,9 @@ async function* walk(dir: string, root: string): AsyncGenerator<string> {
   for (const entry of entries) {
     if (SKIP_SEGMENTS.has(entry.name)) continue;
     const full = join(dir, entry.name);
+    const rel = relative(root, full).split(sep).join("/");
+    if (SKIP_SUBPATHS.includes(rel)) continue;
     if (entry.isDirectory()) {
-      const rel = relative(root, full).split(sep).join("/");
-      if (SKIP_SUBPATHS.includes(rel)) continue;
       yield* walk(full, root);
     } else if (entry.isFile() && isTextFile(full)) {
       yield full;

@@ -26,7 +26,14 @@ import type { MobileClient, ScreenElement } from "../mobile.js";
 //     PR 3 of the Stage 2 series.
 
 export type Stage2Step =
-  | { kind: "wait_for_text"; text: string; timeoutMs?: number; exact?: boolean }
+  // dismiss: button labels (whole text, case-insensitive) to tap whenever a
+  // poll doesn't find `text` — for dialogs that can surface at any moment
+  // during the wait (the paid iOS template's notification reason alert, the
+  // OS permission prompt behind it, the Keychain "Save password?" sheet).
+  // An alert hides the screen behind it from the accessibility tree, so a
+  // one-off optional tap placed before the wait misses an alert that arrives
+  // a second later.
+  | { kind: "wait_for_text"; text: string; timeoutMs?: number; exact?: boolean; dismiss?: readonly string[] }
   // optional:true swallows wait/find failures and just continues. Use
   // for system overlays that appear conditionally (e.g. iOS Keychain
   // "Save password?" prompt after signup) — you want to dismiss the
@@ -164,7 +171,7 @@ type RunStepArgs = {
 async function runStep(a: RunStepArgs): Promise<string | undefined> {
   switch (a.step.kind) {
     case "wait_for_text": {
-      await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs, undefined, a.step.exact);
+      await waitForText(a.client, a.step.text, a.step.timeoutMs ?? a.waitMs, a.pollMs, undefined, a.step.exact, a.step.dismiss);
       return undefined;
     }
     case "tap_text": {
@@ -288,6 +295,7 @@ async function waitForText(
   pollMs: number,
   preferType?: string,
   exact?: boolean,
+  dismiss?: readonly string[],
 ): Promise<ScreenElement> {
   const deadline = Date.now() + timeoutMs;
   let lastSeen = 0;
@@ -296,11 +304,27 @@ async function waitForText(
     lastSeen = elements.length;
     const match = findByText(elements, text, preferType, exact);
     if (match) return match;
+    if (await dismissOneOf(client, elements, dismiss)) continue;
     await sleep(pollMs);
   }
   throw new Error(
     `wait_for_text "${text}": not found within ${timeoutMs}ms (last poll saw ${lastSeen} elements)`,
   );
+}
+
+async function dismissOneOf(
+  client: MobileClient,
+  elements: readonly ScreenElement[],
+  labels: readonly string[] | undefined,
+): Promise<boolean> {
+  for (const label of labels ?? []) {
+    const button = findByText(elements, label, "Button", true);
+    const center = button && centerOf(button);
+    if (!center) continue;
+    await client.click(center.x, center.y);
+    return true;
+  }
+  return false;
 }
 
 // Recover from the app's intermittent "Something went wrong" error screen.
