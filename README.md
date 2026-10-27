@@ -262,7 +262,7 @@ The same generator also ships as an MCP server — `npx -y -p nativeapptemplate-
   export NATIVEAPPTEMPLATE_ANDROID="/path/to/NativeAppTemplate-Free-Android"
   ```
   A starter [`/.env.example`](./.env.example) lists all the variables in one place.
-- For runtime validation (Layer 2 onwards): Xcode 26.3+ with iOS 26.2+ simulator, Android SDK with API 26+ emulator
+- For runtime validation (Layer 2 onwards): Xcode 26.3+ with iOS 26.2+ simulator, Android SDK with API 26+ emulator. For the Stage 2 walk (`--visual=2`), boot an **iOS 26.x** simulator, not iOS 27: on iOS 27 the Keychain's "Save Password?" sheet after sign-in leaves nothing but the status bar in the accessibility snapshot, so the walk cannot dismiss it (seen with mobile-mcp 0.0.54 and 1.0.14 on iOS 27.0, 2026-10-27). The agent installs and walks the app on whichever simulator is booted, so boot exactly one.
 - For UI automation: [`mobile-next/mobile-mcp`](https://github.com/mobile-next/mobile-mcp) (installed automatically as a Claude Code MCP server)
 
 ### Optional flags
