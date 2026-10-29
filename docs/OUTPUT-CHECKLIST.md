@@ -58,6 +58,8 @@ Run the API with `bin/dev` (it loads `.env`, including `SOLID_QUEUE_IN_PUMA`); w
 | 4.5 | Change password; edit profile; sign out → sign in keeps data | — | [device] | [device] |
 | 4.6 | Reinstall does not keep the session (iOS Keychain cleanup) | — | [device] | [device] |
 | 4.7 | Hidden validation messages are not read by VoiceOver / TalkBack: fill a field, swipe right from it, and the hidden error is skipped. Use the screen reader, not a UI-tree dump — mobilecli (WDA) lists elements hidden with `.accessibilityHidden` too | — | *real device, VoiceOver* | *real device, TalkBack* |
+| 4.8 | Sign in, forgot password, resend confirmation and the forms open without red errors; a field's error shows once that field is edited | — | [device] | [device] |
+| 4.9 | A saved session whose account was deleted (or whose personal organization is gone) goes back to the start screen; iOS says the session has expired | — | [device] | [device] |
 
 ## 5. Primary and nested resources
 
@@ -68,6 +70,7 @@ Run the API with `bin/dev` (it loads `.env`, including `SOLID_QUEUE_IN_PUMA`); w
 | 5.3 | Create / edit / delete the nested resource; the detail screen shows the edit after going back | [device] | [device] |
 | 5.4 | State toggle from the list (swipe) and from the detail screen, both directions | [device] | [device] |
 | 5.5 | After a toggle the app makes a handful of requests, not a reload loop (watch the Rails log for ~10 s) | [device] | [device] |
+| 5.6 | Offline: the offline notice shows; back online, no stale `[<PRODUCT>-2002]` follows it, and Reload recovers | [device] | [device] |
 
 ## 6. Organizations [paid]
 
@@ -81,6 +84,7 @@ Two accounts, one per device. With billing off, anyone can create organizations 
 | 6.4 | Removing the member: their app switches to the personal organization and says so |
 | 6.5 | Deleting the organization (owner, from another current organization): the member's app says "This organization no longer exists…", not a 404 error; the notice sits above the tab bar and the tabs stay tappable |
 | 6.6 | Invitation edit, resend, cancel |
+| 6.7 | The invitation mail's link (`https://<api domain>/invitations/<code>`) opens the app at the acceptance; signed out, it waits for sign-in. Needs the API deployed with its `apple-app-site-association` / `assetlinks.json` (a development server cannot verify links); *real device* |
 
 ## 7. Forced updates
 
@@ -107,6 +111,7 @@ Add rows in `rails runner` (or `/madmin`), relaunch both apps, then restore.
 | 9.2 | With billing off: no paywall anywhere, no Subscription section in Settings |
 | 9.3 | With your own RevenueCat key: paywall on the second primary resource, on creating an organization and on inviting; the paywall copy names the renamed primary resource |
 | 9.4 | With Sentry DSN empty the SDKs stay uninitialized; with your own DSN only the user ID is sent |
+| 9.5 | Notifications are asked for on the first primary resource opened, after one sentence on what they are for, not right after sign-in; declined, the sentence does not come back |
 
 ## 10. Localization
 
@@ -114,6 +119,7 @@ Add rows in `rails runner` (or `/madmin`), relaunch both apps, then restore.
 |---|---|---|
 | 10.1 | Every key has a Japanese translation: iOS `Localizable.xcstrings` / `InfoPlist.xcstrings`, Android `values` vs `values-ja`, API `en.yml` vs `ja.yml` | [static] a short script comparing keys |
 | 10.2 | With the device in Japanese, screens, mails and errors are Japanese | [device] |
+| 10.3 | Light and dark appearance: every screen readable in both (iOS follows the system; Android also has a setting) | [device] |
 
 ---
 
