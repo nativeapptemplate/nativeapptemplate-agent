@@ -17,7 +17,7 @@ Coherent across all three, in under an hour.
 npx nativeapptemplate-agent "a walk-in clinic queue for small veterinary practices" --project-name="VetClinic"
 ```
 
-> **Status: 0.4.4 stable.** First built during [Built with Opus 4.7: a Claude Code Hackathon](https://cerebralvalley.ai/e/built-with-4-7-hackathon) (April 21–27, 2026); shipped to npm post-hackathon. Verified end-to-end on the three demo specs below from a fresh `/tmp/` cwd — the full 3-spec × 2-edition × 2-platform matrix is green at `NATIVEAPPTEMPLATE_VISUAL=2` (see the [matrix](#demo)). Stage 2 (scripted-CRUD walk-through via `mobile-mcp` against a live Rails server) and paid-edition parity validation landed post-launch. Active development continues — see the [roadmap](./ROADMAP.md) for what's next.
+> **Status: 0.4.5 stable.** First built during [Built with Opus 4.7: a Claude Code Hackathon](https://cerebralvalley.ai/e/built-with-4-7-hackathon) (April 21–27, 2026); shipped to npm post-hackathon. Verified end-to-end on the three demo specs below from a fresh `/tmp/` cwd — the full 3-spec × 2-edition × 2-platform matrix is green at `NATIVEAPPTEMPLATE_VISUAL=2` (see the [matrix](#demo)). Stage 2 (scripted-CRUD walk-through via `mobile-mcp` against a live Rails server) and paid-edition parity validation landed post-launch. Active development continues — see the [roadmap](./ROADMAP.md) for what's next.
 
 ---
 
@@ -111,7 +111,7 @@ The agent works on either the **free (MIT) edition** or the **paid edition** wit
 
 ### Validation matrix — 12/12 green at `VISUAL=2`
 
-All three specs pass a full end-to-end `NATIVEAPPTEMPLATE_VISUAL=2` run (build → rename → boot → scripted-CRUD walk → vision judge) on **both editions and both platforms** — 12 cells (3 specs × 2 editions × 2 platforms), each **Layer 1 3/3 · Layer 2 3/3 · Layer 3 2/2 · reviewer PASS** on a real iPhone 17 Pro simulator + Android emulator:
+All three specs pass a full end-to-end `NATIVEAPPTEMPLATE_VISUAL=2` run (build → rename → boot → scripted-CRUD walk → vision judge) on **both editions and both platforms** — 12 cells (3 specs × 2 editions × 2 platforms), each **Layer 1 3/3 · Layer 2 3/3 · Layer 3 2/2 · reviewer PASS** on a real iPhone 17 Pro simulator + Android emulator: Last re-run on 2026-10-29 against the templates' releases (iOS 3.4.0, Android 3.4.0, Free iOS 3.3.0, Free Android 3.3.0): 12/12 green, Stage 2 46/46 on iOS and 48/48 on Android in every cell, about $0.21 per run.
 
 | Spec | Free (iOS · Android) | Paid (iOS · Android) |
 |---|---|---|
