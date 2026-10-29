@@ -19,6 +19,7 @@ import { chmodSync } from "node:fs";
 // override set it themselves.
 delete process.env['NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE'];
 delete process.env['NATIVEAPPTEMPLATE_MOBILE_ANDROID_DEVICE'];
+delete process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'];
 
 // rename.rb is a Ruby subprocess; CI runs the suite in stub mode with no
 // Ruby step, so guard the one test that shells out to it.
@@ -1628,6 +1629,66 @@ test("selectDevice resolves the IOS override (display name -> canonical id) and 
   } finally {
     delete process.env['NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE'];
   }
+
+  await mobile.close();
+  await fake.close();
+});
+
+// Found on 2026-10-29: with a phone and an emulator attached and only
+// NATIVEAPPTEMPLATE_ADB_SERIAL=emulator-5554 set, the app was installed on the
+// emulator but Stage 2 walked the phone (the first Android device listed) and
+// failed on another app's screen. The walk has to use the device the app was
+// installed on.
+test("selectDevice walks the Android device the app was installed on when no Stage 2 override is set", async () => {
+  const { attachMobileClient } = await import("../src/mobile.js");
+  const { selectDevice } = await import("../src/validation/stage2-judge.js");
+  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { z } = await import("zod");
+
+  const fake = new McpServer({ name: "fake-mobile-mcp", version: "0.0.0" });
+  fake.registerTool(
+    "mobile_list_available_devices",
+    { description: "fake", inputSchema: {} },
+    async () => ({
+      content: [{
+        type: "text",
+        text: JSON.stringify({ devices: [
+          { id: "1C081FDF600CMG", name: "Pixel 6", platform: "android", type: "real" },
+          { id: "emulator-5554", name: "sdk_gphone64_arm64", platform: "android", type: "emulator" },
+        ] }),
+      }],
+    }),
+  );
+  const calls: { device?: unknown }[] = [];
+  fake.registerTool(
+    "mobile_take_screenshot",
+    { description: "fake", inputSchema: { device: z.string() } },
+    async (args) => { calls.push(args); return { content: [{ type: "image", data: "AAAA", mimeType: "image/png" }] }; },
+  );
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "smoke", version: "0.0.0" });
+  await Promise.all([fake.connect(serverTransport), client.connect(clientTransport)]);
+  const mobile = attachMobileClient(client);
+
+  // The serial names the phone here, so only the fallback (not the emulator
+  // preference below) can pick it
+  process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'] = "1C081FDF600CMG";
+  try {
+    assert.equal(await selectDevice(mobile, "android"), undefined);
+    await mobile.takeScreenshot();
+    assert.equal(calls[0]?.device, "1C081FDF600CMG", "the device NATIVEAPPTEMPLATE_ADB_SERIAL installed on");
+  } finally {
+    delete process.env['NATIVEAPPTEMPLATE_ADB_SERIAL'];
+  }
+
+  // Without NATIVEAPPTEMPLATE_ADB_SERIAL the install prefers an emulator-*
+  // serial (selectAdbTarget in launch.ts), so the walk has to as well
+  assert.equal(await selectDevice(mobile, "android"), undefined);
+  await mobile.takeScreenshot();
+  assert.equal(calls[1]?.device, "emulator-5554", "the emulator selectAdbTarget installs on, not the phone listed first");
 
   await mobile.close();
   await fake.close();

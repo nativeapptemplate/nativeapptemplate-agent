@@ -287,8 +287,15 @@ export async function selectDevice(
   client: MobileClient,
   platform: "ios" | "android",
 ): Promise<string | undefined> {
-  const overrideKey =
+  // Without a Stage 2 override, Android walks the device the app was
+  // installed on (selectAdbTarget in launch.ts): with a phone attached too,
+  // the first Android device listed is not necessarily that one.
+  const stage2Key =
     platform === "ios" ? "NATIVEAPPTEMPLATE_MOBILE_IOS_DEVICE" : "NATIVEAPPTEMPLATE_MOBILE_ANDROID_DEVICE";
+  const overrideKey =
+    platform === "android" && !process.env[stage2Key] && process.env["NATIVEAPPTEMPLATE_ADB_SERIAL"]
+      ? "NATIVEAPPTEMPLATE_ADB_SERIAL"
+      : stage2Key;
   const override = process.env[overrideKey];
 
   let devices: readonly ScreenElement[];
@@ -327,7 +334,12 @@ export async function selectDevice(
     return `no mobile-mcp devices available (boot the ${platform} sim/emulator first)`;
   }
 
-  const match = devices.find((d) => devicePlatformMatches(d, platform));
+  const candidates = devices.filter((d) => devicePlatformMatches(d, platform));
+  // Same preference as selectAdbTarget, which picked the device the app was
+  // installed on: an emulator before a phone
+  const match =
+    (platform === "android" ? candidates.find((d) => deviceNameOf(d)?.startsWith("emulator-")) : undefined) ??
+    candidates[0];
   if (!match) {
     const names = devices.map((d) => deviceNameOf(d) ?? "<unnamed>").join(", ");
     return `no mobile-mcp device matched platform=${platform} (saw: ${names}). Override with ${overrideKey}=<device-name-or-id>.`;
