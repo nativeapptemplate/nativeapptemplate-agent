@@ -4,7 +4,7 @@ This document describes the shape of the project beyond the hackathon week. It i
 
 ---
 
-## Status (October 2026)
+## Status (November 2026)
 
 The project started as a submission to Cerebral Valley's *Built with Opus 4.7: a Claude Code Hackathon* (Apr 21–27, 2026). It was not selected — roughly 13,000 applications, ~500 seats — so the April 21–27 block ran as a self-imposed sprint with the same demo-video deliverable. The hackathon was an accelerant, not a prerequisite.
 
@@ -17,6 +17,7 @@ The project started as a submission to Cerebral Valley's *Built with Opus 4.7: a
   0.4.3 (October 27, 2026): generated apps start at 1.0.0 (1) on iOS and Android, leave the template's production credentials (`production.yml.enc`) and Apple team (`DEVELOPMENT_TEAM`) behind, so the Debug bundle ID no longer carries the team.
   0.4.4 (October 27, 2026): the rename leaves third-party identifiers alone — the RevenueCat SDK's `PurchasesAreCompletedBy` and the Solid Queue / Cache / Cable schemas and migrations (`completed_jobs`) — when a plan renames the Completed state; the Stage 2 walk dismisses the dialogs that can cover the list (the paid iOS template's notification reason alert, the OS prompt, the Keychain sheet) while it waits for the seeded Sample entry.
   0.4.5 (October 29, 2026): with a phone attached next to the emulator, the Stage 2 walk drives the Android device the app was installed on (`NATIVEAPPTEMPLATE_ADB_SERIAL`, else an `emulator-*`), not the first device listed; re-verified the 12-cell matrix against the templates' releases (iOS 3.4.0, Android 3.4.0, Free 3.3.0).
+- **v1.0.0** — November 9, 2026: the first stable major release, made once Orange Baton, an app built from the template, went live on the App Store and Google Play (November 2026). No pipeline changes from 0.4.5; the 12-cell matrix was re-verified at `NATIVEAPPTEMPLATE_VISUAL=2` against the templates' main branches.
 - **Public launch** — May 27, 2026.
 
 The pipeline generates three coherent platforms from a one-sentence natural-language spec. The full 3-spec × 2-edition × 2-platform matrix passes end to end at `NATIVEAPPTEMPLATE_VISUAL=2` (verified May 23, 2026).
